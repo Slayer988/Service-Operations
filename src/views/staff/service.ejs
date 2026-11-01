@@ -1,0 +1,52 @@
+<%- include('../partials/header') %>
+<p><a href="/customers/<%= service.customer_id %>">← <%= service.customer_name %></a></p>
+<h1><%= service.name %> <span class="pill"><%= service.status %></span></h1>
+<p class="muted"><%= service.csid_code %> · <%= service.catalogue_name || service.service_type %> · <%= service.description %></p>
+
+<% if (canManage) { %>
+<section class="card"><h2>Service details</h2>
+<form method="post" action="/services/<%= service.id %>"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>Name</label><input name="name" value="<%= service.name %>" required maxlength="120"></p>
+<p><label>Status</label><select name="status"><% ['active','suspended','ended'].forEach(function (s) { %><option <%= service.status === s ? 'selected' : '' %>><%= s %></option><% }) %></select></p>
+<p><label>Start date</label><input type="date" name="start_date" value="<%= fmt.iso(service.start_date) %>"></p>
+<p><label>End date</label><input type="date" name="end_date" value="<%= fmt.iso(service.end_date) %>"></p>
+<p><label>SLA policy override</label><select name="sla_policy_id"><option value="">Use the linked contracts / default</option><% policies.forEach(function (p) { %><option value="<%= p.id %>" <%= service.sla_policy_id === p.id ? 'selected' : '' %>><%= p.name %></option><% }) %></select></p>
+<p><label>Site</label><select name="site_id"><option value="">—</option><% sites.forEach(function (s) { %><option value="<%= s.id %>" <%= service.site_id === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select></p>
+<p><label>Service owner</label><select name="owner_id"><option value="">—</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= service.owner_id === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select></p></div>
+<p><label>Description</label><input name="description" value="<%= service.description %>" maxlength="500"></p>
+<button class="btn" type="submit">Save</button></form></section>
+<% } %>
+
+<section class="card"><h2>Contracts covering this service</h2>
+<p class="muted">A service can be covered by any number of contracts. New tickets for it use the SLA policy of the newest contract in force (marked "governs tickets"), unless a policy is set on the service itself.</p>
+<table class="grid"><thead><tr><th>Reference</th><th>Title</th><th>Type</th><th>Status</th><th>From</th><th>To</th><th>SLA policy</th><th></th></tr></thead><tbody>
+<% linked.forEach(function (k) { %><tr><td><% if (canViewContracts) { %><a href="/contracts/<%= k.id %>"><%= k.reference %></a><% } else { %><%= k.reference %><% } %><% if (governingId === k.id) { %> <span class="tag">governs tickets</span><% } %></td><td><%= k.title %></td><td><%= k.type %></td><td><%= k.status.replace(/_/g, ' ') %></td><td><%= fmt.date(k.start_date) %></td><td><%= fmt.date(k.end_date) %></td><td><%= k.policy_name || '—' %></td>
+<td><% if (canLink) { %><form method="post" action="/services/<%= service.id %>/contracts/<%= k.id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Unlink <%= k.reference %> from this service?">Unlink</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!linked.length) { %><p class="empty">No contract is linked to this service yet.</p><% } %>
+<% if (canLink) { %>
+<% if (available.length) { %><form method="post" action="/services/<%= service.id %>/contracts" class="rowform"><%- include('../partials/csrf') %>
+<select name="contract_id" required aria-label="Contract to link"><option value="">Link another contract…</option><% available.forEach(function (k) { %><option value="<%= k.id %>"><%= k.reference %> · <%= k.title %></option><% }) %></select>
+<button class="btn ghost" type="submit">Link contract</button></form>
+<% } else { %><p class="muted">Every contract of this customer is already linked. <a href="/contracts/new?customer_id=<%= service.customer_id %>">Create a contract</a>.</p><% } %>
+<% } %>
+</section>
+
+<section class="card"><h2>Execution engineer</h2>
+<p class="muted">New tickets for this service notify the execution engineer. If that person is inactive or unavailable, the backup is used; if neither is available the supervisors are told.</p>
+<% if (canAssign) { %>
+<form method="post" action="/services/<%= service.id %>/engineer"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>Execution engineer</label><select name="engineer_id" required><option value="">Choose…</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %><%= s.available ? '' : ' (unavailable)' %></option><% }) %></select></p>
+<p><label>Backup engineer</label><select name="backup_id"><option value="">None</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p>
+<p><label>Effective from</label><input type="date" name="effective_from" value="<%= today %>"></p>
+<p><label>Reason for the change</label><input name="reason" required maxlength="500"></p></div>
+<button class="btn" type="submit">Assign</button></form>
+<% } %>
+<h3>History</h3>
+<table class="grid"><thead><tr><th>Engineer</th><th>Backup</th><th>From</th><th>To</th><th>Changed by</th><th>Reason</th><th>When</th></tr></thead><tbody>
+<% history.forEach(function (h) { %><tr><td><%= h.engineer_name %></td><td><%= h.backup_name || '—' %></td><td><%= fmt.date(h.effective_from) %></td><td><%= h.effective_to ? fmt.date(h.effective_to) : 'current' %></td><td><%= h.changed_by_name || '—' %></td><td><%= h.reason %></td><td><%= fmt.dt(h.created_at) %></td></tr><% }) %>
+</tbody></table>
+<% if (!history.length) { %><p class="empty">No engineer assigned yet.</p><% } %>
+</section>
+<%- include('../partials/footer') %>

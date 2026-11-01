@@ -1,0 +1,10 @@
+<%- include('../partials/header') %>
+<h1>Service Catalogue</h1>
+<p class="muted">What we can do for you. Choose a service to raise a request.</p>
+<div class="svc admin-tiles">
+<% rows.forEach(function (c) { %>
+  <a class="tile" href="/portal/tickets/new?type=<%= c.request_type %><%= c.category ? '&category=' + encodeURIComponent(c.category) : '' %>"><svg class="ic"><use href="#i-<%= c.icon %>"/></svg><b><%= c.name %></b><span><%= c.description %></span></a>
+<% }) %>
+</div>
+<% if (!rows.length) { %><p class="empty">No services are listed yet.</p><% } %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,65 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Contracts</h1><span>
+<a class="btn ghost" href="/contracts/reports">Reports</a>
+<% if (canManage) { %> <a class="btn" href="/contracts/new">Register a contract</a><% } %></span></div>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/contracts', icon: 'file', label: 'Registered', value: d.counts.total }) %>
+  <%- include('../partials/kpi', { href: '/contracts?status=active', icon: 'check', label: 'Active', value: d.counts.active }) %>
+  <%- include('../partials/kpi', { href: '/contracts?within=90', icon: 'clock', label: 'Expiring in 30 / 60 / 90 days', value: d.counts.d30 + ' / ' + d.counts.d60 + ' / ' + d.counts.d90, small: true, tone: d.counts.d30 ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/contracts?status=expired', icon: 'alert', label: 'Expired', value: d.counts.expired, tone: d.counts.expired ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/contracts?status=renewal_in_progress', icon: 'pulse', label: 'Under renewal', value: d.counts.renewal }) %>
+</div>
+<div class="kpis">
+  <% d.money.slice(0, 2).forEach(function (m) { %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/value', icon: 'chart', label: 'Contract value (' + m.currency + ')', value: m.total.toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/value', icon: 'chart', label: 'Annual value / ACV (' + m.currency + ')', value: m.acv.toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %>
+  <% }) %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/obligations', icon: 'clipboard', label: 'Outstanding obligations', value: d.obligations.outstanding, tone: d.obligations.overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/sla', icon: 'shield', label: 'SLA compliance', value: d.sla.pct === null ? '–' : d.sla.pct + '%' }) %>
+</div>
+<% if (d.money.length > 2) { %><p class="muted">Other currencies in force: <%= d.money.slice(2).map(function (m) { return m.currency + ' ' + m.total.toLocaleString('en-US', { maximumFractionDigits: 0 }); }).join(', ') %>. See the value report.</p><% } %>
+<% if (d.obligations.overdue) { %><p class="banner"><%= d.obligations.overdue %> contractual obligation(s) are overdue. <a href="/contracts/reports/obligations">Show them</a>.</p><% } %>
+
+<div class="cols">
+  <div>
+    <section class="card"><div class="sechead"><h2>Contracts by status</h2></div>
+      <% if (d.counts.total) { %><div class="donutrow"><div class="donutbox"><%- statusChart %><div class="mid"><b><%= d.counts.total %></b><span>Contracts</span></div></div>
+      <ul class="legendlist"><% statusSegs.forEach(function (s) { %><li><i class="<%= s.cls %>i"></i><%= statusLabels[s.key] %><em><%= s.value %></em></li><% }) %></ul></div><% } else { %><p class="empty">No contracts yet.</p><% } %>
+    </section>
+    <section class="card"><div class="sechead"><h2>Renewal status</h2></div>
+      <% if (d.renewals.length) { %><table class="grid"><thead><tr><th>Contract</th><th>With</th><th>Ends</th><th>Days</th><th>Status</th></tr></thead><tbody>
+      <% d.renewals.forEach(function (r) { %><tr><td><a href="/contracts/<%= r.id %>"><%= r.reference %></a> <small><%= r.title %></small></td><td><%= r.counterparty %></td><td><%= fmt.date(r.end_date) %></td><td class="<%= r.days_left <= 30 ? 'warn' : '' %>"><%= r.days_left %></td><td><%= statusLabels[r.status] %><%= r.auto_renew ? ' (auto)' : '' %></td></tr><% }) %></tbody></table>
+      <% } else { %><p class="empty">Nothing is due for renewal in the next 90 days.</p><% } %>
+    </section>
+  </div>
+  <div class="side">
+    <section class="card"><div class="sechead"><h2>By customer</h2></div><% if (d.byCustomer.length) { %><%- byCustomerChart %><% } else { %><p class="empty">No customer contracts in force.</p><% } %></section>
+    <section class="card"><div class="sechead"><h2>By supplier / partner</h2></div><% if (d.bySupplier.length) { %><%- bySupplierChart %><% } else { %><p class="empty">No supplier contracts in force.</p><% } %></section>
+  </div>
+</div>
+
+<h2>Search the register</h2>
+<form method="get" class="filters wide">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Reference, title, customer, supplier" aria-label="Search">
+  <select name="status" aria-label="Status"><option value="">Any status</option><option value="live" <%= f.status === 'live' ? 'selected' : '' %>>In force (active, expiring, renewal)</option><% Object.keys(statusLabels).forEach(function (s) { %><option value="<%= s %>" <%= f.status === s ? 'selected' : '' %>><%= statusLabels[s] %></option><% }) %></select>
+  <select name="type" aria-label="Type"><option value="">Any type</option><% types.forEach(function (t) { %><option <%= f.type === t ? 'selected' : '' %>><%= t %></option><% }) %></select>
+  <select name="kind" aria-label="Counterparty"><option value="">Customers and suppliers</option><% Object.keys(counterparties).forEach(function (k) { %><option value="<%= k %>" <%= f.kind === k ? 'selected' : '' %>><%= counterparties[k] %></option><% }) %></select>
+  <select name="customer" aria-label="Customer"><option value="">Any customer</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= f.customer === c.id ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <input name="supplier" value="<%= f.supplier %>" placeholder="Supplier" aria-label="Supplier">
+  <select name="owner" aria-label="Owner"><option value="">Any owner</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= f.owner === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select>
+  <input name="value_min" value="<%= f.value_min %>" class="num" placeholder="Value from" inputmode="decimal" aria-label="Minimum value">
+  <input name="value_max" value="<%= f.value_max %>" class="num" placeholder="to" inputmode="decimal" aria-label="Maximum value">
+  <label class="inline">Ends from <input type="date" name="from" value="<%= f.from %>"></label>
+  <label class="inline">to <input type="date" name="to" value="<%= f.to %>"></label>
+  <input name="within" value="<%= f.within %>" class="num" placeholder="Within days" inputmode="numeric" aria-label="Ends within days">
+  <button class="btn ghost" type="submit">Search</button> <a href="/contracts">Clear</a>
+</form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Reference</th><th>Title</th><th>Customer / supplier</th><th>Type</th><th>Owner</th><th>Ends</th><th>Days</th><th>Value</th><th>Status</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/contracts/<%= r.id %>"><%= r.reference %></a></td><td><%= r.title %></td><td><%= r.counterparty || '—' %> <small><%= r.counterparty_kind === 'customer' ? '' : r.counterparty_kind %></small></td><td><%= r.type %></td><td><%= r.owner || '—' %></td><td><%= fmt.date(r.end_date) %></td>
+<td class="<%= r.days_left !== null && r.days_left < 0 ? 'bad' : (r.days_left !== null && r.days_left <= 30 ? 'warn' : '') %>"><%= r.days_left === null ? '—' : r.days_left %></td>
+<td class="num"><%= r.value === null ? '—' : r.currency + ' ' + Number(r.value).toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td><td><span class="tag <%= r.status === 'active' ? '' : (r.status === 'expired' || r.status === 'terminated' ? 'bad' : (r.status === 'closed' || r.status === 'suspended' ? 'grey' : 'warn')) %>"><%= statusLabels[r.status] %></span></td></tr><% }) %></tbody></table>
+<p>Export these results: <a href="/contracts/export?format=xlsx<%= qs ? '&' + qs : '' %>">Excel</a> · <a href="/contracts/export?format=pdf<%= qs ? '&' + qs : '' %>">PDF</a> · <a href="/contracts/export?format=csv<%= qs ? '&' + qs : '' %>">CSV</a></p>
+<% } else { %><p class="empty">No contracts match.</p><% } %>
+<%- include('../partials/footer') %>

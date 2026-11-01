@@ -1,0 +1,119 @@
+<%- include('../partials/header') %>
+<p><a href="/tickets">← Tickets</a></p>
+<div class="cols">
+<section class="card main">
+  <h1><%= ticket.ref %> · <%= ticket.subject %></h1>
+  <p class="muted">
+    <%= ticket.type === 'request' ? 'Service request' : 'Incident' %> · opened <%= fmt.dt(ticket.created_at) %> via <%= ticket.source %>
+    · requester: <%= ticket.requester_user_name || ticket.requester_name || '—' %> <%= ticket.requester_email ? '<' + ticket.requester_email + '>' : '' %>
+    <% if (ticket.queue === 'security') { %> · <span class="pill p1">Security – restricted</span><% } %>
+  </p>
+
+  <% if (ticket.needs_verification && ticket.status === 'new') { %>
+  <section class="notice">
+    <h2>Verify the sender</h2>
+    <p>This e-mail could not be matched to a registered customer contact. Choose the customer (and CSID / service if you are sure), or reject the message.</p>
+    <% if (canVerify) { %>
+    <form method="post" action="/tickets/<%= ticket.ref %>/verify" data-structure="true"><%- include('../partials/csrf') %>
+      <div class="grid2">
+        <p><label for="v_customer">Customer</label><select id="v_customer" name="customer_id" data-structure-source="true"><option value="">Choose…</option><% customers.forEach(function (c) { %><option value="<%= c.id %>"><%= c.name %></option><% }) %></select></p>
+        <p><label for="v_requester">Contact</label><select id="v_requester" name="requester_id" data-fill="contacts"><option value="">—</option></select></p>
+        <p><label for="v_csid">CSID</label><select id="v_csid" name="csid_id" data-fill="csids" data-controls="v_service"><option value="">—</option></select></p>
+        <p><label for="v_service">Service</label><select id="v_service" name="service_id" data-fill="services" data-filter-by="v_csid"><option value="">—</option></select></p>
+      </div>
+      <button class="btn" type="submit" name="action" value="confirm">Verify and route</button>
+      <button class="btn ghost" type="submit" name="action" value="reject" data-confirm="Reject this message?">Reject</button>
+    </form><% } %>
+  </section>
+  <% } %>
+
+  <% if (ticket.description) { %><div class="desc"><%= ticket.description %></div><% } %>
+  <% if (attachments.length) { %><h2>Files</h2><ul class="plain"><% attachments.forEach(function (a) { %><li><a href="/attachments/<%= a.id %>"><%= a.filename %></a> <small><%= fmt.size(a.size_bytes) %> · scan: <%= a.scan_status.replace('_', ' ') %></small></li><% }) %></ul><% } %>
+
+  <h2>History</h2>
+  <ol class="timeline">
+  <% timeline.forEach(function (i) { %>
+    <% if (i.type === 'comment') { %><li class="comment <%= i.c.internal ? 'internal' : '' %>"><header><b><%= i.c.author_label || i.c.author_name %></b><% if (i.c.internal) { %> <span class="pill">Internal note</span><% } %><% if (i.c.source === 'email') { %> <span class="pill">e-mail</span><% } %> <time><%= fmt.dt(i.at) %></time></header><div class="body"><%= i.c.body %></div></li>
+    <% } else { %><li class="activity <%= i.e.internal ? 'internal' : '' %>"><%= i.e.text %> <time><%= fmt.dt(i.at) %></time></li><% } %>
+  <% }) %>
+  </ol>
+
+  <% if (canWork) { %>
+  <form method="post" action="/tickets/<%= ticket.ref %>/comment" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="4" required></textarea></p>
+    <p><label class="inline"><input type="checkbox" name="internal"> Internal note (staff only, not shown to the customer)</label></p>
+    <p><input name="files" type="file" multiple></p>
+    <button class="btn" type="submit">Add</button>
+  </form>
+  <% } %>
+</section>
+
+<aside class="side">
+  <section class="card">
+    <h2>Details</h2>
+    <dl>
+      <dt>Status</dt><dd><%= statusLabels[ticket.status] %></dd>
+      <dt>Priority</dt><dd><%- include('../partials/priority', { priority: ticket.priority }) %> <small>impact <%= levelLabels[ticket.impact] %>, urgency <%= levelLabels[ticket.urgency] %></small></dd>
+      <dt>Customer</dt><dd><% if (ticket.customer_id) { %><a href="/customers/<%= ticket.customer_id %>"><%= ticket.customer_name %></a><% } else { %>Not verified<% } %></dd>
+      <dt>CSID / service</dt><dd><%= ticket.csid_code || '—' %> / <% if (ticket.service_id) { %><a href="/services/<%= ticket.service_id %>"><%= ticket.service_name %></a><% } else { %>—<% } %></dd>
+      <dt>Queue / tier</dt><dd><%= ticket.queue === 'security' ? 'Security' : 'IT Services' %> / <%= ticket.tier.toUpperCase() %></dd>
+      <dt>Assigned to</dt><dd><%= ticket.assignee_name || 'Nobody' %></dd>
+      <dt>Execution engineer</dt><dd><%= ticket.exec_engineer_name || '—' %></dd>
+      <% if (ticket.resolution_code) { %><dt>Resolution</dt><dd><%= ticket.resolution_code.replace(/_/g, ' ') %><br><small><%= ticket.resolution_note %></small></dd><% } %>
+      <% if (ticket.satisfaction) { %><dt>Customer rating</dt><dd><%= ticket.satisfaction %>/5 <small><%= ticket.satisfaction_comment %></small></dd><% } %>
+    </dl>
+  </section>
+  <section class="card">
+    <h2>SLA</h2>
+    <% if (ticket.paused_at) { %><p class="warn">Clock paused: <%= statusLabels[ticket.pause_reason] || ticket.pause_reason %></p><% } %>
+    <table class="grid compact"><tbody>
+    <% [['Response', ticket.response_due, ticket.responded_at], ['Restoration', ticket.restoration_due, ticket.restored_at], ['Resolution', ticket.resolution_due, ticket.resolved_at]].forEach(function (r) { var s = slaState(r[1], r[2], ticket.paused_at); %>
+      <% if (r[1]) { %><tr><th><%= r[0] %></th><td><%= fmt.dt(r[1]) %></td><td class="<%= s.cls %>"><%= s.text %></td></tr><% } %>
+    <% }) %></tbody></table>
+    <% if (canSla) { %>
+    <form method="post" action="/tickets/<%= ticket.ref %>/sla-note"><%- include('../partials/csrf') %>
+      <p><label for="breach_cause">Cause of any breach</label><input id="breach_cause" name="breach_cause" maxlength="1000" value="<%= ticket.breach_cause %>"></p>
+      <p><label for="breach_action">Corrective action</label><input id="breach_action" name="breach_action" maxlength="1000" value="<%= ticket.breach_action %>"></p>
+      <button class="btn ghost" type="submit">Save SLA note</button></form>
+    <% } else if (ticket.breach_cause || ticket.breach_action) { %><p><small>Cause: <%= ticket.breach_cause %><br>Action: <%= ticket.breach_action %></small></p><% } %>
+  </section>
+
+  <% if (canWork && !ticket.needs_verification) { %>
+  <section class="card">
+    <h2>Change status</h2>
+    <form method="post" action="/tickets/<%= ticket.ref %>/status"><%- include('../partials/csrf') %>
+      <p><select name="status" id="status_select"><% ['open','in_progress','pending_customer','pending_vendor','restored','resolved','closed','cancelled'].forEach(function (s) { %><option value="<%= s %>" <%= ticket.status === s ? 'selected' : '' %>><%= statusLabels[s] %></option><% }) %></select></p>
+      <div class="js-resolution" hidden>
+        <p><label for="resolution_code">Resolution code</label><select id="resolution_code" name="resolution_code"><option value="">Choose…</option><% resolutionCodes.forEach(function (c) { %><option value="<%= c %>"><%= c.replace(/_/g, ' ') %></option><% }) %></select></p>
+        <p><label for="resolution_note">What fixed it?</label><textarea id="resolution_note" name="resolution_note" rows="3"></textarea></p>
+      </div>
+      <button class="btn" type="submit">Update status</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Assign and escalate</h2>
+    <form method="post" action="/tickets/<%= ticket.ref %>/assign"><%- include('../partials/csrf') %>
+      <p><select name="assignee_id"><option value="">Nobody</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= ticket.assignee_id === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select></p>
+      <button class="btn ghost" type="submit">Assign</button></form>
+    <form method="post" action="/tickets/<%= ticket.ref %>/escalate"><%- include('../partials/csrf') %>
+      <p><select name="tier"><% ['l1','l2','l3'].forEach(function (t) { %><option value="<%= t %>" <%= ticket.tier === t ? 'selected' : '' %>><%= t.toUpperCase() %></option><% }) %></select> <input name="reason" maxlength="300" placeholder="Reason"></p>
+      <button class="btn ghost" type="submit">Escalate / move tier</button></form>
+  </section>
+  <section class="card">
+    <h2>Billing</h2>
+    <form method="post" action="/tickets/<%= ticket.ref %>/billing"><%- include('../partials/csrf') %>
+      <input type="hidden" name="non_chargeable" value="<%= ticket.non_chargeable ? '0' : '1' %>">
+      <p class="muted">This work is currently <b><%= ticket.non_chargeable ? 'non-chargeable' : 'chargeable' %></b>.<%= ticket.sla_policy_id ? '' : ' The customer has no SLA for it.' %></p>
+      <button class="btn ghost" type="submit"><%= ticket.non_chargeable ? 'Mark as chargeable' : 'Mark as non-chargeable' %></button></form>
+  </section>
+  <section class="card">
+    <h2>Priority</h2>
+    <form method="post" action="/tickets/<%= ticket.ref %>/priority"><%- include('../partials/csrf') %>
+      <p><label for="p_impact">Impact</label><select id="p_impact" name="impact"><% [1,2,3].forEach(function (n) { %><option value="<%= n %>" <%= ticket.impact === n ? 'selected' : '' %>><%= levelLabels[n] %></option><% }) %></select></p>
+      <p><label for="p_urgency">Urgency</label><select id="p_urgency" name="urgency"><% [1,2,3].forEach(function (n) { %><option value="<%= n %>" <%= ticket.urgency === n ? 'selected' : '' %>><%= levelLabels[n] %></option><% }) %></select></p>
+      <button class="btn ghost" type="submit">Recalculate priority</button></form>
+  </section>
+  <% } %>
+</aside>
+</div>
+<%- include('../partials/footer') %>

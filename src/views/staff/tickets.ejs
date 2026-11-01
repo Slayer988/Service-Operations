@@ -1,0 +1,26 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Tickets</h1><% if (can('ticket.create_for_customer')) { %><a class="btn" href="/tickets/new">New ticket</a><% } %></div>
+<nav class="tabs">
+<% [['open','Open'],['mine','Assigned to me'],['unassigned','Unassigned'],['breached','SLA breached'],['closed','Resolved / closed'],['all','All']].forEach(function (v) { %>
+<a href="?view=<%= v[0] %><%= f.type ? '&type=' + f.type : '' %>" class="<%= view === v[0] ? 'on' : '' %>"><%= v[1] %></a><% }) %></nav>
+<form method="get" class="filters wide">
+  <input type="hidden" name="view" value="<%= view %>">
+  <select name="type"><option value="">Incidents and requests</option><option value="incident" <%= f.type === 'incident' ? 'selected' : '' %>>Incidents</option><option value="request" <%= f.type === 'request' ? 'selected' : '' %>>Service requests</option></select>
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Search subject, reference or sender">
+  <select name="customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <select name="priority"><option value="">Any priority</option><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= String(f.priority) === String(p) ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select>
+  <% if (can('security.view')) { %><select name="queue"><option value="">All queues</option><option value="it_services" <%= f.queue === 'it_services' ? 'selected' : '' %>>IT Services</option><option value="security" <%= f.queue === 'security' ? 'selected' : '' %>>Security</option></select><% } %>
+  <button class="btn ghost" type="submit">Filter</button>
+</form>
+<p class="muted"><%= total %> ticket(s)</p>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Ref</th><th>Subject</th><th>Customer</th><th>Priority</th><th>Status</th><th>Queue</th><th>Assigned</th><th>Response</th><th>Resolution</th></tr></thead><tbody>
+<% rows.forEach(function (t) { var r = slaState(t.response_due, t.responded_at, t.paused_at); var s = slaState(t.resolution_due, t.resolved_at, t.paused_at); %>
+<tr><td><a href="/tickets/<%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td><td><%= t.customer_name || '—' %></td>
+<td><%- include('../partials/priority', { priority: t.priority }) %></td><td><%= statusLabels[t.status] %></td>
+<td><%= t.queue === 'security' ? 'Security' : 'IT Services' %> <small><%= t.tier.toUpperCase() %></small></td><td><%= t.assignee_name || '—' %></td>
+<td class="<%= r.cls %>"><%= r.text %></td><td class="<%= s.cls %>"><%= s.text %></td></tr>
+<% }) %></tbody></table>
+<p class="pager"><% if (page > 1) { %><a href="?view=<%= view %>&q=<%= encodeURIComponent(f.q) %>&customer=<%= f.customer %>&priority=<%= f.priority %>&queue=<%= f.queue %>&type=<%= f.type %>&page=<%= page - 1 %>">← Previous</a><% } %> Page <%= page %> of <%= pages %> <% if (page < pages) { %><a href="?view=<%= view %>&q=<%= encodeURIComponent(f.q) %>&customer=<%= f.customer %>&priority=<%= f.priority %>&queue=<%= f.queue %>&type=<%= f.type %>&page=<%= page + 1 %>">Next →</a><% } %></p>
+<% } else { %><p class="empty">No tickets match.</p><% } %>
+<%- include('../partials/footer') %>

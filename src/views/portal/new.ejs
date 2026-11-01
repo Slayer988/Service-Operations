@@ -1,0 +1,22 @@
+<%- include('../partials/header') %>
+<section class="card">
+  <h1>New ticket</h1>
+  <% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+  <form method="post" action="/portal/tickets/new" enctype="multipart/form-data">
+    <%- include('../partials/csrf') %>
+    <div class="grid2">
+      <p><label for="type">What is this?</label><select id="type" name="type"><option value="incident" <%= form.type !== 'request' ? 'selected' : '' %>>Something is broken (incident)</option><option value="request" <%= form.type === 'request' ? 'selected' : '' %>>I need something (request)</option></select></p>
+      <p><label for="category">Category</label><select id="category" name="category"><option value="">Choose…</option><% categories.forEach(function (c) { %><option <%= form.category === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+      <p><label for="csid_id">CSID</label><select id="csid_id" name="csid_id" data-controls="service_id"><option value="">Choose…</option><% csids.forEach(function (c) { %><option value="<%= c.id %>" <%= String(form.csid_id) === String(c.id) ? 'selected' : '' %>><%= c.csid %><%= c.description ? ' – ' + c.description : '' %></option><% }) %></select></p>
+      <p><label for="service_id">Service</label><select id="service_id" name="service_id" data-filter-by="csid_id"><option value="">Choose…</option><% services.forEach(function (s) { %><option value="<%= s.id %>" data-parent="<%= s.csid_id %>" <%= String(form.service_id) === String(s.id) ? 'selected' : '' %>><%= s.name %> (<%= s.service_type %>)</option><% }) %></select></p>
+      <% if (sites.length) { %><p><label for="site_id">Site</label><select id="site_id" name="site_id"><option value="">Choose…</option><% sites.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p><% } %>
+      <p><label for="impact">How many people or systems are affected?</label><select id="impact" name="impact"><option value="1">Many / a whole site or service</option><option value="2" selected>A team or several people</option><option value="3">One person</option></select></p>
+      <p><label for="urgency">How urgent is it?</label><select id="urgency" name="urgency"><option value="1">Work has stopped</option><option value="2" selected>Work is slowed down</option><option value="3">Can wait</option></select></p>
+    </div>
+    <p><label for="subject">Subject</label><input id="subject" name="subject" maxlength="200" required value="<%= form.subject || '' %>"></p>
+    <p><label for="description">Describe the problem or request</label><textarea id="description" name="description" rows="7"><%= form.description || '' %></textarea></p>
+    <p><label for="files">Attach files (optional, up to 5)</label><input id="files" name="files" type="file" multiple></p>
+    <button class="btn" type="submit">Submit ticket</button>
+  </form>
+</section>
+<%- include('../partials/footer') %>

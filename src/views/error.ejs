@@ -1,0 +1,12 @@
+<%- include('partials/header') %>
+<% var c = Number(typeof code !== 'undefined' ? code : 400);
+   var kind = c >= 500 ? 'fault' : (c === 401 || c === 403) ? 'deny' : c === 404 ? 'missing' : 'warn';
+   var hints = { fault: 'This is a problem on our side, not something you did. It has been logged.', deny: 'You are not allowed to do this. If you think you should be, ask an administrator.', missing: 'The page may have moved, or you may not have access to it.', warn: 'Check what you entered or tried, then try again.' }; %>
+<section class="card errpage">
+  <div class="errc <%= kind %>" role="img" aria-label="Error <%= c %>"><%= c %></div>
+  <h1><%= title %></h1>
+  <p><%= message %></p>
+  <p class="errhint <%= kind %>"><%= hints[kind] %></p>
+  <p><a href="/">Back to the start</a></p>
+</section>
+<%- include('partials/footer') %>

@@ -1,0 +1,46 @@
+# Installed to /etc/nginx/conf.d/itsm.conf by install.sh (@@ placeholders are filled in).
+
+# Slow down password guessing on the sign-in page: 6 requests per minute per client, small burst.
+limit_req_zone $binary_remote_addr zone=itsm_login:10m rate=6r/m;
+
+upstream itsm_app {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+@@TLS_ON@@server {
+@@TLS_ON@@    listen 80;
+@@TLS_ON@@    server_name @@DOMAIN@@;
+@@TLS_ON@@    location / { return 301 https://$host$request_uri; }
+@@TLS_ON@@}
+
+server {
+@@TLS_ON@@    listen 443 ssl;
+@@TLS_OFF@@    listen 80;
+    server_name @@DOMAIN@@;
+
+@@TLS_ON@@    ssl_certificate     @@CERT@@;
+@@TLS_ON@@    ssl_certificate_key @@KEY@@;
+@@TLS_ON@@    ssl_protocols TLSv1.2 TLSv1.3;
+@@TLS_ON@@    ssl_session_cache shared:ITSMSSL:10m;
+@@TLS_ON@@    ssl_session_timeout 1d;
+
+    client_max_body_size 30m;
+    server_tokens off;
+
+    location /static/ {
+        alias /opt/itsm/app/src/public/;
+        expires 1h;
+        access_log off;
+    }
+
+    location = /login {
+        limit_req zone=itsm_login burst=10 nodelay;
+        limit_req_status 429;
+        include /etc/nginx/itsm-proxy.inc;
+    }
+
+    location / {
+        include /etc/nginx/itsm-proxy.inc;
+    }
+}

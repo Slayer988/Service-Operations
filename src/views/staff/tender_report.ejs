@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<p><a href="/tenders/reports">← Tender reports</a></p>
+<h1><%= report.title %></h1>
+<% if (report.subtitle) { %><p class="muted"><%= report.subtitle %></p><% } %>
+<% if (takesPeriod) { %><form method="get" class="rowform"><label class="inline">From <input type="date" name="from" value="<%= query.from || '' %>"></label><label class="inline">to <input type="date" name="to" value="<%= query.to || '' %>"></label><button class="btn ghost" type="submit">Apply</button></form><% } %>
+<% if (report.summary && report.summary.length) { %><p><% report.summary.forEach(function (s) { %><b><%= s[0] %>:</b> <%= s[1] %> &nbsp; <% }) %></p><% } %>
+<p>Download: <a href="?format=xlsx<%= qs ? '&' + qs : '' %>">Excel</a> · <a href="?format=pdf<%= qs ? '&' + qs : '' %>">PDF</a> · <a href="?format=csv<%= qs ? '&' + qs : '' %>">CSV</a></p>
+<% if (report.rows.length) { %>
+<table class="grid"><thead><tr><% report.columns.forEach(function (c) { %><th><%= c.header %></th><% }) %></tr></thead><tbody>
+<% report.rows.forEach(function (r) { %><tr><% report.columns.forEach(function (c) { %><td class="<%= c.type === 'money' || c.type === 'integer' || c.type === 'percent' || c.type === 'number' ? 'num' : '' %>"><%= cell(r[c.key], c) %></td><% }) %></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No records match this report.</p><% } %>
+<%- include('../partials/footer') %>

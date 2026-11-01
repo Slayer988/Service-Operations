@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>My tickets</h1><a class="btn" href="/portal/tickets/new">New ticket</a></div>
+<nav class="tabs"><a href="?view=open" class="<%= view === 'open' ? 'on' : '' %>">Open</a><a href="?view=closed" class="<%= view === 'closed' ? 'on' : '' %>">Resolved and closed</a></nav>
+<form method="get" class="filters"><input type="hidden" name="view" value="<%= view %>"><input type="search" name="q" value="<%= search %>" placeholder="Search subject or reference"><button class="btn ghost" type="submit">Search</button></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Reference</th><th>Subject</th><th>Service</th><th>Priority</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+<% rows.forEach(function (t) { %>
+<tr><td><a href="/portal/tickets/<%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td><td><%= t.service_name || '—' %></td>
+<td><%- include('../partials/priority', { priority: t.priority }) %></td><td><%= statusLabels[t.status] %></td><td><%= fmt.dt(t.updated_at) %></td></tr>
+<% }) %></tbody></table>
+<% } else { %><p class="empty">No tickets here.</p><% } %>
+<%- include('../partials/footer') %>

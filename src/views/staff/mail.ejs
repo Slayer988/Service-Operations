@@ -1,0 +1,69 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/admin">Administration</a> › E-mail</p>
+<h1>Mailboxes and e-mail</h1>
+<p class="muted">Up to five shared mailboxes create tickets automatically. Each is read through Microsoft 365 (Graph), Google Workspace (Gmail API) or plain IMAP. Mail is followed by arrival order, not by the "unread" flag, so people reading it in Outlook do not hide it from the application. When a mailbox is first connected, only unread mail from the last two days becomes tickets. <b>Passwords, client secrets and key files are never stored here</b>: they are read from variables in the server environment file.</p>
+<% mailboxes.forEach(function (m) { %>
+<section class="card" id="mb-<%= m.key %>"><h2><%= m.name %> <span class="pill"><%= m.enabled ? 'enabled' : 'disabled' %></span> <span class="pill"><%= providerLabels[m.provider] %></span> <span class="pill"><%= m.queue === 'security' ? 'Security queue' : 'IT Services queue' %></span></h2>
+<% const h = health[m.id]; const st = stats[m.id] || {}; %>
+<p>Health: <b class="<%= !m.enabled ? '' : (h.healthy ? 'ok' : 'bad') %>"><%= !m.enabled ? 'not monitored (disabled)' : (h.healthy ? (m.last_status === 'ok' ? 'reading mail' : m.last_status) : 'NOT BEING READ') %></b>
+<% if (m.enabled && !h.healthy) { %> — <%= h.reason %><% } %></p>
+<p class="muted"><%= m.address %> · last check <%= fmt.dt(m.last_sync_at) %> · last success <%= fmt.dt(m.last_success_at) %> · last message received <%= fmt.dt(st.last_at) %> · <%= st.n24 || 0 %> message(s) in the last 24 hours<% if (m.last_error) { %><br><span class="bad"><%= m.last_error %></span><% } %></p>
+<% if (canManage) { %>
+<form method="post" action="/mail/mailboxes/<%= m.id %>" data-provider-form><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>Display name</label><input name="name" value="<%= m.name %>" maxlength="40" required></p>
+<p><label>Mailbox address</label><input name="address" type="email" value="<%= m.address %>" required></p>
+<p><label>How to read it</label><select name="provider" data-provider-select><% providerList.forEach(function (k) { %><option value="<%= k %>" <%= m.provider === k ? 'selected' : '' %>><%= providerLabels[k] %></option><% }) %></select></p>
+<p><label>Team (queue) for its tickets</label><select name="queue"><option value="it_services" <%= m.queue === 'it_services' ? 'selected' : '' %>>IT Services</option><option value="security" <%= m.queue === 'security' ? 'selected' : '' %>>Security (restricted)</option></select></p>
+<p data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>><label>Microsoft tenant ID</label><input name="tenant_id" value="<%= m.tenant_id %>" placeholder="11111111-2222-3333-4444-555555555555"></p>
+<p data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>><label>Application (client) ID</label><input name="client_id" value="<%= m.client_id %>" placeholder="from the Entra app registration"></p>
+<p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP server</label><input name="imap_host" value="<%= m.imap_host %>" placeholder="mail.example.com"></p>
+<p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP port</label><input name="imap_port" value="<%= m.imap_port %>"></p>
+<p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP user</label><input name="imap_user" value="<%= m.imap_user %>"><small>Exchange on-premises shared mailbox: <code>DOMAIN\user\sharedmailbox</code> or the mailbox's own login.</small></p>
+<p><label><span data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>>Variable holding the mailbox password</span><span data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>>Variable holding the client secret</span><span data-show-for="gmail" <%= m.provider === 'gmail' ? '' : 'hidden' %>>Variable holding the path of the service-account key file</span></label>
+<input name="secret_env" value="<%= m.secret_env %>" placeholder="MAILBOX_<%= m.key.toUpperCase() %>_SECRET"><small><%= secretsConfigured[m.id] ? 'The variable is set on the server.' : 'The variable is not set on the server yet.' %> It goes in /etc/itsm/itsm.env, never here.</small></p>
+<p><label>Folder</label><input name="imap_folder" value="<%= m.imap_folder %>"><small>INBOX (Inbox) unless you read a sub-folder.</small></p>
+<p><label>Ticket category</label><input name="category" value="<%= m.category %>"></p>
+<p><label>Default priority</label><select name="default_priority"><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= m.default_priority === p ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select></p>
+<p><label>Starting tier / team</label><select name="tier"><% ['l1','l2','l3'].forEach(function (t) { %><option value="<%= t %>" <%= m.tier === t ? 'selected' : '' %>><%= t.toUpperCase() %></option><% }) %></select></p>
+<p><label>SLA policy</label><select name="sla_policy_id"><option value="">Default</option><% policies.forEach(function (p) { %><option value="<%= p.id %>" <%= m.sla_policy_id === p.id ? 'selected' : '' %>><%= p.name %></option><% }) %></select></p>
+<p><label>Check every (seconds)</label><input name="poll_seconds" value="<%= m.poll_seconds %>"></p>
+<p><label>Alert supervisors after (minutes without a successful check)</label><input name="stale_minutes" value="<%= m.stale_minutes %>"></p>
+<p><label>Max attachment size (MB)</label><input name="max_attachment_mb" value="<%= m.max_attachment_mb %>"></p>
+</div>
+<p><label class="inline" data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><input type="checkbox" name="imap_tls" <%= m.imap_tls ? 'checked' : '' %>> Use TLS</label> &nbsp; <label class="inline"><input type="checkbox" name="enabled" <%= m.enabled ? 'checked' : '' %>> Enabled</label> &nbsp; <label class="inline"><input type="checkbox" name="mark_seen" <%= m.mark_seen ? 'checked' : '' %>> Mark processed mail as read<span data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>> (needs Mail.ReadWrite)</span><span data-show-for="gmail" <%= m.provider === 'gmail' ? '' : 'hidden' %>> (needs the gmail.modify scope)</span></label></p>
+<div class="row-actions"><button class="btn" type="submit">Save</button></div></form>
+<div class="row-actions">
+<form method="post" action="/mail/mailboxes/<%= m.id %>/test"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Test connection (uses the saved settings)</button></form>
+<form method="post" action="/mail/mailboxes/<%= m.id %>/delete" data-confirm="Remove this mailbox from the application? This only works while it has no history."><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Remove</button></form>
+</div>
+<% } else { %><p><%= m.address %> → <%= m.category %>, <%= priorityLabels[m.default_priority] %>, SLA <%= m.policy_name || 'default' %></p><% } %>
+</section>
+<% }) %>
+<% if (canManage && mailboxes.length < maxMailboxes) { %>
+<section class="card"><h2>Add a mailbox <small class="muted">(<%= mailboxes.length %> of <%= maxMailboxes %> used)</small></h2>
+<form method="post" action="/mail/mailboxes"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>Display name</label><input name="name" maxlength="40" required placeholder="Billing"></p>
+<p><label>Mailbox address</label><input name="address" type="email" required placeholder="billing@example.com"></p>
+<p><label>How to read it</label><select name="provider"><% providerList.forEach(function (k) { %><option value="<%= k %>" <%= k === 'graph' ? 'selected' : '' %>><%= providerLabels[k] %></option><% }) %></select></p>
+<p><label>Team (queue)</label><select name="queue"><option value="it_services">IT Services</option><option value="security">Security (restricted)</option></select></p>
+</div><button class="btn" type="submit">Add</button></form></section>
+<% } %>
+
+<h2>Processed messages</h2>
+<form method="get" class="filters"><select name="outcome"><option value="">Any outcome</option><% ['pending','ticket_created','reply_appended','verification','ignored','rejected','failed'].forEach(function (o) { %><option value="<%= o %>" <%= outcome === o ? 'selected' : '' %>><%= o.replace('_', ' ') %></option><% }) %></select><button class="btn ghost" type="submit">Filter</button></form>
+<table class="grid"><thead><tr><th>Received</th><th>Mailbox</th><th>From</th><th>Subject</th><th>Outcome</th><th>Ticket</th><th></th></tr></thead><tbody>
+<% messages.forEach(function (m) { %><tr><td><%= fmt.dt(m.received_at) %></td><td><%= m.mailbox_key %></td><td><%= m.from_addr %></td><td><a href="/mail/messages/<%= m.id %>"><%= m.subject || '(none)' %></a></td><td class="<%= m.outcome === 'failed' ? 'bad' : '' %>"><%= m.outcome.replace('_', ' ') %><br><small><%= m.detail %></small></td>
+<td><% if (m.ticket_ref) { %><a href="/tickets/<%= m.ticket_ref %>"><%= m.ticket_ref %></a><% } %></td>
+<td><% if (['failed','ignored','rejected'].includes(m.outcome)) { %><form method="post" action="/mail/messages/<%= m.id %>/reprocess"><%- include('../partials/csrf') %><button class="link" type="submit">Reprocess</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<% if (!messages.length) { %><p class="empty">No messages yet.</p><% } %>
+
+<% if (canManage) { %>
+<h2>Outgoing e-mail log</h2>
+<table class="grid"><thead><tr><th>Created</th><th>To</th><th>Subject</th><th>Status</th><th>Attempts</th><th></th></tr></thead><tbody>
+<% notifications.forEach(function (n) { %><tr><td><%= fmt.dt(n.created_at) %></td><td><%= n.recipient_email %></td><td><%= n.subject %></td><td class="<%= n.status === 'failed' ? 'bad' : '' %>"><%= n.status %><br><small><%= n.last_error %></small></td><td><%= n.attempts %></td>
+<td><% if (n.status === 'failed') { %><form method="post" action="/mail/notifications/<%= n.id %>/retry"><%- include('../partials/csrf') %><button class="link" type="submit">Retry</button></form><% } %></td></tr><% }) %></tbody></table>
+<% } %>
+<%- include('../partials/footer') %>

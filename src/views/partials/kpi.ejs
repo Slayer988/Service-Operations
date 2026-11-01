@@ -1,0 +1,6 @@
+<% var gd = typeof good !== 'undefined' ? good : 'up'; var dl = typeof delta !== 'undefined' ? delta : null; var tn = typeof tone !== 'undefined' ? tone : ''; %>
+<a href="<%= href %>" class="kpi <%= tn %>">
+  <span class="kic"><svg class="ic"><use href="#i-<%= icon %>"/></svg></span>
+  <span><span class="kl"><%= label %></span><br>
+  <span class="kv <%= typeof small !== 'undefined' && small ? 'sm' : '' %>"><%= value %><% if (dl) { %><span class="kd <%= dl.dir === 'flat' ? 'flat' : (gd === dl.dir ? 'good' : 'worse') %>"><%= dl.dir === 'up' ? '↑ ' : dl.dir === 'down' ? '↓ ' : '' %><%= dl.text.replace(/^[+-]/, '') %></span><% } %></span></span>
+</a>

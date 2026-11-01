@@ -1,0 +1,97 @@
+<%- include('../partials/header') %>
+<p><a href="/customers">← Customers</a></p>
+<h1><%= customer.name %> <span class="pill"><%= customer.status %></span></h1>
+<p class="muted"><%= customer.code %><% if (csid) { %> · CSID <b><%= csid.csid %></b> <span class="pill"><%= csid.status %></span><% } %><% if (customer.industry) { %> · <%= customer.industry %><% } %></p>
+
+<% if (canManage) { %>
+<section class="card"><h2>Customer details</h2><form method="post" action="/customers/<%= customer.id %>"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label for="name">Name</label><input id="name" name="name" value="<%= customer.name %>" required maxlength="120"></p>
+<p><label for="industry">Industry</label><input id="industry" name="industry" value="<%= customer.industry %>" maxlength="80"></p>
+<p><label for="status">Status</label><select id="status" name="status"><option value="active" <%= customer.status === 'active' ? 'selected' : '' %>>Active</option><option value="suspended" <%= customer.status === 'suspended' ? 'selected' : '' %>>Suspended (users cannot sign in; history is kept)</option></select></p></div>
+<p><label for="notes">Notes</label><textarea id="notes" name="notes" rows="2"><%= customer.notes %></textarea></p>
+<button class="btn" type="submit">Save</button></form></section>
+<% } %>
+
+<section class="card"><h2>CSID</h2>
+<% if (csid) { %>
+<p>This customer's one CSID is <b><%= csid.csid %></b>. Every service below belongs to it.</p>
+<% if (canManage) { %><form method="post" action="/csids/<%= csid.id %>/status" class="inline"><%- include('../partials/csrf') %>
+<select name="status" aria-label="CSID status"><% ['active','suspended','ended'].forEach(function (s) { %><option <%= csid.status === s ? 'selected' : '' %>><%= s %></option><% }) %></select>
+<input name="description" value="<%= csid.description %>" maxlength="300" placeholder="Description (optional)" aria-label="CSID description"> <button class="btn ghost" type="submit">Save CSID</button></form><% } %>
+<% } else { %>
+<p class="empty">This customer has no CSID yet.</p>
+<% if (canManage) { %><form method="post" action="/customers/<%= customer.id %>/csids"><%- include('../partials/csrf') %><button class="btn" type="submit">Generate the CSID</button></form><% } %>
+<% } %>
+</section>
+
+<section class="card"><h2>Services</h2>
+<table class="grid"><thead><tr><th>Service</th><th>From the catalogue</th><th>Status</th><th>Contracts</th><th>SLA policy</th><th>Execution engineer</th></tr></thead><tbody>
+<% services.forEach(function (s) { %>
+<tr><td><a href="/services/<%= s.id %>"><%= s.name %></a></td><td><%= s.catalogue_name || s.service_type %></td><td><%= s.status %></td><td><%= s.contract_count ? s.contract_refs : '—' %></td><td><%= s.policy_name || 'from the contracts / default' %></td><td><%= s.engineer_name || '—' %></td></tr>
+<% }) %></tbody></table>
+<% if (!services.length) { %><p class="empty">No services yet.</p><% } %>
+<% if (canManage) { %>
+<details><summary>Add a service</summary>
+<form method="post" action="/customers/<%= customer.id %>/services"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>Service from the catalogue</label><select name="catalogue_id" required><option value="">Choose…</option><% catalogue.forEach(function (c) { %><option value="<%= c.id %>"><%= c.name %></option><% }) %></select></p>
+<p><label>Name for this customer (optional)</label><input name="name" maxlength="120" placeholder="Defaults to the catalogue name"></p>
+<p><label>SLA policy (overrides the contracts)</label><select name="sla_policy_id"><option value="">Use the contracts / default</option><% policies.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %></select></p>
+<p><label>Site</label><select name="site_id"><option value="">—</option><% sites.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p>
+<p><label>Service owner</label><select name="owner_id"><option value="">—</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p>
+<p><label>Start date</label><input type="date" name="start_date"></p><p><label>End date</label><input type="date" name="end_date"></p></div>
+<p><label>Description</label><input name="description" maxlength="500"></p>
+<button class="btn" type="submit">Add service</button></form></details>
+<% } %>
+</section>
+
+<% if (canContractView) { %>
+<section class="card"><h2>Contracts</h2>
+<table class="grid"><thead><tr><th>Reference</th><th>Title</th><th>Type</th><th>Status</th><th>From</th><th>To</th><th>SLA policy</th><th>Services</th></tr></thead><tbody>
+<% contracts.forEach(function (k) { %><tr><td><a href="/contracts/<%= k.id %>"><%= k.reference %></a></td><td><%= k.title %></td><td><%= k.type %></td><td><%= k.status.replace(/_/g, ' ') %></td><td><%= fmt.date(k.start_date) %></td><td><%= fmt.date(k.end_date) %></td><td><%= k.policy_name || '—' %></td><td><%= k.services %></td></tr><% }) %></tbody></table>
+<% if (!contracts.length) { %><p class="empty">No contracts yet.</p><% } %>
+<% if (canContract) { %><p><a class="btn ghost" href="/contracts/new?customer_id=<%= customer.id %>">New contract for <%= customer.name %></a></p><% } %>
+</section>
+<% } %>
+
+<section class="card"><h2>Sites</h2>
+<% if (!sites.length) { %><p class="empty">No sites yet.</p><% } %>
+<% sites.forEach(function (s) { %>
+<% if (canManage) { %>
+<form method="post" action="/sites/<%= s.id %>" class="inline rowform"><%- include('../partials/csrf') %>
+<input name="name" value="<%= s.name %>" required maxlength="120" aria-label="Site name"> <input name="address" value="<%= s.address %>" maxlength="300" placeholder="Address" aria-label="Address">
+<button class="btn ghost" type="submit">Save</button>
+<button class="link danger" type="submit" formaction="/sites/<%= s.id %>/delete" data-confirm="Remove the site <%= s.name %>?">Remove</button></form>
+<% } else { %><p><%= s.name %> <small><%= s.address %></small></p><% } %>
+<% }) %>
+<% if (canManage) { %><form method="post" action="/customers/<%= customer.id %>/sites"><%- include('../partials/csrf') %><p><input name="name" placeholder="New site name" required> <input name="address" placeholder="Address"> <button class="btn ghost" type="submit">Add site</button></p></form><% } %></section>
+
+<section class="card"><h2>Customer users</h2>
+<% if (!users.length) { %><p class="empty">No customer users yet.</p><% } %>
+<% if (users.length) { %><table class="grid"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last sign-in</th><% if (canManage) { %><th></th><% } %></tr></thead><tbody>
+<% users.forEach(function (x) { %><tr>
+<% if (canManage) { %>
+<td><input name="name" form="cu<%= x.id %>" value="<%= x.name %>" maxlength="120" aria-label="Name"></td><td><%= x.email %></td>
+<td><select name="role" form="cu<%= x.id %>" aria-label="Role"><option value="customer_user" <%= x.role === 'customer_user' ? 'selected' : '' %>>User</option><option value="customer_admin" <%= x.role === 'customer_admin' ? 'selected' : '' %>>IT administrator</option></select></td>
+<td><input type="checkbox" name="active" form="cu<%= x.id %>" <%= x.active ? 'checked' : '' %> aria-label="Active"></td><td><%= fmt.dt(x.last_login_at) %></td>
+<td><form id="cu<%= x.id %>" method="post" action="/customers/<%= customer.id %>/users/<%= x.id %>" class="inline"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Save</button>
+<% if (x.auth_source === 'local') { %><button class="link" type="submit" formaction="/customers/<%= customer.id %>/users/<%= x.id %>/reset-password" data-confirm="Reset the password for <%= x.email %>?">Reset password</button><% } %></form></td>
+<% } else { %><td><%= x.name %></td><td><%= x.email %></td><td><%= roleLabels[x.role] %></td><td><%= x.active ? 'Yes' : 'No' %></td><td><%= fmt.dt(x.last_login_at) %></td><% } %></tr><% }) %></tbody></table><% } %>
+<% if (canManage) { %><details><summary>Add a user</summary><form method="post" action="/customers/<%= customer.id %>/users"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Name</label><input name="name" required></p><p><label>Email</label><input name="email" type="email" required></p>
+<p><label>Role</label><select name="role"><option value="customer_user">User</option><option value="customer_admin">IT administrator</option></select></p></div>
+<button class="btn" type="submit">Add user</button></form></details><% } %></section>
+
+<% if (canManage) { %>
+<section class="card"><h2>Delete this customer</h2>
+<% if (canDelete) { %>
+<p class="muted">Nothing refers to this customer (no tickets, services, contracts, opportunities or tenders), so it can be deleted for good. Its sites, CSID and users are deleted with it.</p>
+<form method="post" action="/customers/<%= customer.id %>/delete"><%- include('../partials/csrf') %>
+<p><label for="confirm">Type the customer code <b><%= customer.code %></b> to confirm</label><input id="confirm" name="confirm" autocomplete="off" required maxlength="40"></p>
+<button class="btn danger" type="submit" data-confirm="Delete <%= customer.name %> permanently?">Delete customer</button></form>
+<% } else { %>
+<p class="muted">This customer cannot be deleted because it has history: <%= used.tickets %> ticket(s), <%= used.services %> service(s), <%= used.contracts %> contract(s), <%= used.opportunities %> opportunity(ies), <%= used.tenders %> tender(s). Set its status to <b>Suspended</b> instead; history is kept and its users cannot sign in.</p>
+<% } %>
+</section>
+<% } %>
+<%- include('../partials/footer') %>

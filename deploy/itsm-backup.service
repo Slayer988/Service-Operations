@@ -1,0 +1,7 @@
+[Unit]
+Description=Service Operations (Ops) backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/itsm-backup

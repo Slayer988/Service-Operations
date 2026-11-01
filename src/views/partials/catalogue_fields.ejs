@@ -1,0 +1,13 @@
+<div class="grid2">
+<p><label>Service name</label><input name="name" value="<%= e.name %>" required maxlength="100"></p>
+<p><label>Code (optional, e.g. CAT-VPN)</label><input name="code" value="<%= e.code %>" maxlength="20" pattern="[A-Za-z0-9-]*"></p>
+<p><label>Ticket category used when it is requested</label><select name="category"><option value="">—</option><% categories.forEach(function (c) { %><option <%= e.category === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+<p><label>Requested as</label><select name="request_type"><option value="request" <%= e.request_type === 'request' ? 'selected' : '' %>>Service request</option><option value="incident" <%= e.request_type === 'incident' ? 'selected' : '' %>>Incident</option></select></p>
+<p><label>Default SLA policy</label><select name="sla_policy_id"><option value="">Use the default</option><% policies.forEach(function (p) { %><option value="<%= p.id %>" <%= e.sla_policy_id === p.id ? 'selected' : '' %>><%= p.name %></option><% }) %></select></p>
+<p><label>Owner team</label><input name="owner_team" value="<%= e.owner_team %>" maxlength="100"></p>
+<p><label>Icon</label><select name="icon"><% icons.forEach(function (i) { %><option <%= e.icon === i ? 'selected' : '' %>><%= i %></option><% }) %></select></p>
+<p><label>Order (smaller first)</label><input type="number" name="sort_order" min="0" max="9999" value="<%= e.sort_order %>"></p>
+</div>
+<p><label>Description</label><textarea name="description" rows="2" maxlength="500"><%= e.description %></textarea></p>
+<p><label class="inline"><input type="checkbox" name="featured" <%= e.featured ? 'checked' : '' %>> Show as a tile on the dashboards (the first eight)</label>
+<label class="inline"><input type="checkbox" name="active" <%= e.active ? 'checked' : '' %>> Active (offered to customers)</label></p>

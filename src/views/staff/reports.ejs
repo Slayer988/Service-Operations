@@ -1,0 +1,19 @@
+<%- include('../partials/header') %>
+<h1>Service Desk Reports</h1>
+<p class="muted">Choose a report category. Every report can be viewed here and downloaded as Excel, PDF or CSV. The period and customer you choose below apply to all of them.</p>
+<form method="get" class="filters wide"><label class="inline">From <input type="date" name="from" value="<%= f.from %>"></label><label class="inline">To <input type="date" name="to" value="<%= f.to %>"></label>
+<select name="customer" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer || '') === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+<button class="btn ghost" type="submit">Apply</button></form>
+<nav class="tabs" aria-label="Report categories"><% categories.forEach(function (c) { %><a href="#cat-<%= c.id %>"><%= c.title %></a><% }) %></nav>
+<% categories.forEach(function (c) { %>
+<section class="repcat" id="cat-<%= c.id %>"><h2><%= c.title %></h2><p class="muted"><%= c.text %></p>
+<div class="cols3">
+<% c.reports.forEach(function (r) { %>
+<section class="card"><h3><%= r.title %></h3><p class="muted"><%= r.description %></p>
+<p><a class="btn ghost small" href="/reports/<%= r.id %>?<%= qs %>">View</a>
+<a href="/reports/<%= r.id %>?format=xlsx&<%= qs %>">Excel</a> · <a href="/reports/<%= r.id %>?format=pdf&<%= qs %>">PDF</a> · <a href="/reports/<%= r.id %>?format=csv&<%= qs %>">CSV</a></p>
+<% if (!r.period) { %><p class="muted">A snapshot of what is open now; the period does not apply.</p><% } %></section>
+<% }) %>
+</div></section>
+<% }) %>
+<%- include('../partials/footer') %>

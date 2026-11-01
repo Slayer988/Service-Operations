@@ -1,0 +1,17 @@
+<%- include('../partials/header') %>
+<h1>My account</h1>
+<section class="card">
+  <p><b><%= user.name %></b> · <%= user.email %> · <%= roleLabels[user.role] %></p>
+  <p>Two-step verification: <b><%= user.totp_enabled ? 'on' : 'off' %></b> · <a href="/account/mfa">Manage</a></p>
+</section>
+<% if (user.auth_source === 'ldap') { %><section class="card"><p>Your password is managed in Active Directory. Change it there.</p></section><% } else { %><section class="card">
+  <h2>Change password</h2>
+  <form method="post" action="/account/password">
+    <%- include('../partials/csrf') %>
+    <p><label for="current">Current password</label><input id="current" name="current" type="password" autocomplete="current-password" required></p>
+    <p><label for="next1">New password</label><input id="next1" name="next1" type="password" autocomplete="new-password" required><small>At least 12 characters, mixing three of: lower case, upper case, digits, symbols.</small></p>
+    <p><label for="next2">Repeat new password</label><input id="next2" name="next2" type="password" autocomplete="new-password" required></p>
+    <button class="btn" type="submit">Change password</button>
+  </form>
+</section><% } %>
+<%- include('../partials/footer') %>

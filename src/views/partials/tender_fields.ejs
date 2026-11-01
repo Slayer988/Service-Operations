@@ -1,0 +1,26 @@
+<% var v = function (k) { return form[k] === null || form[k] === undefined ? '' : form[k]; };
+   var sel = function (a, b) { return String(a) === String(b) ? 'selected' : ''; };
+   var dt = function (k) { var x = form[k]; if (!x) return ''; if (typeof x === 'string' && x.length === 16) return x; return local(x); }; %>
+<div class="grid2">
+<p><label for="title">Tender title</label><input id="title" name="title" maxlength="250" required value="<%= v('title') %>"></p>
+<p><label for="issuer">Procuring entity (issuing organisation)</label><input id="issuer" name="issuer" maxlength="200" required value="<%= v('issuer') %>"></p>
+<p><label for="tender_no">Issuer's reference / tender number</label><input id="tender_no" name="tender_no" maxlength="120" value="<%= v('tender_no') %>"></p>
+<p><label for="type">Tender type</label><select id="type" name="type"><% types.forEach(function (x) { %><option <%= sel(v('type'), x) %>><%= x %></option><% }) %></select></p>
+<p><label for="source">Where it was found</label><input id="source" name="source" maxlength="200" placeholder="Procurement portal, newspaper, invitation…" value="<%= v('source') %>"></p>
+<p><label for="category">Category</label><input id="category" name="category" maxlength="80" value="<%= v('category') %>"></p>
+<p><label for="customer_id">Existing customer <small>(optional)</small></label><select id="customer_id" name="customer_id"><option value="">—</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(v('customer_id'), c.id) %>><%= c.name %></option><% }) %></select></p>
+<% if (opportunities.length) { %><p><label for="opportunity_id">Linked pipeline opportunity</label><select id="opportunity_id" name="opportunity_id"><option value="">—</option><% opportunities.forEach(function (o) { %><option value="<%= o.id %>" <%= sel(v('opportunity_id'), o.id) %>><%= o.ref %> · <%= o.name %></option><% }) %></select></p>
+<% } else if (v('opportunity_id')) { %><input type="hidden" name="opportunity_id" value="<%= v('opportunity_id') %>"><% } %>
+<p><label for="owner_id">Owner / bid manager</label><select id="owner_id" name="owner_id"><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(ownerId, s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label for="department">Department</label><input id="department" name="department" maxlength="100" list="deptlist" value="<%= v('department') %>"><datalist id="deptlist"><% departments.forEach(function (d) { %><option value="<%= d %>"><% }) %></datalist></p>
+<p><label for="business_unit">Business unit</label><input id="business_unit" name="business_unit" maxlength="100" value="<%= v('business_unit') %>"></p>
+<p><label for="est_value">Estimated value</label><input id="est_value" name="est_value" inputmode="decimal" value="<%= v('est_value') %>"></p>
+<p><label for="currency">Currency</label><select id="currency" name="currency"><% currencies.forEach(function (c) { %><option <%= sel(v('currency') || defaultCurrency, c) %>><%= c %></option><% }) %></select></p>
+<p><label for="published_on">Published on</label><input id="published_on" name="published_on" type="date" value="<%= v('published_on') ? String(v('published_on')).slice(0, 10) : '' %>"></p>
+<p><label for="clarification_due">Clarification questions due</label><input id="clarification_due" name="clarification_due" type="datetime-local" value="<%= dt('clarification_due') %>"></p>
+<p><label for="site_visit_at">Site visit / briefing</label><input id="site_visit_at" name="site_visit_at" type="datetime-local" value="<%= dt('site_visit_at') %>"></p>
+<p><label for="submission_due">Submission deadline (<%= timezone %>)</label><input id="submission_due" name="submission_due" type="datetime-local" required value="<%= dt('submission_due') %>"></p>
+</div>
+<p><label for="description">Tender description</label><textarea id="description" name="description" rows="3" maxlength="4000"><%= v('description') %></textarea></p>
+<p><label for="scope">Scope of work and requirements</label><textarea id="scope" name="scope" rows="3" maxlength="4000"><%= v('scope') %></textarea></p>
+<p><label for="notes">Notes</label><textarea id="notes" name="notes" rows="2" maxlength="5000"><%= v('notes') %></textarea></p>

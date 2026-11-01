@@ -1,0 +1,29 @@
+{
+  "name": "service-operations",
+  "version": "1.9.0",
+  "description": "Service Operations (Ops) - multi-tenant service operations platform: tickets, SLAs, e-mail to ticket, service catalogue, contracts, tender management, pipeline tracking",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "worker": "node src/worker.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "node --test test/unit/*.test.js test/integration/*.test.js",
+    "test:unit": "node --test test/unit/*.test.js"
+  },
+  "dependencies": {
+    "connect-pg-simple": "^10.0.0",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "imapflow": "^1.0.164",
+    "ldapts": "^7.0.0",
+    "mailparser": "^3.7.1",
+    "multer": "^2.0.2",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1"
+  }
+}

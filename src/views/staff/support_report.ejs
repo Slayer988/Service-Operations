@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<p><a href="/pipeline/<%= o.id %>#support">← <%= o.ref %></a></p>
+<h1>Opportunity Support Report</h1>
+<p class="muted"><%= o.ref %> · <%= o.name %></p>
+<form method="get" class="rowform"><label class="inline">Period from <input type="date" name="from" value="<%= from %>"></label><label class="inline">to <input type="date" name="to" value="<%= to %>"></label><button class="btn ghost" type="submit">Apply</button></form>
+<p>Download: <a href="?format=pdf<%= qs ? '&' + qs : '' %>">PDF</a> · <a href="?format=xlsx<%= qs ? '&' + qs : '' %>">Excel</a></p>
+<% sections.forEach(function (s) { %>
+<section class="card"><h2><%= s.title %></h2>
+<% if (s.kv) { %><table class="grid kv"><tbody><% s.kv.forEach(function (row) { %><tr><th><%= row[0] %></th><td><%= row[1] || '—' %></td></tr><% }) %></tbody></table><% } %>
+<% if (s.text) { %><p><%= s.text %></p><% } %>
+<% if (s.table) { %><% if (s.table.rows.length) { %><table class="grid"><thead><tr><% s.table.columns.forEach(function (c) { %><th><%= c.header %></th><% }) %></tr></thead><tbody>
+<% s.table.rows.forEach(function (row) { %><tr><% s.table.columns.forEach(function (c) { %><td><%= row[c.key] === null || row[c.key] === undefined || row[c.key] === '' ? '—' : row[c.key] %></td><% }) %></tr><% }) %></tbody></table><% } else { %><p class="empty">None.</p><% } %><% } %>
+</section>
+<% }) %>
+<%- include('../partials/footer') %>

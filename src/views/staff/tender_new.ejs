@@ -1,0 +1,13 @@
+<%- include('../partials/header') %>
+<p><a href="/tenders">← Tender Management</a></p>
+<h1>Register a tender</h1>
+<% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+<section class="card">
+  <form method="post" action="/tenders">
+    <%- include('../partials/csrf') %>
+    <%- include('../partials/tender_fields', { form: form }) %>
+    <p><label>Start the tender as</label><select name="status"><option value="registered" <%= form.status === 'identified' ? '' : 'selected' %>>Registered</option><option value="identified" <%= form.status === 'identified' ? 'selected' : '' %>>Identified (not yet decided to pursue)</option></select></p>
+    <button class="btn" type="submit">Register tender</button> <a class="btn ghost" href="/tenders">Cancel</a>
+  </form>
+</section>
+<%- include('../partials/footer') %>

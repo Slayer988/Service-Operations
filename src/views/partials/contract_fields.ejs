@@ -1,0 +1,29 @@
+<% var v = function (k) { return form[k] === null || form[k] === undefined ? '' : form[k]; }; var sel = function (a, b) { return String(a) === String(b) ? 'selected' : ''; }; %>
+<div class="grid2">
+<p><label>Title</label><input name="title" value="<%= v('title') %>" required maxlength="200"></p>
+<p><label>Reference <small>(leave blank for the next number)</small></label><input name="reference" value="<%= v('reference') %>" maxlength="60" <%= typeof isEdit !== 'undefined' && isEdit ? 'disabled' : '' %>></p>
+<p><label>Contract with</label><select name="counterparty_kind"><% Object.keys(counterparties).forEach(function (k) { %><option value="<%= k %>" <%= sel(v('counterparty_kind') || 'customer', k) %>><%= counterparties[k] %></option><% }) %></select></p>
+<p><label>Customer <small>(for customer contracts)</small></label><select name="customer_id"><option value="">—</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(v('customer_id'), c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label>Supplier / partner name <small>(for supplier and partner contracts)</small></label><input name="supplier" value="<%= v('supplier') %>" maxlength="200"></p>
+<p><label>Type</label><select name="type"><% types.forEach(function (t) { %><option <%= sel(v('type'), t) %>><%= t %></option><% }) %></select></p>
+<p><label>Start date</label><input type="date" name="start_date" value="<%= v('start_date') %>" required></p>
+<p><label>End date</label><input type="date" name="end_date" value="<%= v('end_date') %>"></p>
+<p><label>Contract value</label><input name="value" value="<%= v('value') %>" inputmode="decimal" placeholder="e.g. 120000000"></p>
+<p><label>Annual contract value <small>(blank = spread over the term)</small></label><input name="annual_value" value="<%= v('annual_value') %>" inputmode="decimal"></p>
+<p><label>Currency</label><select name="currency"><% currencies.forEach(function (c) { %><option <%= sel(v('currency') || defaultCurrency, c) %>><%= c %></option><% }) %></select></p>
+<p><label>Contract owner</label><select name="owner_id"><option value="">—</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(v('owner_id'), s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label>Responsible department</label><input name="department" value="<%= v('department') %>" maxlength="100" list="deptlist"><datalist id="deptlist"><% departments.forEach(function (d) { %><option value="<%= d %>"><% }) %></datalist></p>
+<p><label>SLA policy <small>(used for tickets of the services it covers)</small></label><select name="sla_policy_id"><option value="">None</option><% policies.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(v('sla_policy_id'), p.id) %>><%= p.name %></option><% }) %></select></p>
+<p><label>Renewal date</label><input type="date" name="renewal_date" value="<%= v('renewal_date') %>"></p>
+<p><label>Notice period (days)</label><input type="number" name="notice_days" min="0" max="730" value="<%= v('notice_days') === '' ? 60 : v('notice_days') %>"></p>
+<p><label class="inline"><input type="checkbox" name="auto_renew" <%= form.auto_renew ? 'checked' : '' %>> Renews automatically</label></p>
+</div>
+<p><label>Renewal conditions / extension requirements</label><textarea name="renewal_terms" rows="2" maxlength="2000"><%= v('renewal_terms') %></textarea></p>
+<p><label>Description</label><textarea name="description" rows="3" maxlength="4000"><%= v('description') %></textarea></p>
+<p><label>Exclusions (work not covered)</label><textarea name="exclusions" rows="2" maxlength="2000"><%= v('exclusions') %></textarea></p>
+<p><label>Notes</label><textarea name="notes" rows="2" maxlength="4000"><%= v('notes') %></textarea></p>
+<div class="grid2">
+<p><label>Also notify (staff; hold Ctrl to pick several)</label><select multiple size="4" id="contact_picker" data-target="contact_ids"><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= (typeof contacts !== 'undefined' && contacts.some(function (c) { return c.id === s.id; })) ? 'selected' : '' %>><%= s.name %></option><% }) %></select>
+<input type="hidden" name="contact_ids" id="contact_ids" value="<%= (typeof contacts !== 'undefined') ? contacts.map(function (c) { return c.id; }).join(',') : '' %>"></p>
+<p><label>Extra e-mail addresses to notify</label><input name="extra_emails" value="<%= Array.isArray(form.extra_emails) ? form.extra_emails.join(', ') : v('extra_emails') %>" maxlength="1000" placeholder="name@example.com, ..."></p>
+</div>

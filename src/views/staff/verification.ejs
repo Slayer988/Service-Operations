@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<h1>Verification queue</h1>
+<p class="muted">E-mails from senders that could not be matched to a registered customer contact. Nothing here is linked to a customer until a person confirms it.</p>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Ref</th><th>Subject</th><th>Sender</th><th>Mailbox</th><th>Received</th></tr></thead><tbody>
+<% rows.forEach(function (t) { %><tr><td><a href="/tickets/<%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td><td><%= t.requester_email %></td><td><%= t.queue === 'security' ? 'Security' : 'IT Services' %></td><td><%= fmt.dt(t.created_at) %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">Nothing is waiting for verification.</p><% } %>
+<%- include('../partials/footer') %>

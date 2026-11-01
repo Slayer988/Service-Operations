@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<h1>Customers</h1>
+<table class="grid"><thead><tr><th>Customer</th><th>Code</th><th>CSID</th><th>Industry</th><th>Status</th><th>Services</th><th>Contracts</th><th>Users</th></tr></thead><tbody>
+<% rows.forEach(function (c) { %><tr><td><a href="/customers/<%= c.id %>"><%= c.name %></a></td><td><%= c.code %></td><td><%= c.csid || '—' %></td><td><%= c.industry || '—' %></td><td><%= c.status %></td><td><%= c.services %></td><td><%= c.contracts %></td><td><%= c.users %></td></tr><% }) %>
+</tbody></table>
+<% if (!rows.length) { %><p class="empty">No customers yet.</p><% } %>
+<% if (can('customer.manage')) { %>
+<section class="card"><h2>Add a customer</h2>
+<p class="muted">Each customer gets exactly one CSID, generated automatically.</p>
+<form method="post" action="/customers"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label for="name">Name</label><input id="name" name="name" required></p><p><label for="code">Short code</label><input id="code" name="code" required maxlength="20" placeholder="e.g. STANBIC"></p>
+<p><label for="industry">Industry (optional)</label><input id="industry" name="industry" maxlength="80" placeholder="e.g. Banking"></p></div>
+<button class="btn" type="submit">Create customer</button></form></section>
+<% } %>
+<%- include('../partials/footer') %>

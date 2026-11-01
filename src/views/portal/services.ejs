@@ -1,0 +1,11 @@
+<%- include('../partials/header') %>
+<h1>My services</h1>
+<% csids.forEach(function (c) { %>
+<section class="card"><h2><%= c.csid %> <span class="pill"><%= c.status %></span></h2><p class="muted"><%= c.description %></p>
+<table class="grid"><thead><tr><th>Service</th><th>Type</th><th>Status</th><th>From</th><th>To</th></tr></thead><tbody>
+<% services.filter(function (s) { return s.csid_id === c.id; }).forEach(function (s) { %>
+<tr><td><%= s.name %></td><td><%= s.service_type %></td><td><%= s.status %></td><td><%= fmt.date(s.start_date) %></td><td><%= fmt.date(s.end_date) %></td></tr>
+<% }) %></tbody></table></section>
+<% }) %>
+<% if (!csids.length) { %><p class="empty">No services are registered yet. Please contact your service provider.</p><% } %>
+<%- include('../partials/footer') %>

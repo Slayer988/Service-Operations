@@ -1,0 +1,56 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/admin">Administration</a> › SLA</p>
+<h1>SLA policies and calendars</h1>
+<p class="notice">The targets below are placeholders. Real response, restoration and resolution targets must come from approved contracts. Changes apply to tickets created from now on. Minutes are minutes of <b>supported time</b> in the policy's calendar.</p>
+
+<h2>Policies</h2>
+<% policies.forEach(function (p) { var t = targets.filter(function (x) { return x.policy_id === p.id; }); %>
+<section class="card"><h3><%= p.name %> <small>calendar: <%= p.calendar_name %></small> <%= p.active ? '' : '(inactive)' %></h3>
+<% if (canConfigure) { %>
+<form method="post" action="/sla/policies/<%= p.id %>"><%- include('../partials/csrf') %>
+<table class="grid compact"><thead><tr><th>Priority</th><th>Response (min)</th><th>Restoration (min)</th><th>Resolution (min)</th></tr></thead><tbody>
+<% [1,2,3,4].forEach(function (n) { var r = t.find(function (x) { return x.priority === n; }) || {}; %>
+<tr><td><%= priorityLabels[n] %></td><td><input class="num" name="p<%= n %>_response" value="<%= r.response_min %>"></td><td><input class="num" name="p<%= n %>_restoration" value="<%= r.restoration_min %>"></td><td><input class="num" name="p<%= n %>_resolution" value="<%= r.resolution_min %>"></td></tr>
+<% }) %></tbody></table>
+<p><input name="description" value="<%= p.description %>" maxlength="300"> <label class="inline"><input type="checkbox" name="active" <%= p.active ? 'checked' : '' %>> Active</label>
+<select name="calendar_id"><% calendars.forEach(function (c) { %><option value="<%= c.id %>" <%= p.calendar_id === c.id ? 'selected' : '' %>><%= c.name %></option><% }) %></select></p>
+<button class="btn" type="submit">Save policy</button></form>
+<% } else { %>
+<table class="grid compact"><thead><tr><th>Priority</th><th>Response</th><th>Restoration</th><th>Resolution</th></tr></thead><tbody>
+<% t.forEach(function (r) { %><tr><td><%= priorityLabels[r.priority] %></td><td><%= r.response_min %> min</td><td><%= r.restoration_min %> min</td><td><%= r.resolution_min %> min</td></tr><% }) %></tbody></table>
+<% } %></section>
+<% }) %>
+<% if (canConfigure) { %>
+<section class="card"><h3>New policy</h3>
+<form method="post" action="/sla/policies"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Name</label><input name="name" required></p><p><label>Calendar</label><select name="calendar_id"><% calendars.forEach(function (c) { %><option value="<%= c.id %>"><%= c.name %></option><% }) %></select></p></div>
+<table class="grid compact"><thead><tr><th>Priority</th><th>Response</th><th>Restoration</th><th>Resolution</th></tr></thead><tbody>
+<% [1,2,3,4].forEach(function (n) { %><tr><td><%= priorityLabels[n] %></td><td><input class="num" name="p<%= n %>_response"></td><td><input class="num" name="p<%= n %>_restoration"></td><td><input class="num" name="p<%= n %>_resolution"></td></tr><% }) %></tbody></table>
+<p><input name="description" maxlength="300" placeholder="Description"></p><button class="btn" type="submit">Create policy</button></form></section>
+<% } %>
+
+<h2>Support calendars</h2>
+<% calendars.forEach(function (c) { %>
+<section class="card"><h3><%= c.name %> <small><%= c.timezone %></small></h3>
+<% if (canConfigure) { %>
+<form method="post" action="/sla/calendars/<%= c.id %>"><%- include('../partials/csrf') %>
+<p><label>Time zone</label><input name="timezone" value="<%= c.timezone %>"></p>
+<p><label>Schedule (weekday 1 = Monday; windows in 24-hour local time, "24:00" allowed)</label><textarea name="schedule" rows="4" class="mono"><%= schedules[c.id] %></textarea></p>
+<button class="btn" type="submit">Save calendar</button></form>
+<% } else { %><pre class="mono"><%= schedules[c.id] %></pre><% } %>
+<p><b>Holidays:</b>
+<% holidays.filter(function (h) { return h.calendar_id === c.id; }).forEach(function (h) { %>
+<span class="chip"><%= fmt.iso(h.day) %> <%= h.name %>
+<% if (canConfigure) { %><form method="post" action="/sla/calendars/<%= c.id %>/holidays" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="remove" value="<%= fmt.iso(h.day) %>"><button class="link" type="submit">remove</button></form><% } %></span>
+<% }) %></p>
+<% if (canConfigure) { %><form method="post" action="/sla/calendars/<%= c.id %>/holidays"><%- include('../partials/csrf') %><p><input type="date" name="day" required> <input name="name" placeholder="Holiday name"> <button class="btn ghost" type="submit">Add holiday</button></p></form><% } %>
+</section>
+<% }) %>
+<% if (canConfigure) { %>
+<section class="card"><h3>New calendar</h3>
+<form method="post" action="/sla/calendars"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Name</label><input name="name" required></p><p><label>Time zone</label><input name="timezone" value="Africa/Nairobi" required></p></div>
+<p><label>Schedule</label><textarea name="schedule" rows="4" class="mono">{"1":[["08:00","17:00"]],"2":[["08:00","17:00"]],"3":[["08:00","17:00"]],"4":[["08:00","17:00"]],"5":[["08:00","17:00"]],"6":[],"7":[]}</textarea></p>
+<button class="btn" type="submit">Create calendar</button></form></section>
+<% } %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,17 @@
+<% var isBare = typeof bare !== 'undefined' && bare; %>
+<% if (isBare) { %>
+</body>
+</html>
+<% } else if (!user) { %>
+</main>
+<footer class="foot"><%= appName %> <%= appVersion %></footer>
+</body>
+</html>
+<% } else { %>
+    </main>
+    <footer class="foot"><% if (typeof timezone !== 'undefined') { %>Times are shown in <%= timezone %>. <% } %><%= appName %> <%= appVersion %></footer>
+  </div>
+</div>
+</body>
+</html>
+<% } %>

@@ -1,0 +1,109 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Operations Overview</h1><span>
+<% if (can('project.view')) { %><a class="btn ghost" href="/projects">Projects</a> <% } %><% if (can('contract.view')) { %><a class="btn ghost" href="/contracts">Contracts</a> <% } %><% if (can('tender.view')) { %><a class="btn ghost" href="/tenders">Tenders</a> <% } %><% if (can('pipeline.view')) { %><a class="btn ghost" href="/pipeline">Pipeline</a><% } %></span></div>
+<p class="opsub">Weekly Performance Dashboard: Pre-Sales, Service Delivery and SLA Metrics</p>
+
+<%
+  var wk = o.week;
+  var mon = function (s) { return fmt.date(s); };
+%>
+<nav class="weeknav" aria-label="Week">
+  <a class="btn ghost small" href="/operations?week=<%= wk.prev %>">← Previous week</a>
+  <span class="weeklabel"><b>Week <%= wk.number %></b> · <%= mon(wk.start) %> to <%= mon(wk.end) %><%= wk.current ? ' (this week, so far)' : '' %></span>
+  <% if (!wk.current) { %><a class="btn ghost small" href="/operations">This week</a><% } %>
+  <% if (!wk.future) { %><a class="btn ghost small" href="/operations?week=<%= wk.next %>">Next week →</a><% } %>
+  <form method="get" action="/operations" class="weekpick"><label class="sr" for="weekpick">Go to the week containing</label><input id="weekpick" type="date" name="week" value="<%= wk.start %>"><button class="btn ghost small" type="submit">Go</button></form>
+</nav>
+
+<% if (o.tiles.length) { %>
+<div class="optiles">
+<% o.tiles.forEach(function (t) { %><%- include('../partials/opstile', { t: t }) %><% }) %>
+</div>
+<p class="muted opnote">Each tile compares the week with the week before. Hover a tile for how it is counted. Open counts are measured at the end of the week and rebuilt from created and closed dates.</p>
+<% } else { %><p class="empty">None of the figures on this page are available to your role.</p><% } %>
+
+<div class="oppanels">
+  <section class="oppanel hot">
+    <h2><svg class="ic"><use href="#i-star"/></svg> Key Highlights This Week</h2>
+    <div class="hlgrid">
+      <div class="hlcard"><small>Top Pre-sales Activity</small><b><%= o.highlights.top_presales || 'Not entered for this week' %></b></div>
+      <div class="hlcard"><small>Major Delivery Achievement</small><b><%= o.highlights.major_delivery || 'Not entered for this week' %></b></div>
+      <% if (o.highlights.showRisk) { %><a class="hlcard risk" href="/projects?health=red"><small>Key Risk / Escalation</small><b><%= o.highlights.risk %></b><em>projects off track or escalated</em></a><% } %>
+      <% if (o.highlights.showLeadership) { %><a class="hlcard lead" href="#escalated"><small>Leadership Support Required</small><b><%= o.highlights.leadership %></b><em>deals and projects escalated</em></a><% } %>
+    </div>
+    <% if (o.canEdit) { %>
+    <details class="hledit"><summary>Edit this week’s highlights</summary>
+      <form method="post" action="/operations/highlights"><%- include('../partials/csrf') %>
+        <input type="hidden" name="week" value="<%= wk.start %>">
+        <p><label for="hl1">Top pre-sales activity</label><input id="hl1" name="top_presales" maxlength="300" value="<%= o.highlights.top_presales %>"></p>
+        <p><label for="hl2">Major delivery achievement</label><input id="hl2" name="major_delivery" maxlength="300" value="<%= o.highlights.major_delivery %>"></p>
+        <button class="btn" type="submit">Save highlights</button></form></details>
+    <% } %>
+  </section>
+  <section class="oppanel teal">
+    <h2><svg class="ic"><use href="#i-pie"/></svg> Status Summary</h2>
+    <% if (o.summary.length) { %><dl class="statuslist"><% o.summary.forEach(function (s) { %><div><dt><%= s.label %></dt><dd class="<%= s.tone %>"><%= s.value %></dd></div><% }) %></dl><% } else { %><p class="empty">Nothing to summarise.</p><% } %>
+  </section>
+</div>
+
+<% if (o.escalated.length) { %>
+<section class="card" id="escalated"><h2>Needing leadership support</h2>
+<table class="grid"><thead><tr><th>Item</th><th>Type</th><th>What is needed</th></tr></thead><tbody>
+<% o.escalated.forEach(function (e) { %><tr><td><a href="/<%= e.kind === 'deal' ? 'pipeline' : 'projects' %>/<%= e.id %>"><%= e.ref %></a> <small><%= e.name %></small></td><td><%= e.kind === 'deal' ? 'Deal' : 'Project' %></td><td><%= e.note %></td></tr><% }) %></tbody></table></section>
+<% } %>
+
+<% if (d) { %>
+<h2 class="detailhead">More detail</h2>
+<p class="muted">Opportunities, tenders and contracts side by side. Figures are per currency; <%= cur %> is the default.</p>
+<% if (d.pipeline) { %>
+<h2>Sales pipeline</h2>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/pipeline?view=list&stage=open', icon: 'funnel', label: 'Open opportunities', value: d.pipeline.counts.open }) %>
+  <%- include('../partials/kpi', { href: '/pipeline?view=list&stage=open', icon: 'chart', label: 'Pipeline value (' + pc + ')', value: pt ? money(pt.open, pc) : '0', small: true }) %>
+  <%- include('../partials/kpi', { href: '/pipeline/reports/forecast', icon: 'chart', label: 'Projected revenue, weighted (' + pc + ')', value: pt ? money(pt.weighted, pc) : '0', small: true }) %>
+  <%- include('../partials/kpi', { href: '/pipeline/reports/winloss', icon: 'check', label: 'Conversion rate', value: d.pipeline.winRate === null ? '–' : d.pipeline.winRate + '%' }) %>
+  <%- include('../partials/kpi', { href: '/pipeline/sde', icon: 'clipboard', label: 'Technical task completion', value: d.pipeline.taskCompletion === null ? '–' : d.pipeline.taskCompletion + '%' }) %>
+</div>
+<div class="cols">
+  <section class="card"><div class="sechead"><h2>Open pipeline by stage</h2></div><%- stageChart %></section>
+  <section class="card"><div class="sechead"><h2>Technical support</h2></div>
+    <% if (d.pipeline.workload.length) { %><table class="grid"><thead><tr><th>Engineer</th><th>Opps</th><th>Open</th><th>Overdue</th><th>Done</th></tr></thead><tbody>
+    <% d.pipeline.workload.forEach(function (w) { %><tr><td><%= w.name %></td><td><%= w.opportunities %></td><td><%= w.open_tasks %></td><td class="<%= w.overdue ? 'bad' : '' %>"><%= w.overdue %></td><td><%= w.done %></td></tr><% }) %></tbody></table>
+    <% } else { %><p class="empty">No engineers are assigned to open opportunities.</p><% } %></section>
+</div>
+<% } %>
+
+<% if (d.tenders) { %>
+<h2>Tenders</h2>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/tenders?status=active', icon: 'file', label: 'Active tenders', value: d.tenders.counts.active }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=active', icon: 'clock', label: 'Deadlines in 14 days', value: d.tenders.counts.soon, tone: d.tenders.counts.overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/tenders/reports/winloss', icon: 'chart', label: 'Tender win rate', value: d.tenders.winRate === null ? '–' : d.tenders.winRate + '%' }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=awarded', icon: 'check', label: 'Awarded tenders', value: d.tenders.counts.awarded }) %>
+  <% d.tenders.awardedValue.slice(0, 1).forEach(function (m) { %><%- include('../partials/kpi', { href: '/tenders/reports/awards', icon: 'check', label: 'Awarded business (' + m.currency + ')', value: money(m.value, m.currency).replace(m.currency + ' ', ''), small: true }) %><% }) %>
+</div>
+<% } %>
+
+<% if (d.contracts) { %>
+<h2>Contracts</h2>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/contracts?status=live', icon: 'file', label: 'Active commitments', value: d.contracts.counts.active + d.contracts.counts.expiring_soon + d.contracts.counts.renewal }) %>
+  <%- include('../partials/kpi', { href: '/contracts?within=90', icon: 'clock', label: 'Expiring in 30 / 60 / 90 days', value: d.contracts.counts.d30 + ' / ' + d.contracts.counts.d60 + ' / ' + d.contracts.counts.d90, small: true, tone: d.contracts.counts.d30 ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/contracts?status=renewal_in_progress', icon: 'pulse', label: 'Under renewal', value: d.contracts.counts.renewal }) %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/obligations', icon: 'clipboard', label: 'Outstanding obligations', value: d.contracts.obligations.outstanding, tone: d.contracts.obligations.overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/contracts/reports/sla', icon: 'shield', label: 'SLA compliance', value: d.contracts.sla.pct === null ? '–' : d.contracts.sla.pct + '%' }) %>
+</div>
+<% } %>
+
+<% if (d.comparison.length) { %>
+<section class="card"><h2>Pipeline against secured contract value</h2>
+<table class="grid"><thead><tr><th>Currency</th><th>Open pipeline</th><th>Weighted pipeline</th><th>Contract value in force</th><th>Annual contract value</th></tr></thead><tbody>
+<% d.comparison.forEach(function (c) { %><tr><td><%= c.currency %></td><td class="num"><%= c.pipeline.toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td><td class="num"><%= c.weighted.toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td><td class="num"><%= c.secured.toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td><td class="num"><%= c.annual.toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td></tr><% }) %></tbody></table></section>
+<% } %>
+<% if (d.contracts && d.contracts.renewals.length) { %>
+<section class="card"><h2>Expiry and renewal exposure</h2>
+<table class="grid"><thead><tr><th>Contract</th><th>With</th><th>Ends</th><th>Days</th><th>Status</th></tr></thead><tbody>
+<% d.contracts.renewals.forEach(function (r) { %><tr><td><a href="/contracts/<%= r.id %>"><%= r.reference %></a> <small><%= r.title %></small></td><td><%= r.counterparty %></td><td><%= fmt.date(r.end_date) %></td><td class="<%= r.days_left <= 30 ? 'warn' : '' %>"><%= r.days_left %></td><td><%= r.status.replace(/_/g, ' ') %></td></tr><% }) %></tbody></table></section>
+<% } %>
+<% } %>
+<%- include('../partials/footer') %>

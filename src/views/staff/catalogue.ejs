@@ -1,0 +1,18 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/admin">Administration</a> › Service Catalogue</p>
+<h1>Service Catalogue</h1>
+<p class="muted">The services we offer. Customers pick from this list when they request help, and each customer's services are taken from it. <% if (canManage) { %>You can add, edit and retire entries at any time.<% } %></p>
+<table class="grid"><thead><tr><th>Service</th><th>Code</th><th>Ticket category</th><th>Request type</th><th>SLA policy</th><th>Owner team</th><th>Shown on dashboards</th><th>Customers</th><th>Status</th></tr></thead><tbody>
+<% rows.forEach(function (c) { %><tr>
+<td><svg class="ic"><use href="#i-<%= c.icon %>"/></svg> <a href="/catalogue/<%= c.id %>"><%= c.name %></a><br><small class="muted"><%= c.description %></small></td>
+<td><%= c.code %></td><td><%= c.category || '—' %></td><td><%= c.request_type %></td><td><%= c.policy_name || 'default' %></td><td><%= c.owner_team || '—' %></td>
+<td><%= c.featured ? 'Yes' : 'No' %></td><td><%= c.in_use %></td><td><span class="tag <%= c.active ? '' : 'grey' %>"><%= c.active ? 'active' : 'retired' %></span></td></tr><% }) %>
+</tbody></table>
+<% if (!rows.length) { %><p class="empty">The catalogue is empty.</p><% } %>
+<% if (canManage) { %>
+<section class="card"><h2>Add a service</h2>
+<form method="post" action="/catalogue"><%- include('../partials/csrf') %>
+<%- include('../partials/catalogue_fields', { e: { name: '', code: '', category: '', description: '', icon: 'grid', request_type: 'request', sla_policy_id: null, owner_team: '', featured: false, active: true, sort_order: 100 } }) %>
+<button class="btn" type="submit">Add to the catalogue</button></form></section>
+<% } %>
+<%- include('../partials/footer') %>

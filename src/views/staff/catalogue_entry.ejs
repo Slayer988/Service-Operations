@@ -1,0 +1,17 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/admin">Administration</a> › <a href="/catalogue">Service Catalogue</a></p>
+<h1><%= e.name %> <span class="tag <%= e.active ? '' : 'grey' %>"><%= e.active ? 'active' : 'retired' %></span></h1>
+<p class="muted"><%= e.code %> · used by <%= e.in_use %> customer service(s)</p>
+<% if (canManage) { %>
+<section class="card"><form method="post" action="/catalogue/<%= e.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/catalogue_fields', { e: e }) %>
+<button class="btn" type="submit">Save</button></form></section>
+<section class="card"><h2>Delete</h2>
+<p class="muted"><% if (e.in_use) { %>Customers already use this service, so it cannot be deleted: deleting retires it (hidden from new requests; history is kept).<% } else { %>No customer uses this service, so it can be deleted.<% } %></p>
+<form method="post" action="/catalogue/<%= e.id %>/delete"><%- include('../partials/csrf') %><button class="btn danger" type="submit" data-confirm="<%= e.in_use ? 'Retire' : 'Delete' %> <%= e.name %>?"><%= e.in_use ? 'Retire this service' : 'Delete this service' %></button></form></section>
+<% } else { %><section class="card"><p><%= e.description %></p></section><% } %>
+<section class="card"><h2>Customers using this service</h2>
+<table class="grid"><thead><tr><th>Customer</th><th>Service</th><th>Status</th></tr></thead><tbody>
+<% customers.forEach(function (c) { %><tr><td><a href="/customers/<%= c.id %>"><%= c.name %></a></td><td><a href="/services/<%= c.service_id %>"><%= c.service_name %></a></td><td><%= c.status %></td></tr><% }) %></tbody></table>
+<% if (!customers.length) { %><p class="empty">No customer uses it yet.</p><% } %></section>
+<%- include('../partials/footer') %>

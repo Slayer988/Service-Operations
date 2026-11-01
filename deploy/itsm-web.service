@@ -1,0 +1,28 @@
+[Unit]
+Description=Service Operations (Ops) - web application
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=itsm
+Group=itsm
+WorkingDirectory=/opt/itsm/app
+EnvironmentFile=/etc/itsm/itsm.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=3
+SyslogIdentifier=itsm-web
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/itsm
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

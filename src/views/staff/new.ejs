@@ -1,0 +1,25 @@
+<%- include('../partials/header') %>
+<section class="card">
+  <h1>New ticket on behalf of a customer</h1>
+  <% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+  <form method="post" action="/tickets/new" enctype="multipart/form-data" data-structure="true">
+    <%- include('../partials/csrf') %>
+    <div class="grid2">
+      <p><label for="customer_id">Customer</label><select id="customer_id" name="customer_id" data-structure-source="true" required><option value="">Choose…</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(form.customer_id) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select></p>
+      <p><label for="requester_id">Contact</label><select id="requester_id" name="requester_id" data-fill="contacts"><option value="">Choose a customer first</option></select></p>
+      <p><label for="csid_id">CSID</label><select id="csid_id" name="csid_id" data-fill="csids" data-controls="service_id"><option value="">Choose a customer first</option></select></p>
+      <p><label for="service_id">Service</label><select id="service_id" name="service_id" data-fill="services" data-filter-by="csid_id"><option value="">Choose a customer first</option></select></p>
+      <p><label for="site_id">Site</label><select id="site_id" name="site_id" data-fill="sites"><option value="">—</option></select></p>
+      <p><label for="type">Type</label><select id="type" name="type"><option value="incident" <%= form.type !== 'request' ? 'selected' : '' %>>Incident</option><option value="request" <%= form.type === 'request' ? 'selected' : '' %>>Service request</option></select></p>
+      <p><label for="category">Category</label><select id="category" name="category"><option value="">Choose…</option><% categories.forEach(function (c) { %><option <%= form.category === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+      <% if (can('security.view')) { %><p><label for="queue">Queue</label><select id="queue" name="queue"><option value="it_services">IT Services</option><option value="security">Security (restricted)</option></select></p><% } %>
+      <p><label for="impact">Impact</label><select id="impact" name="impact"><option value="1">High</option><option value="2" selected>Medium</option><option value="3">Low</option></select></p>
+      <p><label for="urgency">Urgency</label><select id="urgency" name="urgency"><option value="1">High</option><option value="2" selected>Medium</option><option value="3">Low</option></select></p>
+    </div>
+    <p><label for="subject">Subject</label><input id="subject" name="subject" maxlength="200" required value="<%= form.subject || '' %>"></p>
+    <p><label for="description">Description</label><textarea id="description" name="description" rows="6"><%= form.description || '' %></textarea></p>
+    <p><label for="files">Attachments</label><input id="files" name="files" type="file" multiple></p>
+    <button class="btn" type="submit">Create ticket</button>
+  </form>
+</section>
+<%- include('../partials/footer') %>

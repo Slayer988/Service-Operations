@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<h1>Administration</h1>
+<p class="muted">Setup and oversight. These pages are kept out of the main menu.</p>
+<div class="svc admin-tiles">
+<% tiles.forEach(function (t) { %>
+  <a class="tile" href="<%= t.href %>"><svg class="ic"><use href="#i-<%= t.icon %>"/></svg><b><%= t.label %></b><span><%= t.text %></span></a>
+<% }) %>
+</div>
+<%- include('../partials/footer') %>

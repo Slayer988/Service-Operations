@@ -1,0 +1,148 @@
+<%- include('../partials/header') %>
+<p><a href="/pipeline">← <%= a.fullView ? 'Pipeline Tracker' : 'My Opportunities' %></a></p>
+<h1><%= o.name %> <span class="pill st-<%= o.stage %>"><%= labels[o.stage] %></span></h1>
+<p class="muted"><%= o.ref %> · <%= o.customer_name || o.prospect || '—' %><%= o.industry ? ' · ' + o.industry : '' %> · Owner <%= o.owner_name %></p>
+<div class="stagebar" aria-label="Pipeline stage"><% P.OPEN.forEach(function (k, i) { %><span class="<%= o.stage === k ? 'on' : (stageIdx > i || o.stage === 'won' ? 'done' : '') %>"><%= labels[k] %></span><% }) %><% if (o.stage === 'won' || o.stage === 'lost' || o.stage === 'on_hold') { %><span class="on"><%= labels[o.stage] %></span><% } %></div>
+<p class="jump"><a href="#details">Details</a> · <a href="#contacts">Contacts</a> · <a href="#activities">Activities</a> · <a href="#proposals">Proposals</a> · <a href="#support">Engineering support</a> · <a href="#tasks">Tasks</a> · <a href="#solution">Solution</a> · <a href="#documents">Documents</a> · <a href="#history">History</a></p>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#details', icon: 'chart', label: 'Value', value: money(o.value, o.currency), small: true }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'funnel', label: 'Probability / weighted', value: o.probability + '% · ' + money(Number(o.value) * o.probability / 100, o.currency), small: true }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: 'Expected close', value: o.expected_close || 'Not set', small: true, tone: o.late ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'clipboard', label: 'Engineering progress', value: tasks.length ? progress + '%' : '–' }) %>
+</div>
+
+<% if (o.stage === 'won') { %><p class="banner ok">This opportunity was won.
+<% if (canContract && !contracts.length) { %> <a class="btn small" href="/contracts/new?opportunity_id=<%= o.id %>">Create the contract</a><% } %>
+<% if (canProject) { %> <a class="btn small" href="/projects/new?opportunity_id=<%= o.id %>">Start a project</a><% } %></p><% } %>
+<% if (o.stage === 'lost') { %><p class="banner">Lost: <%= o.lost_reason || 'no reason recorded' %></p><% } %>
+<% if (o.escalated) { %><p class="banner warnbar">Leadership support requested: <%= o.escalation_note %></p><% } %>
+<% if (a.escalate && isOpen) { %>
+<section class="card"><h2>Escalation</h2>
+<form method="post" action="/pipeline/<%= o.id %>/escalation" class="rowform"><%- include('../partials/csrf') %>
+<input type="hidden" name="escalate" value="<%= o.escalated ? '0' : '1' %>">
+<% if (!o.escalated) { %><input name="note" maxlength="500" placeholder="What does leadership need to help with?" required><button class="btn ghost" type="submit">Escalate</button>
+<% } else { %><span class="muted">Escalated: <%= o.escalation_note %></span><button class="btn ghost" type="submit">Clear escalation</button><% } %></form>
+<p class="muted">Escalated deals are counted on the Operations Overview as needing leadership support.</p></section>
+<% } %>
+<% if (a.manage) { %>
+<section class="card"><h2>Stage</h2>
+<form method="post" action="/pipeline/<%= o.id %>/stage" class="rowform"><%- include('../partials/csrf') %>
+<select name="stage" aria-label="New stage"><% stages.forEach(function (s) { if (s !== o.stage) { %><option value="<%= s %>"><%= labels[s] %></option><% } }) %></select>
+<input name="reason" placeholder="Reason (required for Lost)" maxlength="500"><button class="btn ghost" type="submit">Move</button></form>
+<p class="muted">Probability follows the stage (set in Settings), and Won or Lost closes the opportunity. Moving it back to an open stage reopens it.</p></section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (a.manage) { %>
+<form method="post" action="/pipeline/<%= o.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/opp_fields', { form: o, ownerId: o.owner_id, isEdit: true }) %>
+<button class="btn" type="submit">Save changes</button></form>
+<% } else { %>
+<table class="grid kv"><tbody>
+<tr><th>Customer / prospect</th><td><%= o.customer_name || o.prospect || '—' %></td><th>Industry</th><td><%= o.industry || o.customer_industry || '—' %></td></tr>
+<tr><th>Category / segment</th><td><%= o.classification || '—' %> / <%= o.segment || '—' %></td><th>Team</th><td><%= o.team || '—' %></td></tr>
+<tr><th>Competitors</th><td colspan="3"><%= o.competitor || '—' %></td></tr>
+<tr><th>Next action</th><td colspan="3"><%= o.next_step || '—' %><%= o.next_step_date ? ' (' + o.next_step_date + ')' : '' %></td></tr></tbody></table>
+<% if (o.notes) { %><p><%= o.notes %></p><% } %>
+<% } %>
+<% if (a.manage) { %><h3>Next action</h3><form method="post" action="/pipeline/<%= o.id %>/followup" class="rowform"><%- include('../partials/csrf') %>
+<input name="next_step" value="<%= o.next_step %>" placeholder="Next action" maxlength="300" aria-label="Next action"><input type="date" name="next_step_date" value="<%= o.next_step_date || '' %>" aria-label="Date">
+<select name="next_step_owner_id" aria-label="Owner"><option value="">Same as the owner</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= o.next_step_owner_id === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select><button class="btn ghost" type="submit">Save</button></form><% } %>
+<% if (a.fullView && (linkedTenders.length || canTender || contracts.length)) { %><h3>Related</h3>
+<ul>
+<% linkedTenders.forEach(function (t) { %><li>Tender <a href="/tenders/<%= t.id %>"><%= t.ref %></a> · <%= t.title %> · <%= t.status.replace(/_/g, ' ') %></li><% }) %>
+<% contracts.forEach(function (c) { %><li>Contract <a href="/contracts/<%= c.id %>"><%= c.reference %></a> · <%= c.title %> · <%= c.status.replace(/_/g, ' ') %></li><% }) %></ul>
+<p><% if (canTender && isOpen) { %><a class="btn ghost small" href="/tenders/new?opportunity=<%= o.id %>">Register a tender for this opportunity</a> <% } %>
+<% if (canContract && o.stage === 'won' && !contracts.length) { %><a class="btn ghost small" href="/contracts/new?opportunity_id=<%= o.id %>">Create a contract</a><% } %></p><% } %>
+</section>
+
+<section class="card" id="contacts"><h2>Customer contacts</h2>
+<table class="grid"><thead><tr><th>Name</th><th>Job title</th><th>E-mail</th><th>Phone</th><th></th></tr></thead><tbody>
+<% contacts.forEach(function (c) { %><tr><td><%= c.name %></td><td><%= c.title || '—' %></td><td><%= c.email || '—' %></td><td><%= c.phone || '—' %></td>
+<td><% if (a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/contacts/<%= c.id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Remove <%= c.name %>?">Remove</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!contacts.length) { %><p class="empty">No contacts recorded.</p><% } %>
+<% if (a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/contacts" class="rowform"><%- include('../partials/csrf') %><input name="name" placeholder="Name" required maxlength="120" aria-label="Name"><input name="title" placeholder="Job title" maxlength="120" aria-label="Job title"><input name="email" type="email" placeholder="E-mail" maxlength="320" aria-label="E-mail"><input name="phone" placeholder="Phone" maxlength="40" aria-label="Phone"><button class="btn ghost" type="submit">Add contact</button></form><% } %></section>
+
+<section class="card" id="activities"><h2>Activities and engagements</h2>
+<table class="grid"><thead><tr><th>Date</th><th>Kind</th><th>What happened</th><th>Outcome</th><th>By</th></tr></thead><tbody>
+<% activities.forEach(function (x) { %><tr><td><%= fmt.date(x.activity_date) %></td><td><%= P.ACTIVITY_KINDS[x.kind] %><%= x.technical ? ' (technical)' : '' %></td><td><%= x.description %></td><td><%= x.outcome || '—' %></td><td><%= x.by || '—' %></td></tr><% }) %></tbody></table>
+<% if (!activities.length) { %><p class="empty">Nothing recorded yet.</p><% } %>
+<% if (a.support) { %><details><summary>Record an activity (meeting, call, site assessment, solution review…)</summary><form method="post" action="/pipeline/<%= o.id %>/activities"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Kind</label><select name="kind"><% Object.keys(P.ACTIVITY_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= P.ACTIVITY_KINDS[k] %></option><% }) %></select></p><p><label>Date</label><input type="date" name="activity_date" value="<%= today %>" required></p></div>
+<p><label>What happened</label><textarea name="description" rows="2" required maxlength="2000"></textarea></p><p><label>Outcome</label><input name="outcome" maxlength="1000"></p>
+<button class="btn" type="submit">Record</button></form></details><% } %></section>
+
+<section class="card" id="proposals"><h2>Proposals and quotations</h2>
+<table class="grid"><thead><tr><th>Kind</th><th>Reference</th><th>Due</th><th>Prepared by</th><th>Status</th><th></th></tr></thead><tbody>
+<% proposals.forEach(function (p) { %><tr><td><%= P.PROPOSAL_KINDS[p.kind] %></td><td><%= p.reference || '—' %><% if (p.notes) { %><br><small class="muted"><%= p.notes %></small><% } %></td><td><%= fmt.date(p.due_date) %></td><td><%= p.prepared_by_name || '—' %></td><td><%= P.PROPOSAL_STATUSES[p.status] %><%= p.submitted_on ? ' (' + fmt.date(p.submitted_on) + ')' : '' %></td>
+<td><% if (a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/proposals/<%= p.id %>" class="inline"><%- include('../partials/csrf') %><select name="status" aria-label="Status"><% Object.keys(P.PROPOSAL_STATUSES).forEach(function (s) { %><option value="<%= s %>" <%= p.status === s ? 'selected' : '' %>><%= P.PROPOSAL_STATUSES[s] %></option><% }) %></select> <button class="btn ghost small" type="submit">Set</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!proposals.length) { %><p class="empty">None yet.</p><% } %>
+<% if (a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/proposals" class="rowform"><%- include('../partials/csrf') %>
+<select name="kind" aria-label="Kind"><% Object.keys(P.PROPOSAL_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= P.PROPOSAL_KINDS[k] %></option><% }) %></select><input name="reference" placeholder="Reference" maxlength="120" aria-label="Reference"><input type="date" name="due_date" aria-label="Due date">
+<select name="prepared_by" aria-label="Prepared by"><option value="">Prepared by…</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><button class="btn ghost" type="submit">Start</button></form><% } %></section>
+
+<section class="card" id="support"><h2>Service Delivery Engineers</h2>
+<p class="muted">Engineers assigned here can see this opportunity, work on its technical tasks and record their contribution. They cannot change its value, stage or owner.</p>
+<table class="grid"><thead><tr><th>Engineer</th><th>Open tasks</th><th></th></tr></thead><tbody>
+<% engineers.forEach(function (e) { %><tr><td><%= e.name %></td><td><%= tasks.filter(function (t) { return t.assignee_id === e.id && t.status !== 'completed'; }).length %></td>
+<td><% if (a.assign) { %><form method="post" action="/pipeline/<%= o.id %>/engineers/<%= e.id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Remove <%= e.name %> from this opportunity? Their open tasks become unassigned.">Remove</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!engineers.length) { %><p class="empty">No engineer assigned yet.</p><% } %>
+<% if (a.assign && assignable.length) { %><form method="post" action="/pipeline/<%= o.id %>/engineers" class="rowform"><%- include('../partials/csrf') %>
+<select name="user_id" required aria-label="Engineer"><option value="">Assign an engineer…</option><% assignable.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><button class="btn ghost" type="submit">Assign</button></form><% } %>
+<p>Opportunity Support Report: <a href="/pipeline/<%= o.id %>/support-report">View</a> · <a href="/pipeline/<%= o.id %>/support-report?format=pdf">PDF</a> · <a href="/pipeline/<%= o.id %>/support-report?format=xlsx">Excel</a></p></section>
+
+<section class="card" id="tasks"><h2>Technical tasks <small>(overall progress <%= tasks.length ? progress + '%' : 'n/a' %>)</small></h2>
+<% if (tasks.length) { %><table class="grid"><thead><tr><th>Task</th><th>Engineer</th><th>Target</th><th>Progress</th><th>Status</th><th>Update</th></tr></thead><tbody>
+<% tasks.forEach(function (t) { %>
+<tr class="<%= t.status === 'completed' ? 'old' : '' %>"><td><%= t.ref %> · <b><%= t.title %></b><% if (t.priority !== 'normal') { %> <span class="tag <%= t.priority === 'urgent' || t.priority === 'high' ? 'warn' : 'grey' %>"><%= P.PRIORITIES[t.priority] %></span><% } %><% if (t.description) { %><br><small class="muted"><%= t.description %></small><% } %><% if (t.work_notes) { %><br><small>Work: <%= t.work_notes %></small><% } %></td>
+<td><%= t.assignee_name || '—' %></td><td class="<%= t.overdue ? 'bad' : '' %>"><%= t.due_date || '—' %><%= t.overdue ? ' (overdue)' : '' %></td>
+<td><span class="progress"><%- bar(t.progress) %></span> <%= t.progress %>%</td><td><%= P.TASK_STATUSES[t.status] %></td>
+<td><% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/tasks/<%= t.id %>" class="inline"><%- include('../partials/csrf') %>
+<select name="status" aria-label="Status"><% Object.keys(P.TASK_STATUSES).forEach(function (s) { %><option value="<%= s %>" <%= t.status === s ? 'selected' : '' %>><%= P.TASK_STATUSES[s] %></option><% }) %></select>
+<input name="progress" type="number" min="0" max="100" value="<%= t.progress %>" class="num" aria-label="Progress %"><input name="work_notes" value="<%= t.work_notes %>" placeholder="Work performed" maxlength="4000" aria-label="Work performed"><button class="btn ghost small" type="submit">Save</button></form><% } %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No tasks yet.</p><% } %>
+<% if (a.support) { %><details><summary>Create a task</summary><form method="post" action="/pipeline/<%= o.id %>/tasks"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Title</label><input name="title" required maxlength="250"></p>
+<p><label>Assign to</label><select name="assignee_id"><option value="">Unassigned</option><% engineers.forEach(function (e) { %><option value="<%= e.id %>"><%= e.name %></option><% }) %></select></p>
+<p><label>Priority</label><select name="priority"><% Object.keys(P.PRIORITIES).forEach(function (k) { %><option value="<%= k %>" <%= k === 'normal' ? 'selected' : '' %>><%= P.PRIORITIES[k] %></option><% }) %></select></p>
+<p><label>Start date</label><input type="date" name="start_date"></p><p><label>Target date</label><input type="date" name="due_date"></p></div>
+<p><label>Description</label><textarea name="description" rows="2" maxlength="2000"></textarea></p><button class="btn" type="submit">Create task</button></form>
+<% if (!engineers.length) { %><p class="muted">Assign an engineer first to give tasks an owner.</p><% } %></details><% } %>
+<% if (history.length) { %><details><summary>Task history</summary><ul class="timeline"><% history.forEach(function (h) { %><li><time><%= fmt.dt(h.created_at) %></time> <%= h.ref %>: <%= h.text %></li><% }) %></ul></details><% } %></section>
+
+<section class="card" id="solution"><h2>Solution design and technical contribution</h2>
+<table class="grid"><thead><tr><th>Kind</th><th>Contribution</th><th>Status</th><th>By</th><th></th></tr></thead><tbody>
+<% solution.forEach(function (s) { %><tr><td><%= P.SOLUTION_KINDS[s.kind] %></td><td><b><%= s.title %></b><% if (s.description) { %><br><small class="muted"><%= s.description %></small><% } %></td><td><%= s.status === 'completed' ? 'Completed' : 'In progress' %></td><td><%= s.author || '—' %></td>
+<td><% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/solution/<%= s.id %>" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="status" value="<%= s.status === 'completed' ? 'in_progress' : 'completed' %>"><button class="btn ghost small" type="submit"><%= s.status === 'completed' ? 'Reopen' : 'Mark completed' %></button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!solution.length) { %><p class="empty">Nothing recorded yet.</p><% } %>
+<% if (a.support) { %><details><summary>Add a design, BOM or proposal contribution</summary><form method="post" action="/pipeline/<%= o.id %>/solution"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Kind</label><select name="kind"><% Object.keys(P.SOLUTION_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= P.SOLUTION_KINDS[k] %></option><% }) %></select></p><p><label>Title</label><input name="title" required maxlength="250"></p></div>
+<p><label>Details</label><textarea name="description" rows="2" maxlength="2000"></textarea></p><button class="btn" type="submit">Add</button></form></details><% } %>
+<h3 id="resources">Technical resources and effort</h3>
+<table class="grid"><thead><tr><th>Resource</th><th>Skill</th><th>Planned h</th><th>Actual h</th><th></th></tr></thead><tbody>
+<% resources.forEach(function (r) { %><tr><td><%= r.person || r.name %></td><td><%= r.skill || '—' %></td><td class="num"><%= Number(r.planned_hours) %></td><td class="num"><%= Number(r.actual_hours) %></td>
+<td><% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/resources/<%= r.id %>" class="inline"><%- include('../partials/csrf') %><input name="actual_hours" value="<%= Number(r.actual_hours) %>" class="num" inputmode="decimal" aria-label="Actual hours"> <button class="btn ghost small" type="submit">Update hours</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!resources.length) { %><p class="empty">No resources recorded.</p><% } %>
+<% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/resources" class="rowform"><%- include('../partials/csrf') %>
+<select name="user_id" aria-label="Person"><option value="">Person (or type a name)…</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><input name="name" placeholder="Other resource" maxlength="120" aria-label="Other resource"><input name="skill" placeholder="Skill" maxlength="120" aria-label="Skill">
+<input name="planned_hours" placeholder="Planned h" class="num" inputmode="decimal" aria-label="Planned hours"><button class="btn ghost" type="submit">Add</button></form><% } %>
+<h3 id="notes">Challenges and recommendations</h3>
+<% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/support-notes"><%- include('../partials/csrf') %>
+<p><label>Technical challenges encountered</label><textarea name="support_challenges" rows="3" maxlength="4000"><%= o.support_challenges %></textarea></p>
+<p><label>Recommendations</label><textarea name="support_recommendations" rows="3" maxlength="4000"><%= o.support_recommendations %></textarea></p><button class="btn" type="submit">Save</button></form>
+<% } else { %><p><b>Challenges:</b> <%= o.support_challenges || 'None recorded.' %></p><p><b>Recommendations:</b> <%= o.support_recommendations || 'None recorded.' %></p><% } %></section>
+
+<section class="card" id="documents"><h2>Documents and evidence</h2>
+<table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Version</th><th>Size</th><th>Added</th><th>By</th></tr></thead><tbody>
+<% files.forEach(function (f) { %><tr class="<%= f.latest ? '' : 'old' %>"><td><a href="/documents/<%= f.id %>"><%= f.filename %></a><% if (f.scan_status === 'infected') { %> <span class="tag bad">blocked</span><% } %></td><td><%= f.kind_label %></td><td>v<%= f.version %><%= f.latest ? '' : ' (superseded)' %></td><td><%= fmt.size(f.size_bytes) %></td><td><%= fmt.dt(f.created_at) %></td><td><%= f.uploader || '—' %></td></tr><% }) %></tbody></table>
+<% if (!files.length) { %><p class="empty">No documents yet.</p><% } %>
+<% if (a.support || a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/files" enctype="multipart/form-data" class="rowform"><%- include('../partials/csrf') %>
+<select name="kind" aria-label="Document kind"><% Object.keys(docKinds).forEach(function (k) { %><option value="<%= k %>"><%= docKinds[k] %></option><% }) %></select>
+<input type="file" name="files" multiple required aria-label="Files"><button class="btn ghost" type="submit">Upload</button></form>
+<p class="muted">Uploading a file with the same name and kind again adds a new version; earlier versions are kept.</p><% } %></section>
+
+<section class="card" id="history"><h2>History</h2>
+<% if (a.support) { %><form method="post" action="/pipeline/<%= o.id %>/note" class="rowform"><%- include('../partials/csrf') %><input name="text" placeholder="Add a note" maxlength="2000" required aria-label="Note"><button class="btn ghost" type="submit">Add note</button></form><% } %>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.created_at) %></time> <%= e.text %></li><% }) %></ul></section>
+<%- include('../partials/footer') %>

@@ -1,0 +1,27 @@
+[Unit]
+Description=Service Operations (Ops) - background worker (e-mail, SLA watch, renewals)
+After=network.target postgresql.service itsm-web.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=itsm
+Group=itsm
+WorkingDirectory=/opt/itsm/app
+EnvironmentFile=/etc/itsm/itsm.env
+ExecStart=/usr/bin/node src/worker.js
+Restart=on-failure
+RestartSec=5
+SyslogIdentifier=itsm-worker
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/itsm
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

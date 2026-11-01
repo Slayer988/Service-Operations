@@ -1,0 +1,58 @@
+<%- include('../partials/header') %>
+<h1>Users</h1>
+<% if (typeof info !== 'undefined' && info) { %><section class="notice"><p><%= info %></p></section><% } %>
+<% if (newPassword) { %><section class="notice"><p>Password for <b><%= newPassword.email %></b> (shown only now): <code class="key"><%= newPassword.password %></code>. Ask them to change it after signing in.</p></section><% } %>
+<section class="card" id="directory">
+  <div class="sechead"><h2>Active Directory</h2>
+    <% if (ad.cfg.enabled) { %><span class="pill">Sign-in is on</span><% } else { %><span class="pill off">Sign-in is off</span><% } %></div>
+  <p class="muted">Let staff sign in with their normal Windows password. Connect once, import the people you want, and choose their role here. Only imported people can sign in this way; everyone else keeps their own password.</p>
+  <% if (ad.configured && ad.cfg.password_saved) { %>
+  <p><b><%= ad.counts.active %></b> imported user<%= ad.counts.active === 1 ? '' : 's' %> active (<%= ad.counts.total %> in all) · server <b><%= ad.cfg.server %></b></p>
+  <div class="row-actions">
+    <a class="btn" href="/admin/users/import?go=1">Import users</a>
+    <% if (ad.canConfigure) { %><form method="post" action="/admin/users/directory/test"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Test connection</button></form><% } %>
+  </div>
+  <% } else { %><p class="notice">Not connected yet. Fill in the connection below, save, then use <b>Test connection</b>.</p><% } %>
+  <% if (ad.canConfigure) { %>
+  <details class="adsetup" <%= ad.configured && ad.cfg.password_saved ? '' : 'open' %>><summary>Connection settings</summary>
+    <form method="post" action="/admin/users/directory"><%- include('../partials/csrf') %>
+      <div class="grid2">
+        <p><label for="ad_server">Server</label><input id="ad_server" name="server" value="<%= ad.cfg.server || '' %>" placeholder="dc1.corp.local" autocomplete="off"><small>Your domain controller, by name or address.</small></p>
+        <p><label for="ad_domain">Domain</label><input id="ad_domain" name="domain" value="<%= ad.cfg.domain || '' %>" placeholder="corp.local" autocomplete="off"><small>What people see after the @ in their sign-in name.</small></p>
+        <p><label for="ad_user">Service account</label><input id="ad_user" name="service_user" value="<%= ad.cfg.service_user || '' %>" placeholder="svc-itsm" autocomplete="off"><small>A normal read-only AD account used to look people up. Just the name; the domain is added for you.</small></p>
+        <p><label for="ad_pw">Service account password</label><input id="ad_pw" name="password" type="password" autocomplete="new-password" placeholder="<%= ad.cfg.password_saved ? 'Saved (leave empty to keep)' : '' %>"><small>Stored encrypted. Never shown again.</small></p>
+      </div>
+      <details class="adadv"><summary>Advanced (usually not needed)</summary>
+        <div class="grid2">
+          <p><label for="ad_port">Port</label><input id="ad_port" name="port" value="<%= ad.cfg.port %>" inputmode="numeric"><small>636 is the encrypted default. 389 uses STARTTLS.</small></p>
+          <p><label for="ad_base">Search base</label><input id="ad_base" name="base_dn" value="<%= ad.cfg.base_dn || '' %>" placeholder="worked out from the domain"><small>Only to look in one part of the directory, for example OU=Staff,DC=corp,DC=local.</small></p>
+          <p><label for="ad_ca">Certificate file</label><input id="ad_ca" name="ca_file" value="<%= ad.cfg.ca_file || '' %>" placeholder="/etc/itsm/ad-ca.pem"><small>Only if your domain controllers use a certificate from your own authority.</small></p>
+        </div>
+      </details>
+      <p><label class="inline"><input type="checkbox" name="enabled" <%= ad.cfg.enabled ? 'checked' : '' %>> <b>Allow imported people to sign in with their Active Directory password</b></label></p>
+      <button class="btn" type="submit">Save</button>
+    </form>
+  </details>
+  <% } %>
+  <p class="muted">People who are disabled or deleted in Active Directory are switched off here automatically (checked every hour). If the directory cannot be reached, nobody is switched off. Keep at least one local administrator for emergencies.</p>
+</section>
+<table class="grid"><thead><tr><th>Name</th><th>Email</th><th>Type</th><th>Sign-in</th><th>Role</th><th>Active</th><th>Available</th><th>MFA</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr>
+<td><%= r.name %></td><td><%= r.email %></td><td><%= r.kind === 'customer' ? r.customer_name : 'Staff' %></td><td><%= r.auth_source === 'ldap' ? 'Active Directory' : 'Local password' %></td>
+<td><% if (r.kind === 'staff') { %><select name="role" form="uf<%= r.id %>"><% staffRoles.forEach(function (x) { %><option value="<%= x %>" <%= r.role === x ? 'selected' : '' %>><%= roleLabels[x] %></option><% }) %></select><% } else { %><%= roleLabels[r.role] %><% } %></td>
+<td><input type="checkbox" name="active" form="uf<%= r.id %>" <%= r.active ? 'checked' : '' %>></td>
+<td><% if (r.kind === 'staff') { %><input type="checkbox" name="available" form="uf<%= r.id %>" <%= r.available ? 'checked' : '' %>><% } else { %>—<% } %></td>
+<td><%= r.totp_enabled ? 'on' : 'off' %></td><td><%= fmt.dt(r.last_login_at) %></td>
+<td><form id="uf<%= r.id %>" method="post" action="/admin/users/<%= r.id %>"><%- include('../partials/csrf') %><% if (r.kind === 'customer') { %><input type="hidden" name="available" value="on"><% } %><button class="btn ghost" type="submit">Save</button></form>
+<% if (r.auth_source !== 'ldap') { %><form method="post" action="/admin/users/<%= r.id %>/reset-password" data-confirm="Reset this password and sign the person out?"><%- include('../partials/csrf') %><button class="link" type="submit">Reset password</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<p class="muted"><b>Roles:</b> the role you choose here is the role. Active Directory only proves who someone is; it never changes their role. Untick "Active" to block someone (the directory never turns them back on).</p>
+<p class="muted">"Available" = on duty. An unavailable or inactive execution engineer is skipped and the backup is used.</p>
+<section class="card"><h2>Add a staff member with a local password</h2>
+<form method="post" action="/admin/users"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Name</label><input name="name" required></p><p><label>Email</label><input name="email" type="email" required></p>
+<p><label>Role</label><select name="role"><% staffRoles.forEach(function (x) { %><option value="<%= x %>"><%= roleLabels[x] %></option><% }) %></select></p>
+</div>
+<button class="btn" type="submit">Create</button></form>
+<p class="muted">To add people who already have an Active Directory account, use <b>Import users</b> in the Active Directory box above instead.</p></section>
+<%- include('../partials/footer') %>

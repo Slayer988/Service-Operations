@@ -1,0 +1,59 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Tender Management</h1><span>
+<a class="btn ghost" href="/tenders/reports">Reports</a>
+<% if (canManage) { %> <a class="btn" href="/tenders/new">Register a tender</a><% } %></span></div>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/tenders?status=active', icon: 'file', label: 'Active tenders', value: d.counts.active }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=under_evaluation', icon: 'search', label: 'Under evaluation', value: d.counts.evaluating }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=internal_approval', icon: 'clipboard', label: 'Awaiting internal review', value: d.counts.awaiting_review }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=active', icon: 'clock', label: 'Deadlines in 14 days', value: d.counts.soon, tone: d.counts.overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/tenders?status=awarded', icon: 'check', label: 'Awarded', value: d.counts.awarded }) %>
+  <%- include('../partials/kpi', { href: '/tenders/reports/winloss', icon: 'chart', label: 'Win rate', value: d.winRate === null ? '–' : d.winRate + '%' }) %>
+</div>
+<div class="kpis">
+  <% d.money.slice(0, 2).forEach(function (m) { %><%- include('../partials/kpi', { href: '/tenders/reports/value', icon: 'chart', label: 'Active tender value (' + m.currency + ')', value: m.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %><% }) %>
+  <% d.awardedValue.slice(0, 2).forEach(function (m) { %><%- include('../partials/kpi', { href: '/tenders/reports/awards', icon: 'check', label: 'Awarded value (' + m.currency + ')', value: m.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %><% }) %>
+  <%- include('../partials/kpi', { href: '/tenders/reports/winloss', icon: 'pulse', label: 'Win rate this year', value: d.winRateYtd === null ? '–' : d.winRateYtd + '%' }) %>
+</div>
+<% if (d.counts.overdue) { %><p class="banner"><%= d.counts.overdue %> tender(s) are past their submission deadline and not submitted. <a href="/tenders?status=active">Show active tenders</a>.</p><% } %>
+
+<div class="cols">
+  <div>
+    <section class="card"><div class="sechead"><h2>Tenders by status</h2></div>
+      <% if (segs.length) { %><div class="donutrow"><div class="donutbox"><%- statusChart %><div class="mid"><b><%= d.counts.total %></b><span>Tenders</span></div></div>
+      <ul class="legendlist"><% segs.forEach(function (s) { %><li><i class="<%= s.cls %>i"></i><%= s.label %><em><%= s.value %></em></li><% }) %></ul></div><% } else { %><p class="empty">No tenders yet.</p><% } %>
+    </section>
+    <section class="card"><div class="sechead"><h2>Approaching deadlines</h2></div>
+      <% if (d.upcoming.length) { %><table class="grid"><thead><tr><th>Tender</th><th>Client</th><th>Deadline</th><th>Open items</th><th>Status</th></tr></thead><tbody>
+      <% d.upcoming.forEach(function (r) { var ms = new Date(r.submission_due).getTime() - Date.now(); %><tr><td><a href="/tenders/<%= r.id %>"><%= r.ref %></a> <small><%= r.title %></small></td><td><%= r.client %></td><td class="<%= ms < 0 ? 'bad' : (ms < 3 * 86400000 ? 'warn' : '') %>"><%= fmt.dt(r.submission_due) %></td><td><%= r.open_tasks %></td><td><%= statuses[r.status] %></td></tr><% }) %></tbody></table>
+      <% } else { %><p class="empty">No tenders are being prepared.</p><% } %>
+    </section>
+  </div>
+  <div class="side">
+    <section class="card"><div class="sechead"><h2>By tender type</h2></div><% if (d.byType.length) { %><%- typeChart %><% } else { %><p class="empty">No tenders yet.</p><% } %></section>
+    <section class="card"><div class="sechead"><h2>Success by client</h2></div><% if (d.byClient.length) { %><%- clientChart %><p class="muted">Awards out of decided tenders.</p><% } else { %><p class="empty">No decided tenders yet.</p><% } %></section>
+    <section class="card"><div class="sechead"><h2>Success by business unit</h2></div><% if (d.byUnit.length) { %><%- unitChart %><% } else { %><p class="empty">No decided tenders yet.</p><% } %></section>
+  </div>
+</div>
+
+<h2>Search the register</h2>
+<form method="get" class="filters wide">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Reference, title, client, tender number" aria-label="Search">
+  <select name="status" aria-label="Status"><option value="">Any status</option><option value="active" <%= f.status === 'active' ? 'selected' : '' %>>Active (not yet decided)</option><option value="closed_out" <%= f.status === 'closed_out' ? 'selected' : '' %>>Decided or closed</option><% Object.keys(statuses).forEach(function (s) { %><option value="<%= s %>" <%= f.status === s ? 'selected' : '' %>><%= statuses[s] %></option><% }) %></select>
+  <select name="type" aria-label="Type"><option value="">Any type</option><% types.forEach(function (t) { %><option <%= f.type === t ? 'selected' : '' %>><%= t %></option><% }) %></select>
+  <select name="customer" aria-label="Customer"><option value="">Any customer</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= f.customer === c.id ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <select name="owner" aria-label="Owner"><option value="">Any owner</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= f.owner === s.id ? 'selected' : '' %>><%= s.name %></option><% }) %></select>
+  <input name="department" value="<%= f.department %>" placeholder="Department" aria-label="Department" list="deptfilter"><datalist id="deptfilter"><% departments.forEach(function (x) { %><option value="<%= x %>"><% }) %></datalist>
+  <input name="value_min" value="<%= f.value_min %>" class="num" placeholder="Value from" inputmode="decimal" aria-label="Minimum value"><input name="value_max" value="<%= f.value_max %>" class="num" placeholder="to" inputmode="decimal" aria-label="Maximum value">
+  <label class="inline">Deadline from <input type="date" name="from" value="<%= f.from %>"></label><label class="inline">to <input type="date" name="to" value="<%= f.to %>"></label>
+  <button class="btn ghost" type="submit">Search</button> <a href="/tenders">Clear</a>
+</form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Reference</th><th>Tender</th><th>Client</th><th>Type</th><th>Owner</th><th>Deadline</th><th>Time left</th><th>Value</th><th>Checklist</th><th>Status</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/tenders/<%= r.id %>"><%= r.ref %></a></td><td><%= r.title %></td><td><%= r.client %></td><td><%= r.type %></td><td><%= r.owner %></td><td><%= fmt.dt(r.submission_due) %></td>
+<td class="<%= r.left < 0 && r.leftText ? 'bad' : '' %>"><%= r.leftText || '—' %></td><td class="num"><%= r.est_value === null ? '—' : r.currency + ' ' + Number(r.est_value).toLocaleString('en-US', { maximumFractionDigits: 0 }) %></td>
+<td><%= r.tasks ? r.tasks_done + '/' + r.tasks : '—' %></td><td><span class="tag <%= ['awarded'].includes(r.status) ? '' : (['unsuccessful', 'cancelled', 'withdrawn'].includes(r.status) ? 'grey' : 'warn') %>"><%= statuses[r.status] %></span></td></tr><% }) %></tbody></table>
+<p class="muted"><%= rows.length %> shown. Download this list: <a href="/tenders/export?format=xlsx<%= qs ? '&' + qs : '' %>">Excel</a> · <a href="/tenders/export?format=pdf<%= qs ? '&' + qs : '' %>">PDF</a> · <a href="/tenders/export?format=csv<%= qs ? '&' + qs : '' %>">CSV</a></p>
+<% } else { %><p class="empty">No tenders match.</p><% } %>
+<%- include('../partials/footer') %>

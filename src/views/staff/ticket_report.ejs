@@ -1,0 +1,16 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/reports?<%= qs %>">Service Desk Reports</a><% if (category) { %> › <a href="/reports?<%= qs %>#cat-<%= category.id %>"><%= category.title %></a><% } %></p>
+<h1><%= report.title %></h1>
+<% if (report.subtitle) { %><p class="muted"><%= report.subtitle %></p><% } %>
+<form method="get" class="rowform">
+  <% if (report.period) { %><label class="inline">From <input type="date" name="from" value="<%= f.from %>"></label><label class="inline">To <input type="date" name="to" value="<%= f.to %>"></label><% } %>
+  <select name="customer" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer || '') === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <button class="btn ghost" type="submit">Apply</button></form>
+<% if (report.summary && report.summary.length) { %><p><% report.summary.forEach(function (s) { %><b><%= s[0] %>:</b> <%= s[1] %> &nbsp; <% }) %></p><% } %>
+<p>Download: <a href="?format=xlsx&<%= qs %>">Excel</a> · <a href="?format=pdf&<%= qs %>">PDF</a> · <a href="?format=csv&<%= qs %>">CSV</a></p>
+<% if (report.chart) { %><section class="card chartwrap"><% if (report.chartLegend) { %><div class="legend"><% report.chartLegend.forEach(function (l) { %><span><i class="<%= l[0] %>"></i><%= l[1] %></span><% }) %></div><% } %><%- report.chart %></section><% } %>
+<% if (report.rows.length) { %>
+<table class="grid"><thead><tr><% report.columns.forEach(function (c) { %><th><%= c.header %></th><% }) %></tr></thead><tbody>
+<% report.rows.forEach(function (r) { %><tr><% report.columns.forEach(function (c) { var v = r[c.key]; %><td class="<%= c.type === 'money' || c.type === 'integer' || c.type === 'percent' || c.type === 'number' ? 'num' : '' %><%= (c.key === 'sla' && (v === 'Breached' || v === 'Response overdue')) || ((c.key === 'response_result' || c.key === 'resolution_result') && v === 'Missed') ? ' bad' : '' %><%= (c.key === 'response_result' || c.key === 'resolution_result') && v === 'Met' ? ' ok' : '' %>"><% if (c.key === 'ref') { %><a href="/tickets/<%= v %>"><%= v %></a><% } else { %><%= cell(v, c) %><% } %></td><% }) %></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No records match this report.</p><% } %>
+<%- include('../partials/footer') %>

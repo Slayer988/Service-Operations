@@ -1,0 +1,11 @@
+<%- include('../partials/header') %>
+<p><a href="/pipeline">← Pipeline Tracker</a></p>
+<h1>New opportunity</h1>
+<% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><form method="post" action="/pipeline"><%- include('../partials/csrf') %>
+<%- include('../partials/opp_fields', { form: form, isEdit: false }) %>
+<h3>Customer contact <small class="muted">(optional; more can be added later)</small></h3>
+<div class="grid2"><p><label>Name</label><input name="contact_name" maxlength="120" value="<%= form.contact_name || '' %>"></p><p><label>Job title</label><input name="contact_title" maxlength="120" value="<%= form.contact_title || '' %>"></p>
+<p><label>E-mail</label><input name="contact_email" type="email" maxlength="320" value="<%= form.contact_email || '' %>"></p><p><label>Phone</label><input name="contact_phone" maxlength="40" value="<%= form.contact_phone || '' %>"></p></div>
+<button class="btn" type="submit">Create opportunity</button> <a class="btn ghost" href="/pipeline">Cancel</a></form></section>
+<%- include('../partials/footer') %>

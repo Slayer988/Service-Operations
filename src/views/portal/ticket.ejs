@@ -1,0 +1,48 @@
+<%- include('../partials/header') %>
+<p><a href="/portal/tickets">← My tickets</a></p>
+<div class="cols">
+<section class="card main">
+  <h1><%= ticket.ref %> · <%= ticket.subject %></h1>
+  <p class="muted">Opened <%= fmt.dt(ticket.created_at) %> by <%= ticket.requester_name || ticket.requester_user_name %></p>
+  <% if (ticket.description) { %><div class="desc"><%= ticket.description %></div><% } %>
+  <% if (attachments.length) { %><h2>Files</h2><ul class="plain"><% attachments.forEach(function (a) { %><li><a href="/attachments/<%= a.id %>"><%= a.filename %></a> <small><%= fmt.size(a.size_bytes) %></small></li><% }) %></ul><% } %>
+  <h2>Updates</h2>
+  <ol class="timeline">
+  <% timeline.forEach(function (i) { %>
+    <% if (i.type === 'comment') { %><li class="comment"><header><b><%= i.c.author_label || i.c.author_name %></b> <time><%= fmt.dt(i.at) %></time></header><div class="body"><%= i.c.body %></div></li>
+    <% } else { %><li class="activity"><%= i.e.text %> <time><%= fmt.dt(i.at) %></time></li><% } %>
+  <% }) %>
+  </ol>
+  <% if (ticket.status === 'resolved') { %>
+  <section class="notice"><h2>Is it fixed?</h2>
+    <% if (ticket.resolution_note) { %><p>Resolution: <%= ticket.resolution_note %></p><% } %>
+    <form method="post" action="/portal/tickets/<%= ticket.ref %>/confirm"><%- include('../partials/csrf') %>
+      <p><label for="rating">How was our service?</label><select id="rating" name="rating"><option value="">No rating</option><option value="5">5 – Excellent</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1 – Poor</option></select></p>
+      <p><input name="feedback" maxlength="1000" placeholder="Anything to add? (optional)"></p>
+      <button class="btn" type="submit">Yes, close the ticket</button></form>
+  </section>
+  <% } %>
+  <% if (['resolved', 'closed'].includes(ticket.status)) { %>
+  <form method="post" action="/portal/tickets/<%= ticket.ref %>/reopen"><%- include('../partials/csrf') %>
+    <p><label for="reason">Not fixed? Reopen it (within <%= reopenDays %> days of resolution)</label><textarea id="reason" name="reason" rows="3"></textarea></p>
+    <button class="btn ghost" type="submit">Reopen</button></form>
+  <% } else if (ticket.status !== 'cancelled') { %>
+  <form method="post" action="/portal/tickets/<%= ticket.ref %>/comment" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="4" required></textarea></p>
+    <p><input name="files" type="file" multiple></p>
+    <button class="btn" type="submit">Send</button></form>
+  <% } %>
+</section>
+<aside class="card side">
+  <h2>Details</h2>
+  <dl><dt>Status</dt><dd><%= statusLabels[ticket.status] %></dd>
+  <dt>Priority</dt><dd><%- include('../partials/priority', { priority: ticket.priority }) %></dd>
+  <dt>CSID / service</dt><dd><%= ticket.csid_code || '—' %> / <%= ticket.service_name || '—' %></dd>
+  <dt>Handled by</dt><dd><%= ticket.assignee_name || 'Not yet assigned' %></dd>
+  <% if (!['resolved', 'closed', 'cancelled'].includes(ticket.status)) { %>
+  <dt>Response target</dt><dd><%= ticket.responded_at ? 'Done' : fmt.dt(ticket.response_due) %></dd>
+  <dt>Resolution target</dt><dd><%= fmt.dt(ticket.resolution_due) %></dd><% } %></dl>
+  <% if (ticket.status === 'new') { %><form method="post" action="/portal/tickets/<%= ticket.ref %>/cancel" data-confirm="Cancel this ticket?"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Cancel ticket</button></form><% } %>
+</aside>
+</div>
+<%- include('../partials/footer') %>

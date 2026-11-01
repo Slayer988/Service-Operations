@@ -1,0 +1,24 @@
+<% var v = function (k) { return form[k] === null || form[k] === undefined ? '' : form[k]; };
+   var sel = function (a, b) { return String(a) === String(b) ? 'selected' : ''; }; %>
+<div class="grid2">
+<p><label for="name">Opportunity name</label><input id="name" name="name" maxlength="200" required value="<%= v('name') %>"></p>
+<p><label for="customer_id">Existing customer</label><select id="customer_id" name="customer_id"><option value="">— a prospective customer —</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(v('customer_id'), c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="prospect">Prospective customer <small>(if not yet a customer)</small></label><input id="prospect" name="prospect" maxlength="200" value="<%= v('prospect') %>"></p>
+<p><label for="industry">Industry</label><input id="industry" name="industry" maxlength="80" value="<%= v('industry') %>"></p>
+<p><label for="classification">Category</label><select id="classification" name="classification"><option value="">—</option><% categories.forEach(function (c) { %><option <%= sel(v('classification'), c) %>><%= c %></option><% }) %></select></p>
+<p><label for="segment">Segment</label><input id="segment" name="segment" maxlength="100" value="<%= v('segment') %>"></p>
+<p><label for="source">Lead source</label><input id="source" name="source" maxlength="120" value="<%= v('source') %>"></p>
+<p><label for="team">Team</label><input id="team" name="team" maxlength="100" value="<%= v('team') %>"></p>
+<p><label for="owner_id">Owner (business development)</label><select id="owner_id" name="owner_id"><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(ownerId, s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label for="value">Estimated value</label><input id="value" name="value" inputmode="decimal" value="<%= v('value') === 0 ? '' : v('value') %>"></p>
+<p><label for="currency">Currency</label><select id="currency" name="currency"><% currencies.forEach(function (c) { %><option <%= sel(v('currency') || defaultCurrency, c) %>><%= c %></option><% }) %></select></p>
+<p><label for="probability">Probability % <small>(blank = the stage's default)</small></label><input id="probability" name="probability" type="number" min="0" max="100" value="<%= typeof isEdit !== 'undefined' && isEdit ? v('probability') : '' %>"></p>
+<p><label for="expected_close">Expected close date</label><input id="expected_close" name="expected_close" type="date" value="<%= v('expected_close') ? String(v('expected_close')).slice(0, 10) : '' %>"></p>
+<p><label for="competitor">Competitors</label><input id="competitor" name="competitor" maxlength="200" value="<%= v('competitor') %>"></p>
+</div>
+<div class="grid2">
+<p><label for="next_step">Next action</label><input id="next_step" name="next_step" maxlength="300" value="<%= v('next_step') %>"></p>
+<p><label for="next_step_date">Next action date</label><input id="next_step_date" name="next_step_date" type="date" value="<%= v('next_step_date') ? String(v('next_step_date')).slice(0, 10) : '' %>"></p>
+<p><label for="next_step_owner_id">Next action owner</label><select id="next_step_owner_id" name="next_step_owner_id"><option value="">Same as the owner</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(v('next_step_owner_id'), s.id) %>><%= s.name %></option><% }) %></select></p>
+</div>
+<p><label for="notes">Notes</label><textarea id="notes" name="notes" rows="3" maxlength="5000"><%= v('notes') %></textarea></p>

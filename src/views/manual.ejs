@@ -1,0 +1,34 @@
+<%- include('partials/header') %>
+<div class="head" id="top"><h1>User Manual</h1><span class="muted"><%= appName %> <%= appVersion %> · for <%= myRole %></span></div>
+<div class="manual">
+  <nav class="manualtoc" aria-label="Contents">
+    <b>Contents</b>
+    <ol>
+      <% sections.forEach(function (s) { %><li><a href="#<%= s.id %>"><%= s.title %></a></li><% }) %>
+    </ol>
+  </nav>
+  <div class="manualbody">
+    <p class="manualhello">This manual shows what <b><%= myRole %></b> can do. Sections for areas your role may not use are left out. Use the contents to jump to a topic; <b>Ctrl+F</b> searches the page.</p>
+    <% sections.forEach(function (s) { %>
+    <section class="card manualsec" id="<%= s.id %>">
+      <h2><%= s.title %></h2>
+      <% if (s.intro) { %><p class="lead"><%- inline(s.intro) %></p><% } %>
+      <% s.blocks.forEach(function (b) { %>
+        <% if (b.h) { %><h3><%= b.h %></h3><% } %>
+        <% if (b.p) { %><p><%- inline(b.p) %></p><% } %>
+        <% if (b.steps) { %><ol class="steps"><% b.steps.forEach(function (x) { %><li><%- inline(x) %></li><% }) %></ol><% } %>
+        <% if (b.list) { %><ul><% b.list.forEach(function (x) { %><li><%- inline(x) %></li><% }) %></ul><% } %>
+        <% if (b.tip) { %><p class="tip"><b>Good to know.</b> <%- inline(b.tip) %></p><% } %>
+        <% if (b.table) { %><div class="tablewrap"><table class="grid"><thead><tr><% b.table.head.forEach(function (h) { %><th><%= h %></th><% }) %></tr></thead><tbody>
+          <% b.table.rows.forEach(function (r) { %><tr><% r.forEach(function (c, i) { %><% if (i === 0) { %><th scope="row"><%= c %></th><% } else { %><td><%= c %></td><% } %><% }) %></tr><% }) %>
+        </tbody></table></div><% } %>
+        <% if (b.access) { %><div class="tablewrap"><table class="grid"><thead><tr><th>You can</th><th>Roles that can</th><th>Your role</th></tr></thead><tbody>
+          <% b.access.forEach(function (r) { var mine = r.roles.indexOf(myRole) >= 0; %><tr><th scope="row"><%= r.what %></th><td><%= r.roles.join(', ') %></td><td><%= mine ? 'Yes' : '—' %></td></tr><% }) %>
+        </tbody></table></div><% } %>
+      <% }) %>
+      <p class="totop"><a href="#top">Back to the top</a></p>
+    </section>
+    <% }) %>
+  </div>
+</div>
+<%- include('partials/footer') %>

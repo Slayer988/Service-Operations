@@ -1,0 +1,139 @@
+<%- include('../partials/header') %>
+<p><a href="/contracts">← Contracts</a></p>
+<% var tone = c.status === 'active' ? '' : (c.status === 'expired' || c.status === 'terminated' ? 'bad' : (c.status === 'closed' || c.status === 'suspended' ? 'grey' : 'warn')); %>
+<h1><%= c.title %> <span class="tag <%= tone %>"><%= statusLabels[c.status] %></span></h1>
+<p class="muted"><%= c.reference %> · <%= c.type %> · <%= c.customer_id ? c.customer_name : (counterparties[c.counterparty_kind] + ': ' + c.supplier) %><% if (c.csid_code) { %> · CSID <%= c.csid_code %><% } %>
+<% if (c.tender_ref) { %> · from tender <a href="/tenders/<%= c.tender_id %>"><%= c.tender_ref %></a><% } %><% if (c.opportunity_ref) { %> · from opportunity <a href="/pipeline/<%= c.opportunity_id %>"><%= c.opportunity_ref %></a><% } %></p>
+<p class="jump"><a href="#details">Details</a> · <a href="#services">Services</a> · <a href="#documents">Documents</a> · <a href="#financials">Financials</a> · <a href="#obligations">Obligations</a> · <a href="#sla">SLA</a> · <a href="#amendments">Amendments</a> · <a href="#reviews">Review</a> · <a href="#history">History</a></p>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: c.end_date ? (c.days_left >= 0 ? 'Days left' : 'Expired days ago') : 'End date', value: c.end_date ? Math.abs(c.days_left) : 'Open-ended', tone: c.end_date && c.days_left < 30 ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#financials', icon: 'chart', label: 'Contract value (' + c.currency + ')', value: c.value === null ? '–' : Number(c.value).toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %>
+  <%- include('../partials/kpi', { href: '#financials', icon: 'check', label: 'Paid', value: totals.paid.toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %>
+  <%- include('../partials/kpi', { href: '#obligations', icon: 'clipboard', label: 'Open obligations', value: obligations.filter(function (o) { return o.status === 'open' || o.status === 'in_progress'; }).length }) %>
+  <%- include('../partials/kpi', { href: '#sla', icon: 'shield', label: 'SLA compliance', value: compliance === null ? '–' : compliance + '%' }) %>
+</div>
+
+<% if (canManage) { %>
+<section class="card"><h2>Lifecycle</h2>
+<p class="muted">Active, Expiring Soon and Expired follow the end date by themselves. You set Renewal in Progress, Suspended, Terminated and Closed. Review and approval are recorded separately below; they are not statuses.</p>
+<form method="post" action="/contracts/<%= c.id %>/status" class="rowform"><%- include('../partials/csrf') %>
+<select name="status" aria-label="New status"><% ['active','renewal_in_progress','suspended','terminated','closed'].forEach(function (s) { %><option value="<%= s %>" <%= c.status === s ? 'selected' : '' %>><%= s === 'active' ? 'Active (follow the dates)' : statusLabels[s] %></option><% }) %></select>
+<input name="reason" placeholder="Reason (required for suspend, terminate, close)" maxlength="500">
+<button class="btn ghost" type="submit">Change status</button>
+<button class="btn ghost" type="submit" formaction="/contracts/<%= c.id %>/resend" data-confirm="Send the reminder to everyone who should be notified?">Resend reminder</button></form></section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (canManage) { %>
+<form method="post" action="/contracts/<%= c.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/contract_fields', { form: c, isEdit: true, contacts: contacts }) %>
+<button class="btn" type="submit">Save changes</button></form>
+<p class="muted">Duration: <%= c.duration_days !== null ? Math.round(c.duration_days / 30.44 * 10) / 10 + ' months (' + c.duration_days + ' days)' : 'open-ended' %>. Owner: <%= c.owner_name || 'not set' %>.</p>
+<% } else { %>
+<table class="grid kv"><tbody>
+<tr><th>Customer / supplier</th><td><%= c.customer_name || c.supplier || '—' %></td><th>Type</th><td><%= c.type %></td></tr>
+<tr><th>Starts</th><td><%= fmt.date(c.start_date) %></td><th>Ends</th><td><%= fmt.date(c.end_date) %></td></tr>
+<tr><th>Value</th><td><%= c.value === null ? '—' : c.currency + ' ' + Number(c.value).toLocaleString('en-US') %></td><th>Annual value</th><td><%= c.annual_value === null ? '—' : c.currency + ' ' + Number(c.annual_value).toLocaleString('en-US') %></td></tr>
+<tr><th>Owner</th><td><%= c.owner_name || '—' %></td><th>Department</th><td><%= c.department || '—' %></td></tr>
+<tr><th>Renewal date</th><td><%= fmt.date(c.renewal_date) %></td><th>Notice / auto-renew</th><td><%= c.notice_days %> days / <%= c.auto_renew ? 'yes' : 'no' %></td></tr>
+<tr><th>SLA policy</th><td><%= c.policy_name || '—' %></td><th>Renewal terms</th><td><%= c.renewal_terms || '—' %></td></tr></tbody></table>
+<% if (c.description) { %><p><%= c.description %></p><% } %>
+<% } %>
+</section>
+
+<section class="card" id="services"><h2>Services covered</h2>
+<% if (!c.customer_id) { %><p class="muted">Services are linked to customer contracts only.</p><% } else { %>
+<p class="muted">A service can be covered by several contracts, and a contract can cover several services.</p>
+<table class="grid"><thead><tr><th>Service</th><th>From the catalogue</th><th>Status</th><th></th></tr></thead><tbody>
+<% linked.forEach(function (s) { %><tr><td><a href="/services/<%= s.id %>"><%= s.name %></a></td><td><%= s.catalogue_name || '—' %></td><td><%= s.status %></td>
+<td><% if (canManage) { %><form method="post" action="/contracts/<%= c.id %>/services/<%= s.id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Unlink <%= s.name %>?">Unlink</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!linked.length) { %><p class="empty">No service is linked yet.</p><% } %>
+<% if (canManage && availableServices.length) { %><form method="post" action="/contracts/<%= c.id %>/services" class="rowform"><%- include('../partials/csrf') %>
+<select name="service_id" required aria-label="Service to link"><option value="">Link a service…</option><% availableServices.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><button class="btn ghost" type="submit">Link service</button></form><% } %>
+<% } %></section>
+
+<section class="card" id="documents"><h2>Documents</h2>
+<table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Version</th><th>Size</th><th>Added</th><th>By</th></tr></thead><tbody>
+<% files.forEach(function (f) { %><tr class="<%= f.latest ? '' : 'old' %>"><td><a href="/documents/<%= f.id %>"><%= f.filename %></a><% if (f.scan_status === 'infected') { %> <span class="tag bad">blocked</span><% } %></td><td><%= f.kind_label %></td><td>v<%= f.version %><%= f.latest ? '' : ' (superseded)' %></td><td><%= fmt.size(f.size_bytes) %></td><td><%= fmt.dt(f.created_at) %></td><td><%= f.uploader || '—' %></td></tr><% }) %></tbody></table>
+<% if (!files.length) { %><p class="empty">No documents yet.</p><% } %>
+<% if (canManage || canReview || canFin) { %><form method="post" action="/contracts/<%= c.id %>/files" enctype="multipart/form-data" class="rowform"><%- include('../partials/csrf') %>
+<select name="kind" aria-label="Document kind"><% Object.keys(docKinds).forEach(function (k) { %><option value="<%= k %>"><%= docKinds[k] %></option><% }) %></select>
+<input type="file" name="files" multiple required aria-label="Files"><button class="btn ghost" type="submit">Upload</button></form>
+<p class="muted">Uploading a file with the same name and kind again adds a new version; earlier versions are kept.</p><% } %></section>
+
+<section class="card" id="financials"><h2>Financials and payment schedule</h2>
+<p>Contract value <b><%= c.value === null ? '—' : c.currency + ' ' + Number(c.value).toLocaleString('en-US') %></b> · annual value <b><%= c.annual_value === null ? 'spread over the term' : c.currency + ' ' + Number(c.annual_value).toLocaleString('en-US') %></b> · scheduled <b><%= totals.scheduled.toLocaleString('en-US') %></b> · paid <b><%= totals.paid.toLocaleString('en-US') %></b> · outstanding <b><%= totals.outstanding.toLocaleString('en-US') %></b></p>
+<table class="grid"><thead><tr><th>Due</th><th>Description</th><th>Amount (<%= c.currency %>)</th><th>Status</th><th></th></tr></thead><tbody>
+<% payments.forEach(function (p) { %><tr><td class="<%= p.status !== 'paid' && p.due_date < today ? 'bad' : '' %>"><%= fmt.date(p.due_date) %></td><td><%= p.description || '—' %></td><td class="num"><%= Number(p.amount).toLocaleString('en-US') %></td><td><%= p.status %><%= p.paid_on ? ' on ' + fmt.date(p.paid_on) : '' %></td>
+<td><% if (canFin) { %><form method="post" action="/contracts/<%= c.id %>/payments/<%= p.id %>" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="financials"><select name="status" aria-label="Payment status"><% ['scheduled','invoiced','paid'].forEach(function (s) { %><option <%= p.status === s ? 'selected' : '' %>><%= s %></option><% }) %></select> <button class="link" type="submit">Update</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!payments.length) { %><p class="empty">No payments scheduled.</p><% } %>
+<% if (canFin) { %><form method="post" action="/contracts/<%= c.id %>/payments" class="rowform"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="financials">
+<input type="date" name="due_date" required aria-label="Due date"><input name="amount" placeholder="Amount" required inputmode="decimal" aria-label="Amount"><input name="description" placeholder="Description (e.g. Q1 invoice)" maxlength="200"><button class="btn ghost" type="submit">Schedule payment</button></form><% } %></section>
+
+<section class="card" id="obligations"><h2>Obligations, deliverables and milestones</h2>
+<table class="grid"><thead><tr><th>Item</th><th>Kind</th><th>Responsible</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
+<% obligations.forEach(function (o) { %><tr><td><%= o.title %><% if (o.description) { %><br><small class="muted"><%= o.description %></small><% } %></td><td><%= C.OBLIGATION_KINDS[o.kind] %></td><td><%= o.responsible_name || o.responsible || '—' %></td><td class="<%= o.overdue ? 'bad' : '' %>"><%= fmt.date(o.due_date) %></td><td><%= o.status.replace('_', ' ') %><%= o.overdue ? ' (overdue)' : '' %></td>
+<td><% if (canManage) { %><form method="post" action="/contracts/<%= c.id %>/obligations/<%= o.id %>" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="obligations"><select name="status" aria-label="Status"><% ['open','in_progress','done','waived'].forEach(function (s) { %><option value="<%= s %>" <%= o.status === s ? 'selected' : '' %>><%= s.replace('_', ' ') %></option><% }) %></select> <button class="link" type="submit">Update</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!obligations.length) { %><p class="empty">None recorded.</p><% } %>
+<% if (canManage) { %><details><summary>Add an obligation, deliverable or milestone</summary><form method="post" action="/contracts/<%= c.id %>/obligations"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="obligations">
+<div class="grid2"><p><label>Kind</label><select name="kind"><% Object.keys(C.OBLIGATION_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= C.OBLIGATION_KINDS[k] %></option><% }) %></select></p>
+<p><label>Title</label><input name="title" required maxlength="200"></p>
+<p><label>Responsible person (staff)</label><select name="responsible_id"><option value="">—</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p>
+<p><label>Or responsible party (text)</label><input name="responsible" maxlength="120" placeholder="e.g. the customer, the supplier"></p>
+<p><label>Due date</label><input type="date" name="due_date"></p></div>
+<p><label>Details</label><input name="description" maxlength="1000"></p><button class="btn" type="submit">Add</button></form></details><% } %></section>
+
+<section class="card" id="sla"><h2>SLA targets and performance</h2>
+<table class="grid"><thead><tr><th>Target</th><th>Measure</th><th>Required</th><th>Latest</th><th></th></tr></thead><tbody>
+<% targets.forEach(function (t) { var last = perf.filter(function (p) { return p.sla_target_id === t.id; })[0]; %><tr><td><%= t.label %><% if (t.notes) { %><br><small class="muted"><%= t.notes %></small><% } %></td><td><%= C.SLA_METRICS[t.metric] %></td><td><%= t.direction === 'min' ? 'at least' : 'at most' %> <%= Number(t.target) %> <%= t.unit %></td>
+<td><% if (last) { %><span class="tag <%= last.ok ? '' : 'bad' %>"><%= Number(last.measured) %> <%= t.unit %> · <%= last.ok ? 'met' : 'missed' %></span><% } else { %>—<% } %></td>
+<td><% if (canManage) { %><form method="post" action="/contracts/<%= c.id %>/sla/<%= t.id %>/delete" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="sla"><button class="link danger" type="submit" data-confirm="Remove this target and its recorded measurements?">Remove</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!targets.length) { %><p class="empty">No SLA targets recorded.</p><% } %>
+<% if (canManage) { %><details><summary>Add an SLA target</summary><form method="post" action="/contracts/<%= c.id %>/sla"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="sla">
+<div class="grid2"><p><label>Metric</label><select name="metric"><% Object.keys(C.SLA_METRICS).forEach(function (k) { %><option value="<%= k %>"><%= C.SLA_METRICS[k] %></option><% }) %></select></p>
+<p><label>Name</label><input name="label" required maxlength="120" placeholder="e.g. Monthly availability"></p>
+<p><label>Target value</label><input name="target" required inputmode="decimal" placeholder="e.g. 99.5"></p><p><label>Unit</label><input name="unit" maxlength="20" placeholder="% or hours"></p>
+<p><label>Must be</label><select name="direction"><option value="min">at least the target (availability)</option><option value="max">at most the target (response / resolution time)</option></select></p><p><label>Notes</label><input name="notes" maxlength="300"></p></div>
+<button class="btn" type="submit">Add target</button></form></details>
+<% if (targets.length) { %><details><summary>Record measured performance</summary><form method="post" action="/contracts/<%= c.id %>/performance"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="sla">
+<div class="grid2"><p><label>Target</label><select name="sla_target_id" required><% targets.forEach(function (t) { %><option value="<%= t.id %>"><%= t.label %></option><% }) %></select></p><p><label>Measured value</label><input name="measured" required inputmode="decimal"></p>
+<p><label>Period from</label><input type="date" name="period_start" required></p><p><label>Period to</label><input type="date" name="period_end" required></p></div>
+<p><label>Note</label><input name="note" maxlength="300"></p><button class="btn" type="submit">Record</button></form></details><% } %><% } %>
+<% if (perf.length) { %><h3>Recorded performance</h3><table class="grid"><thead><tr><th>Target</th><th>Period</th><th>Measured</th><th>Required</th><th>Result</th></tr></thead><tbody>
+<% perf.forEach(function (p) { %><tr><td><%= p.label %></td><td><%= fmt.date(p.period_start) %> – <%= fmt.date(p.period_end) %></td><td><%= Number(p.measured) %> <%= p.unit %></td><td><%= p.direction === 'min' ? '≥' : '≤' %> <%= Number(p.target) %></td><td><span class="tag <%= p.ok ? '' : 'bad' %>"><%= p.ok ? 'Met' : 'Missed' %></span></td></tr><% }) %></tbody></table><% } %></section>
+
+<section class="card" id="amendments"><h2>Amendments, variations and extensions</h2>
+<table class="grid"><thead><tr><th>Effective</th><th>Kind</th><th>Change</th><th>End date</th><th>Value</th><th>By</th></tr></thead><tbody>
+<% amendments.forEach(function (a) { %><tr><td><%= fmt.date(a.effective_date) %></td><td><%= C.AMENDMENT_KINDS[a.kind] %></td><td><%= a.description %></td><td><%= a.new_end_date ? fmt.date(a.old_end_date) + ' → ' + fmt.date(a.new_end_date) : '—' %></td><td><%= a.new_value !== null ? (a.old_value === null ? '—' : Number(a.old_value).toLocaleString('en-US')) + ' → ' + Number(a.new_value).toLocaleString('en-US') : '—' %></td><td><%= a.by || '—' %></td></tr><% }) %></tbody></table>
+<% if (!amendments.length) { %><p class="empty">The contract has not been amended.</p><% } %>
+<% if (canManage) { %><details><summary>Record an amendment</summary><form method="post" action="/contracts/<%= c.id %>/amendments"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="amendments">
+<div class="grid2"><p><label>Kind</label><select name="kind"><% Object.keys(C.AMENDMENT_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= C.AMENDMENT_KINDS[k] %></option><% }) %></select></p><p><label>Effective date</label><input type="date" name="effective_date" value="<%= today %>" required></p>
+<p><label>New end date (optional)</label><input type="date" name="new_end_date"></p><p><label>Revised contract value (optional)</label><input name="new_value" inputmode="decimal"></p></div>
+<p><label>What changed</label><textarea name="description" rows="2" required maxlength="2000"></textarea></p><button class="btn" type="submit">Record amendment</button></form>
+<p class="muted">A new end date or value is applied to the contract, and the status follows the new dates.</p></details><% } %></section>
+
+<section class="card" id="reviews"><h2>Review and authorisation</h2>
+<p class="muted">Recorded separately from the lifecycle status. The latest decision for each stage is shown.</p>
+<table class="grid"><thead><tr><th>Stage</th><th>Latest decision</th><th>By</th><th>When</th></tr></thead><tbody>
+<% Object.keys(C.REVIEW_STAGES).forEach(function (k) { var r = review[k]; %><tr><td><%= C.REVIEW_STAGES[k] %></td><td><% if (r) { %><span class="tag <%= r.decision === 'approved' ? '' : (r.decision === 'rejected' ? 'bad' : 'warn') %>"><%= C.REVIEW_DECISIONS[r.decision] %></span><%= r.comment ? ' · ' + r.comment : '' %><% } else { %><span class="muted">Not reviewed</span><% } %></td><td><%= r ? r.reviewer_name : '—' %></td><td><%= r ? fmt.dt(r.created_at) : '—' %></td></tr><% }) %></tbody></table>
+<% if (canReview && myStages.length) { %><form method="post" action="/contracts/<%= c.id %>/reviews" class="rowform"><%- include('../partials/csrf') %><input type="hidden" name="_anchor" value="reviews">
+<select name="stage" aria-label="Stage"><% myStages.forEach(function (k) { %><option value="<%= k %>"><%= C.REVIEW_STAGES[k] %></option><% }) %></select>
+<select name="decision" aria-label="Decision"><% Object.keys(C.REVIEW_DECISIONS).forEach(function (k) { %><option value="<%= k %>"><%= C.REVIEW_DECISIONS[k] %></option><% }) %></select>
+<input name="comment" placeholder="Comment (required unless approved)" maxlength="1000"><button class="btn ghost" type="submit">Record review</button></form><% } %></section>
+
+<% if (c.customer_id) { %>
+<section class="card"><h2>Execution engineer for this contract</h2>
+<% if (canAssign) { %><form method="post" action="/contracts/<%= c.id %>/engineer"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Engineer</label><select name="engineer_id" required><option value="">Choose…</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %><%= s.available ? '' : ' (unavailable)' %></option><% }) %></select></p>
+<p><label>Backup</label><select name="backup_id"><option value="">None</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select></p>
+<p><label>Effective from</label><input type="date" name="effective_from" value="<%= today %>"></p><p><label>Reason</label><input name="reason" required maxlength="500"></p></div><button class="btn" type="submit">Assign</button></form><% } %>
+<table class="grid"><thead><tr><th>Engineer</th><th>Backup</th><th>From</th><th>To</th><th>Changed by</th><th>Reason</th></tr></thead><tbody>
+<% engineerHistory.forEach(function (h) { %><tr><td><%= h.engineer_name %></td><td><%= h.backup_name || '—' %></td><td><%= fmt.date(h.effective_from) %></td><td><%= h.effective_to ? fmt.date(h.effective_to) : 'current' %></td><td><%= h.changed_by_name || '—' %></td><td><%= h.reason %></td></tr><% }) %></tbody></table>
+<% if (!engineerHistory.length) { %><p class="empty">No engineer assigned.</p><% } %></section>
+<% } %>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.created_at) %></time> <%= e.text %></li><% }) %></ul>
+<% if (mail.length) { %><h3>Notifications sent</h3><table class="grid"><thead><tr><th>When</th><th>To</th><th>Kind</th><th>Status</th></tr></thead><tbody><% mail.forEach(function (m) { %><tr><td><%= fmt.dt(m.created_at) %></td><td><%= m.recipient_email %></td><td><%= m.kind.replace('contract_', '') %></td><td><%= m.status %><%= m.last_error ? ' – ' + m.last_error : '' %></td></tr><% }) %></tbody></table><% } %></section>
+<%- include('../partials/footer') %>

@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<section class="card narrow">
+  <h1>Verification code</h1>
+  <p>Enter the 6-digit code from your authenticator app.</p>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form method="post" action="/login/mfa">
+    <%- include('../partials/csrf') %>
+    <p><label for="code">Code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required autofocus></p>
+    <button class="btn" type="submit">Continue</button>
+  </form>
+</section>
+<%- include('../partials/footer') %>

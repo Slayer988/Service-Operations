@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" data-theme="<%= typeof theme !== 'undefined' && theme ? theme : 'default' %>"<%- typeof navCollapsed !== 'undefined' && navCollapsed ? ' data-nav="collapsed"' : '' %>>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= title ? title + ' · ' : '' %><%= appName %></title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/app.css?v=<%= appVersion %>">
+<script src="/static/app.js?v=<%= appVersion %>" defer></script>
+</head>
+<% var isBare = typeof bare !== 'undefined' && bare; var groups = (typeof nav !== 'undefined' && nav) || []; %>
+<% if (isBare) { %>
+<body class="plain">
+<%- include('icons') %>
+<% } else if (!user) { %>
+<body>
+<%- include('icons') %>
+<main class="content">
+<% } else { %>
+<body>
+<%- include('icons') %>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brandblock" href="<%= user.kind === 'customer' ? '/portal' : '/' %>">
+      <svg class="ic logo"><use href="#i-logo"/></svg>
+      <b><%= appName %></b>
+      <svg class="wave" viewBox="0 0 84 46" aria-hidden="true"><path d="M84 0C62 8 52 28 32 33 20 36 9 40 0 46H84z"/></svg>
+    </a>
+    <nav class="sidenav" aria-label="Main">
+      <% groups.forEach(function (g, gi) { %><% if (gi) { %><hr><% } %>
+        <% g.forEach(function (it) { %><a href="<%= it.href %>" class="<%= it.on ? 'on' : '' %>" title="<%= it.label %>"<%- it.on ? ' aria-current="page"' : '' %>><svg class="ic"><use href="#i-<%= it.icon %>"/></svg><span><%= it.label %></span><% if (it.badge) { %><span class="badge"><%= it.badge %></span><% } %></a><% }) %>
+      <% }) %>
+    </nav>
+    <div class="sidefoot" aria-hidden="true">
+      <svg viewBox="0 0 264 84" preserveAspectRatio="none"><path class="lite" d="M0 84V44C50 14 90 60 140 42 190 24 228 4 264 20V84z"/><path d="M0 84V62C44 36 88 78 136 62 184 46 226 30 264 44V84z"/></svg>
+      <small><%= appName %> <%= appVersion %></small>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button type="button" class="iconbtn navtoggle" data-nav-toggle aria-label="Collapse or expand the menu" aria-expanded="<%= typeof navCollapsed !== 'undefined' && navCollapsed ? 'false' : 'true' %>" title="Collapse or expand the menu"><svg class="ic"><use href="#i-menu"/></svg></button>
+      <div class="welcome"><b>Welcome, <%= String(user.name || '').split(' ')[0] %></b><span><%= appName %><%= user.customer_name ? ' · ' + user.customer_name : '' %></span></div>
+      <form class="search" method="get" action="<%= user.kind === 'customer' ? '/portal/tickets' : '/tickets' %>" role="search">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input type="search" name="q" placeholder="Search tickets, requests and more…" aria-label="Search tickets" maxlength="100">
+        <% if (user.kind === 'staff') { %><input type="hidden" name="view" value="all"><% } %>
+      </form>
+      <div class="tools">
+        <details class="pop themeswitch">
+          <summary class="iconbtn" aria-label="Change theme" title="Change theme"><svg class="ic"><use href="#i-palette"/></svg></summary>
+          <div class="menu">
+            <p><b>Theme</b></p>
+            <form method="post" action="/account/theme">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="back" value="<%= typeof currentUrl !== 'undefined' ? currentUrl : '/' %>">
+              <% (typeof themes !== 'undefined' ? themes : []).forEach(function (t) { %><button type="submit" name="theme" value="<%= t.id %>" class="themeopt<%= t.id === theme ? ' on' : '' %>"<%- t.id === theme ? ' aria-current="true"' : '' %>><span class="sw t-<%= t.id %>"></span><span class="tl"><b><%= t.label %></b><small><%= t.text %></small></span><% if (t.id === theme) { %><svg class="ic tick"><use href="#i-check"/></svg><% } %></button><% }) %>
+            </form>
+          </div>
+        </details>
+        <details class="pop">
+          <summary class="iconbtn" aria-label="Notifications"><svg class="ic"><use href="#i-bell"/></svg><% if (alerts && alerts.count) { %><span class="dot"></span><% } %></summary>
+          <div class="menu">
+            <% if (alerts && alerts.items.length) { %><% alerts.items.forEach(function (a) { %><a href="<%= a.href %>"><%= a.text %></a><% }) %><% } else { %><p>Nothing needs your attention.</p><% } %>
+          </div>
+        </details>
+        <a class="iconbtn" href="/manual" target="_blank" rel="noopener" aria-label="User Manual (opens in a new tab)" title="User Manual"><svg class="ic"><use href="#i-help"/></svg></a>
+        <details class="pop usermenu">
+          <summary><span class="avatar"><%= String(user.name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase() %></span><span class="uname"><%= user.name %></span></summary>
+          <div class="menu">
+            <p><%= user.email %><br><%= roleLabels[user.role] %></p>
+            <a href="/account">My account</a>
+            <% if (typeof adminLinks !== 'undefined' && adminLinks) { %><a href="/admin">Administration</a><% } %>
+            <hr>
+            <form method="post" action="/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">Sign out</button></form>
+          </div>
+        </details>
+      </div>
+    </header>
+    <main class="content">
+<% } %>
+<% if (!isBare && flash && flash.length) { %><ul class="messages"><% flash.forEach(function (m) { %><li class="<%= m.type %>"><%= m.msg %></li><% }) %></ul><% } %>

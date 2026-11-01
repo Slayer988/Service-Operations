@@ -1,0 +1,62 @@
+<%- include('../partials/header') %>
+<p><a href="/projects">← Projects</a></p>
+<h1><%= p.name %> <span class="pill ps-<%= p.status %>"><%= statusLabels[p.status] %></span> <span class="health h-<%= p.health %>"><%= healthLabels[p.health] %></span><% if (p.escalated) { %> <span class="pill hot">Escalated</span><% } %></h1>
+<p class="muted"><%= p.ref %> · <%= p.customer_name || 'Internal project' %> · Manager <%= p.manager_name %><%= p.start_date ? ' · ' + fmt.date(p.start_date) + ' to ' + (p.end_date ? fmt.date(p.end_date) : 'open') : '' %></p>
+<p class="jump"><a href="#details">Details</a> · <a href="#tasks">Tasks and milestones</a> · <a href="#team">Team</a> · <a href="#activity">Activity</a></p>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'clipboard', label: 'Progress', value: progress === null ? '–' : progress + '%' }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'check', label: 'Tasks done', value: tasks.filter(function (t) { return t.status === 'done'; }).length + ' / ' + tasks.filter(function (t) { return t.status !== 'cancelled'; }).length, small: true }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'clock', label: 'Overdue tasks', value: tasks.filter(function (t) { return t.overdue; }).length, tone: tasks.some(function (t) { return t.overdue; }) ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'chart', label: 'Budget', value: p.budget === null ? '–' : money(p.budget, p.currency), small: true }) %>
+</div>
+<% if (p.late) { %><p class="banner">This project is past its planned end date.</p><% } %>
+<% if (p.escalated) { %><p class="banner warnbar">Leadership support requested: <%= p.escalation_note %></p><% } %>
+<% if (p.status_note) { %><p class="card statusnote"><b>Latest status:</b> <%= p.status_note %></p><% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (a.manage) { %>
+<form method="post" action="/projects/<%= p.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/project_fields', { form: p }) %>
+<button class="btn" type="submit">Save changes</button></form>
+<% } else { %>
+<dl class="facts"><dt>Customer</dt><dd><%= p.customer_name || 'Internal' %></dd><dt>Manager</dt><dd><%= p.manager_name %></dd>
+<% if (opp) { %><dt>Won deal</dt><dd><a href="/pipeline/<%= opp.id %>"><%= opp.ref %></a> <%= opp.name %></dd><% } %>
+<% if (contract) { %><dt>Contract</dt><dd><a href="/contracts/<%= contract.id %>"><%= contract.reference %></a> <%= contract.title %></dd><% } %>
+<dt>Description</dt><dd><%= p.description || '–' %></dd></dl>
+<% } %>
+<% if (a.manage && (opp || contract)) { %><p class="muted"><% if (opp) { %>Won deal: <a href="/pipeline/<%= opp.id %>"><%= opp.ref %></a>. <% } %><% if (contract) { %>Contract: <a href="/contracts/<%= contract.id %>"><%= contract.reference %></a>.<% } %></p><% } %>
+</section>
+
+<% if (a.manage) { %>
+<section class="card"><h2>Escalation</h2>
+<form method="post" action="/projects/<%= p.id %>/escalation" class="rowform"><%- include('../partials/csrf') %>
+<input type="hidden" name="escalate" value="<%= p.escalated ? '0' : '1' %>">
+<% if (!p.escalated) { %><input name="note" maxlength="500" placeholder="What does leadership need to help with?" required><button class="btn ghost" type="submit">Escalate</button>
+<% } else { %><span class="muted">Escalated: <%= p.escalation_note %></span><button class="btn ghost" type="submit">Clear escalation</button><% } %></form></section>
+<% } %>
+
+<section class="card" id="tasks"><h2>Tasks and milestones</h2>
+<% if (progress !== null) { %><%- bar(progress) %><% } %>
+<% if (tasks.length) { %><table class="grid"><thead><tr><th>Item</th><th>Owner</th><th>Due</th><th>Status</th><% if (a.work) { %><th></th><% } %></tr></thead><tbody>
+<% tasks.forEach(function (t) { %><tr class="<%= t.status === 'done' || t.status === 'cancelled' ? 'muted' : '' %>">
+  <td><%= t.kind === 'milestone' ? '◆ ' : '' %><%= t.title %></td><td><%= t.assignee_name || '–' %></td><td class="<%= t.overdue ? 'bad' : '' %>"><%= t.due_date ? fmt.date(t.due_date) : '–' %></td><td><%= taskStatuses[t.status] %></td>
+  <% if (a.work) { %><td><form method="post" action="/projects/<%= p.id %>/tasks/<%= t.id %>" class="rowform"><%- include('../partials/csrf') %>
+    <select name="status" aria-label="Status"><% Object.keys(taskStatuses).forEach(function (s) { %><option value="<%= s %>" <%= t.status === s ? 'selected' : '' %>><%= taskStatuses[s] %></option><% }) %></select><button class="btn ghost small" type="submit">Update</button></form></td><% } %></tr>
+<% }) %></tbody></table><% } else { %><p class="empty">Nothing planned yet.</p><% } %>
+<% if (a.work) { %><form method="post" action="/projects/<%= p.id %>/tasks" class="rowform"><%- include('../partials/csrf') %>
+  <select name="kind" aria-label="Kind"><% Object.keys(taskKinds).forEach(function (k) { %><option value="<%= k %>"><%= taskKinds[k] %></option><% }) %></select>
+  <input name="title" maxlength="200" placeholder="What needs to be done" required>
+  <select name="assignee_id" aria-label="Owner"><option value="">No owner</option><% team.forEach(function (m) { %><option value="<%= m.id %>"><%= m.name %></option><% }) %></select>
+  <input type="date" name="due_date" aria-label="Due date"><button class="btn" type="submit">Add</button></form><% } %>
+</section>
+
+<section class="card" id="team"><h2>Team</h2>
+<table class="grid"><thead><tr><th>Name</th><th>Role</th><% if (a.manage) { %><th></th><% } %></tr></thead><tbody>
+<% team.forEach(function (m) { %><tr><td><%= m.name %></td><td><%= m.role || '–' %></td><% if (a.manage) { %><td><% if (m.id !== p.manager_id) { %><form method="post" action="/projects/<%= p.id %>/team/<%= m.id %>/remove"><%- include('../partials/csrf') %><button class="btn ghost small" type="submit">Remove</button></form><% } %></td><% } %></tr><% }) %></tbody></table>
+<% if (a.manage && addable.length) { %><form method="post" action="/projects/<%= p.id %>/team" class="rowform"><%- include('../partials/csrf') %>
+  <select name="user_id" aria-label="Person"><% addable.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><input name="role" maxlength="80" placeholder="Role on the project"><button class="btn" type="submit">Add to team</button></form><% } %>
+</section>
+
+<section class="card" id="activity"><h2>Activity</h2>
+<% if (events.length) { %><ul class="timeline"><% events.forEach(function (e) { %><li><small><%= fmt.dt(e.at) %></small> <%= e.text %></li><% }) %></ul><% } else { %><p class="empty">No activity yet.</p><% } %></section>
+<%- include('../partials/footer') %>

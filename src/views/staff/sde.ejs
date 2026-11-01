@@ -1,0 +1,22 @@
+<%- include('../partials/header') %>
+<div class="head"><h1><%= title %></h1><span>
+<% if (canSeeAll) { %><a class="btn ghost" href="/pipeline/sde<%= scope ? '' : '?scope=me' %>"><%= scope ? 'Show every engineer' : 'Show only mine' %></a> <a class="btn ghost" href="/pipeline">Pipeline</a> <a class="btn ghost" href="/pipeline/reports/workload">Workload report</a><% } %></span></div>
+<p class="muted"><%= scope ? 'Opportunities assigned to you and the tasks you own.' : 'Every engineer, across all active opportunities.' %></p>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#opportunities', icon: 'funnel', label: 'Opportunities', value: d.opportunities.length }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'clipboard', label: 'Pending / in progress', value: d.counts.pending + ' / ' + d.counts.in_progress }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'check', label: 'Completed', value: d.counts.completed }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'clock', label: 'Due in 7 days', value: d.counts.due_week }) %>
+  <%- include('../partials/kpi', { href: '#tasks', icon: 'alert', label: 'Overdue', value: d.counts.overdue, tone: d.counts.overdue ? 'bad' : '' }) %>
+</div>
+<section class="card" id="opportunities"><h2>Opportunities</h2>
+<% if (d.opportunities.length) { %><table class="grid"><thead><tr><th>Opportunity</th><th>Customer</th><th>Stage</th><th>Expected close</th><th>Open tasks</th><th>Overdue</th><th>Progress</th></tr></thead><tbody>
+<% d.opportunities.forEach(function (o) { %><tr><td><a href="/pipeline/<%= o.id %>"><%= o.ref %></a> <small><%= o.name %></small></td><td><%= o.customer %></td><td><span class="pill st-<%= o.stage %>"><%= labels[o.stage] %></span></td><td><%= o.expected_close || '—' %></td><td><%= o.open_tasks %></td><td class="<%= o.overdue_tasks ? 'bad' : '' %>"><%= o.overdue_tasks %></td><td><%= o.progress %>%</td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No active opportunities are assigned.</p><% } %></section>
+<section class="card" id="tasks"><h2>Open tasks</h2>
+<% if (d.tasks.length) { %><table class="grid"><thead><tr><th>Task</th><th>Opportunity</th><% if (!scope) { %><th>Engineer</th><% } %><th>Priority</th><th>Target</th><th>Progress</th><th>Status</th></tr></thead><tbody>
+<% d.tasks.forEach(function (t) { %><tr><td><%= t.ref %> · <%= t.title %></td><td><a href="/pipeline/<%= t.opportunity_id %>#tasks"><%= t.oref %></a> <small><%= t.oname %></small></td><% if (!scope) { %><td><%= t.assignee || '—' %></td><% } %><td><%= priorities[t.priority] %></td><td class="<%= t.overdue ? 'bad' : '' %>"><%= t.due_date || '—' %><%= t.overdue ? ' (overdue)' : '' %></td><td><%= t.progress %>%</td><td><%= taskStatuses[t.status] %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No open tasks.</p><% } %></section>
+<section class="card"><h2>Recent technical activity</h2>
+<% if (d.activity.length) { %><ul class="timeline"><% d.activity.forEach(function (a) { %><li><time><%= fmt.date(a.activity_date) %></time> <a href="/pipeline/<%= a.oid %>#activities"><%= a.ref %></a>: <%= a.description %></li><% }) %></ul><% } else { %><p class="empty">Nothing recorded yet.</p><% } %></section>
+<%- include('../partials/footer') %>

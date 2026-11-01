@@ -1,0 +1,112 @@
+<%- include('../partials/header') %>
+<p><a href="/tenders">← Tender Management</a></p>
+<% var tone = t.status === 'awarded' ? '' : (['unsuccessful', 'cancelled', 'withdrawn', 'closed'].includes(t.status) ? 'grey' : (overdue ? 'bad' : 'warn')); %>
+<h1><%= t.title %> <span class="tag <%= tone %>"><%= labels[t.status] %></span></h1>
+<p class="muted"><%= t.ref %> · <%= t.type %> · <%= t.issuer %><%= t.tender_no ? ' · ' + t.tender_no : '' %> · Owner <%= t.owner_name %><% if (t.customer_name) { %> · Customer <%= t.customer_name %><% } %>
+<% if (t.opp_ref && canPipeline) { %> · Opportunity <a href="/pipeline/<%= t.opportunity_id %>"><%= t.opp_ref %></a><% } %><% if (t.contract_ref) { %> · Contract <a href="/contracts/<%= t.contract_id %>"><%= t.contract_ref %></a><% } %></p>
+<p class="jump"><a href="#details">Details</a> · <a href="#checklist">Checklist</a> · <a href="#reviews">Internal review</a> · <a href="#documents">Documents</a> · <a href="#submission">Submission</a> · <a href="#evaluation">Evaluation</a> · <a href="#team">Team</a> · <a href="#history">History</a></p>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: 'Submission deadline', value: leftText || fmt.dt(t.submission_due), small: true, tone: overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#checklist', icon: 'clipboard', label: 'Checklist done', value: tasks.filter(function (k) { return k.done_at; }).length + ' / ' + tasks.length }) %>
+  <%- include('../partials/kpi', { href: '#reviews', icon: 'shield', label: 'Internal reviews approved', value: Object.keys(T.REVIEW_STAGES).filter(function (k) { return review[k] && review[k].decision === 'approved'; }).length + ' / 3', tone: approved ? '' : 'warn' }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'chart', label: 'Estimated value', value: t.est_value === null ? '–' : t.currency + ' ' + Number(t.est_value).toLocaleString('en-US', { maximumFractionDigits: 0 }), small: true }) %>
+</div>
+
+<% if (t.status === 'awarded' && canContract && !t.contract_ref) { %><p class="banner ok">This tender was awarded. <a class="btn small" href="/contracts/new?tender_id=<%= t.id %>">Create the contract</a></p><% } %>
+
+<% if (canManage && next.length) { %>
+<section class="card"><h2>Move the tender on</h2>
+<p class="muted">Each status has rules: a bid cannot be submitted before the technical, commercial and management reviews are approved<%= requireReviews ? '' : ' (this check is switched off in Settings)' %>, and withdrawing, cancelling or losing needs a reason.</p>
+<form method="post" action="/tenders/<%= t.id %>/status"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label>New status</label><select name="status" required><% next.forEach(function (s) { %><option value="<%= s %>"><%= labels[s] %></option><% }) %></select></p>
+<p><label>Reason <small>(required for withdrawn, cancelled)</small></label><input name="reason" maxlength="1000"></p>
+<p><label>Submission method <small>(for Submitted)</small></label><input name="method" maxlength="120" placeholder="Portal, courier, e-mail, in person"></p>
+<p><label>Submission reference / receipt <small>(for Submitted)</small></label><input name="reference" maxlength="200"></p>
+<p><label>Awarded to <small>(for Awarded / Unsuccessful)</small></label><input name="awarded_to" maxlength="200"></p>
+<p><label>Award date</label><input type="date" name="awarded_on"></p>
+<p><label>Award value (<%= t.currency %>) <small>(for Awarded)</small></label><input name="award_value" inputmode="decimal"></p>
+<p><label>Outcome notes / feedback</label><input name="outcome_note" maxlength="2000"></p></div>
+<button class="btn" type="submit">Change status</button></form></section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (canManage) { %>
+<form method="post" action="/tenders/<%= t.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/tender_fields', { form: t, ownerId: t.owner_id }) %>
+<button class="btn" type="submit">Save changes</button></form>
+<% } else { %>
+<table class="grid kv"><tbody>
+<tr><th>Procuring entity</th><td><%= t.issuer %></td><th>Type</th><td><%= t.type %></td></tr>
+<tr><th>Department / unit</th><td><%= t.department || '—' %> / <%= t.business_unit || '—' %></td><th>Category</th><td><%= t.category || '—' %></td></tr>
+<tr><th>Published</th><td><%= fmt.date(t.published_on) %></td><th>Submission deadline</th><td><%= fmt.dt(t.submission_due) %></td></tr>
+<tr><th>Clarification due</th><td><%= t.clarification_due ? fmt.dt(t.clarification_due) : '—' %></td><th>Site visit</th><td><%= t.site_visit_at ? fmt.dt(t.site_visit_at) : '—' %></td></tr></tbody></table>
+<% if (t.description) { %><h3>Description</h3><p><%= t.description %></p><% } %><% if (t.scope) { %><h3>Scope and requirements</h3><p><%= t.scope %></p><% } %>
+<% } %>
+<% if (t.status === 'awarded' || t.status === 'unsuccessful' || t.awarded_to) { %><p><b>Outcome:</b> <%= t.awarded_to ? 'awarded to ' + t.awarded_to : '' %><%= t.awarded_on ? ' on ' + fmt.date(t.awarded_on) : '' %><%= t.award_value !== null ? ' · award value ' + t.currency + ' ' + Number(t.award_value).toLocaleString('en-US') : '' %><%= t.outcome_note ? ' · ' + t.outcome_note : '' %></p><% } %>
+</section>
+
+<section class="card" id="checklist"><h2>Compliance and bid preparation checklist</h2>
+<% if (!tasks.length) { %><p class="empty">No checklist items yet.<% if (canContribute) { %> Add the standard checklist below to start.<% } %></p><% } %>
+<% Object.keys(T.SECTIONS).forEach(function (sec) { if (!sections[sec]) return; %>
+<h3><%= T.SECTIONS[sec] %></h3>
+<table class="grid"><thead><tr><th>Item</th><th>Assigned to</th><th>Due</th><th></th><th></th></tr></thead><tbody>
+<% sections[sec].forEach(function (k) { %><tr class="<%= k.done_at ? 'old' : '' %>"><td><%= k.title %><% if (k.notes) { %><br><small class="muted"><%= k.notes %></small><% } %><% if (k.done_at) { %><br><small class="muted">Done by <%= k.done_by_name || '—' %>, <%= fmt.dt(k.done_at) %></small><% } %></td>
+<td><%= k.assignee_name || '—' %></td><td class="<%= !k.done_at && k.due_at && new Date(k.due_at) < new Date() ? 'bad' : '' %>"><%= k.due_at ? fmt.dt(k.due_at) : '—' %></td>
+<td><% if (canContribute) { %><form method="post" action="/tenders/<%= t.id %>/tasks/<%= k.id %>/toggle" class="inline"><%- include('../partials/csrf') %><button class="btn small <%= k.done_at ? 'ghost' : '' %>" type="submit"><%= k.done_at ? 'Reopen' : 'Mark done' %></button></form><% } else { %><%= k.done_at ? 'Done' : 'Open' %><% } %></td>
+<td><% if (canManage) { %><form method="post" action="/tenders/<%= t.id %>/tasks/<%= k.id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Remove this checklist item?">Remove</button></form><% } %></td></tr><% }) %></tbody></table>
+<% }) %>
+<% if (canContribute) { %>
+<form method="post" action="/tenders/<%= t.id %>/tasks" class="rowform"><%- include('../partials/csrf') %>
+<select name="section" aria-label="Section"><% Object.keys(T.SECTIONS).forEach(function (k) { %><option value="<%= k %>"><%= T.SECTIONS[k] %></option><% }) %></select>
+<input name="title" placeholder="New checklist item" required maxlength="250" aria-label="Item">
+<select name="assignee_id" aria-label="Assign to"><option value="">Unassigned</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select>
+<input type="datetime-local" name="due_at" aria-label="Due"><button class="btn ghost" type="submit">Add item</button></form>
+<form method="post" action="/tenders/<%= t.id %>/tasks"><%- include('../partials/csrf') %><input type="hidden" name="standard" value="1"><button class="btn ghost" type="submit">Add the standard checklist (administrative, technical, financial, statutory, bid documents)</button></form>
+<% } %></section>
+
+<section class="card" id="reviews"><h2>Internal review</h2>
+<p class="muted">Technical, commercial and management approval, recorded separately. The latest decision for each stage counts.</p>
+<table class="grid"><thead><tr><th>Stage</th><th>Latest decision</th><th>By</th><th>When</th></tr></thead><tbody>
+<% Object.keys(T.REVIEW_STAGES).forEach(function (k) { var r = review[k]; %><tr><td><%= T.REVIEW_STAGES[k] %></td><td><% if (r) { %><span class="tag <%= r.decision === 'approved' ? '' : (r.decision === 'rejected' ? 'bad' : 'warn') %>"><%= T.REVIEW_DECISIONS[r.decision] %></span><%= r.comment ? ' · ' + r.comment : '' %><% } else { %><span class="muted">Not reviewed</span><% } %></td><td><%= r ? r.reviewer_name : '—' %></td><td><%= r ? fmt.dt(r.created_at) : '—' %></td></tr><% }) %></tbody></table>
+<% if (canReview && myStages.length) { %><form method="post" action="/tenders/<%= t.id %>/reviews" class="rowform"><%- include('../partials/csrf') %>
+<select name="stage" aria-label="Stage"><% myStages.forEach(function (k) { %><option value="<%= k %>"><%= T.REVIEW_STAGES[k] %></option><% }) %></select>
+<select name="decision" aria-label="Decision"><% Object.keys(T.REVIEW_DECISIONS).forEach(function (k) { %><option value="<%= k %>"><%= T.REVIEW_DECISIONS[k] %></option><% }) %></select>
+<input name="comment" placeholder="Comment (required unless approved)" maxlength="1000"><button class="btn ghost" type="submit">Record review</button></form><% } %>
+<% if (reviews.length > Object.keys(review).length) { %><details><summary>All review decisions</summary><table class="grid"><tbody><% reviews.forEach(function (r) { %><tr><td><%= fmt.dt(r.created_at) %></td><td><%= T.REVIEW_STAGES[r.stage] %></td><td><%= T.REVIEW_DECISIONS[r.decision] %></td><td><%= r.reviewer_name %></td><td><%= r.comment %></td></tr><% }) %></tbody></table></details><% } %></section>
+
+<section class="card" id="documents"><h2>Documents</h2>
+<table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Version</th><th>Size</th><th>Added</th><th>By</th></tr></thead><tbody>
+<% files.forEach(function (f) { %><tr class="<%= f.latest ? '' : 'old' %>"><td><a href="/documents/<%= f.id %>"><%= f.filename %></a><% if (f.scan_status === 'infected') { %> <span class="tag bad">blocked</span><% } %></td><td><%= f.kind_label %></td><td>v<%= f.version %><%= f.latest ? '' : ' (superseded)' %></td><td><%= fmt.size(f.size_bytes) %></td><td><%= fmt.dt(f.created_at) %></td><td><%= f.uploader || '—' %></td></tr><% }) %></tbody></table>
+<% if (!files.length) { %><p class="empty">No documents yet.</p><% } %>
+<% if (canManage || canContribute) { %><form method="post" action="/tenders/<%= t.id %>/files" enctype="multipart/form-data" class="rowform"><%- include('../partials/csrf') %>
+<select name="kind" aria-label="Document kind"><% Object.keys(docKinds).forEach(function (k) { %><option value="<%= k %>"><%= docKinds[k] %></option><% }) %></select>
+<input type="file" name="files" multiple required aria-label="Files"><button class="btn ghost" type="submit">Upload</button></form>
+<p class="muted">Uploading a file with the same name and kind again adds a new version; earlier versions are kept.</p><% } %></section>
+
+<section class="card" id="submission"><h2>Submission</h2>
+<% if (t.submitted_at) { %><p>Submitted <b><%= fmt.dt(t.submitted_at) %></b> by <b><%= t.submission_method %></b><%= t.submission_reference ? ', reference ' + t.submission_reference : '' %>.</p>
+<% } else { %><p class="muted">Not submitted yet. Use <b>Move the tender on</b> above to record the submission method and reference once the bid is in.</p><% } %></section>
+
+<section class="card" id="evaluation"><h2>Evaluation and clarifications</h2>
+<table class="grid"><thead><tr><th>Date</th><th>Kind</th><th>Stage / request</th><th>Due</th><th>Responded</th><th>Score</th><th>Outcome</th></tr></thead><tbody>
+<% evals.forEach(function (e) { %><tr><td><%= fmt.date(e.event_date) %></td><td><%= T.EVAL_KINDS[e.kind] %></td><td><%= e.title %><% if (e.notes) { %><br><small class="muted"><%= e.notes %></small><% } %></td><td><%= fmt.date(e.due_date) %></td><td><%= fmt.date(e.responded_on) %></td><td class="num"><%= e.score === null ? '—' : Number(e.score) %></td><td><%= e.outcome || '—' %></td></tr><% }) %></tbody></table>
+<% if (!evals.length) { %><p class="empty">Nothing recorded yet.</p><% } %>
+<% if (canManage) { %><details><summary>Record an evaluation stage, clarification or score</summary><form method="post" action="/tenders/<%= t.id %>/evaluations"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label>Kind</label><select name="kind"><% Object.keys(T.EVAL_KINDS).forEach(function (k) { %><option value="<%= k %>"><%= T.EVAL_KINDS[k] %></option><% }) %></select></p><p><label>Stage or request</label><input name="title" required maxlength="200"></p>
+<p><label>Date</label><input type="date" name="event_date"></p><p><label>Response due</label><input type="date" name="due_date"></p><p><label>Responded on</label><input type="date" name="responded_on"></p><p><label>Score</label><input name="score" inputmode="decimal"></p>
+<p><label>Outcome</label><input name="outcome" maxlength="300"></p><p><label>Notes</label><input name="notes" maxlength="1000"></p></div><button class="btn" type="submit">Record</button></form></details><% } %></section>
+
+<section class="card" id="team"><h2>Bid team</h2>
+<table class="grid"><thead><tr><th>Name</th><th>Role</th><th></th></tr></thead><tbody>
+<% members.forEach(function (m) { %><tr><td><%= m.name %></td><td><%= T.MEMBER_ROLES[m.role] || m.role %></td><td><% if (canManage) { %><form method="post" action="/tenders/<%= t.id %>/members/<%= m.user_id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Remove <%= m.name %> from the team?">Remove</button></form><% } %></td></tr><% }) %></tbody></table>
+<% if (!members.length) { %><p class="empty">No team members yet. Team members are told about deadlines.</p><% } %>
+<% if (canManage) { %><form method="post" action="/tenders/<%= t.id %>/members" class="rowform"><%- include('../partials/csrf') %>
+<select name="user_id" required aria-label="Person"><option value="">Add a person…</option><% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select>
+<select name="role" aria-label="Role"><% Object.keys(T.MEMBER_ROLES).forEach(function (k) { %><option value="<%= k %>"><%= T.MEMBER_ROLES[k] %></option><% }) %></select><button class="btn ghost" type="submit">Add</button></form><% } %></section>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.created_at) %></time> <%= e.text %></li><% }) %></ul>
+<% if (mail.length) { %><h3>Notifications sent</h3><table class="grid"><thead><tr><th>When</th><th>To</th><th>Kind</th><th>Status</th></tr></thead><tbody><% mail.forEach(function (m) { %><tr><td><%= fmt.dt(m.created_at) %></td><td><%= m.recipient_email %></td><td><%= m.kind.replace('tender_', '') %></td><td><%= m.status %><%= m.last_error ? ' – ' + m.last_error : '' %></td></tr><% }) %></tbody></table><% } %></section>
+<%- include('../partials/footer') %>

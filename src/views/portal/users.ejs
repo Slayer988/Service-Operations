@@ -1,0 +1,13 @@
+<%- include('../partials/header') %>
+<h1>Our users</h1>
+<% if (newPassword) { %><section class="notice"><p>User created. Give them this first password (it is shown only now): <code class="key"><%= newPassword.password %></code> for <%= newPassword.email %>. They should change it after signing in.</p></section><% } %>
+<table class="grid"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><%= r.name %></td><td><%= r.email %></td><td><%= roleLabels[r.role] %></td><td><%= r.active ? 'Yes' : 'No' %></td><td><%= fmt.dt(r.last_login_at) %></td>
+<td><% if (r.id !== user.id) { %><form method="post" action="/portal/users/<%= r.id %>/toggle"><%- include('../partials/csrf') %><button class="link" type="submit"><%= r.active ? 'Disable' : 'Enable' %></button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<section class="card"><h2>Add a user</h2>
+<form method="post" action="/portal/users"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label for="name">Name</label><input id="name" name="name" required></p><p><label for="email">Email</label><input id="email" name="email" type="email" required></p>
+<p><label for="role">Role</label><select id="role" name="role"><option value="customer_user">User (sees own tickets)</option><option value="customer_admin">IT administrator (sees all our tickets)</option></select></p></div>
+<button class="btn" type="submit">Add user</button></form></section>
+<%- include('../partials/footer') %>

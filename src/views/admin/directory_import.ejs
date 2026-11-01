@@ -1,0 +1,27 @@
+<%- include('../partials/header') %>
+<p><a href="/admin/users#directory">← Users</a></p>
+<h1>Import from Active Directory</h1>
+<p class="muted">Search for the people you want, tick them, choose their role and import. They then sign in with their Active Directory password. You can change anyone's role later on the Users page.</p>
+<% if (error) { %><p class="error"><%= error %></p><% } %>
+<form method="get" class="filters">
+  <input type="search" name="q" value="<%= term %>" placeholder="Part of a name, user name or e-mail address" aria-label="Search the directory" autofocus>
+  <button class="btn" type="submit" name="go" value="1">Search</button>
+</form>
+<% if (searched && !error) { %>
+<% if (tooMany) { %><p class="notice">Showing the first 100. Type more of the name to narrow it down.</p><% } %>
+<% if (users.length) { %>
+<form method="post" action="/admin/users/import"><%- include('../partials/csrf') %>
+<section class="card">
+<table class="grid"><thead><tr><th><input type="checkbox" data-check-all="importrow" aria-label="Tick everyone who can be imported"></th><th>Name</th><th>User name</th><th>E-mail</th><th>Here</th></tr></thead><tbody>
+<% users.forEach(function (x) { var ok = x.status === 'new' && x.email; %><tr>
+<td><% if (ok) { %><input type="checkbox" class="importrow" name="dn" value="<%= x.dn %>" aria-label="Import <%= x.name %>"><% } %></td>
+<td><%= x.name %></td><td><%= x.login %></td><td><%= x.email || '(no e-mail address)' %></td>
+<td><%= x.status === 'new' ? (x.email ? 'Not imported yet' : 'Cannot import: no e-mail') : x.status === 'imported' ? 'Already imported' : x.status === 'local' ? 'Has a local account' : 'Disabled in Active Directory' %></td></tr><% }) %>
+</tbody></table>
+<div class="rowform"><label for="imp_role">Give them the role</label>
+<select id="imp_role" name="role"><% staffRoles.forEach(function (r) { %><option value="<%= r %>" <%= r === 'agent' ? 'selected' : '' %>><%= roleLabels[r] %></option><% }) %></select>
+<button class="btn" type="submit">Import ticked people</button></div>
+</section></form>
+<% } else { %><p class="empty">Nobody matches<%= term ? ' "' + term + '"' : '' %>.</p><% } %>
+<% } %>
+<%- include('../partials/footer') %>

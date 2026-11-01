@@ -1,0 +1,18 @@
+<% var v = function (k) { return form[k] === null || form[k] === undefined ? '' : form[k]; };
+   var sel = function (a, b) { return String(a) === String(b) ? 'selected' : ''; };
+   var d = function (k) { var x = v(k); return x instanceof Date ? x.toISOString().slice(0, 10) : String(x).slice(0, 10); }; %>
+<div class="grid2">
+<p><label for="name">Project name</label><input id="name" name="name" maxlength="200" required value="<%= v('name') %>"></p>
+<p><label for="customer_id">Customer <small>(leave empty for an internal project)</small></label><select id="customer_id" name="customer_id"><option value="">— internal —</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(v('customer_id'), c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="manager_id">Project manager</label><select id="manager_id" name="manager_id"><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(v('manager_id'), s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label for="status">Status</label><select id="status" name="status"><% Object.keys(statusLabels).forEach(function (k) { %><option value="<%= k %>" <%= sel(v('status') || 'planning', k) %>><%= statusLabels[k] %></option><% }) %></select></p>
+<p><label for="health">Health</label><select id="health" name="health"><% Object.keys(healthLabels).forEach(function (k) { %><option value="<%= k %>" <%= sel(v('health') || 'green', k) %>><%= healthLabels[k] %></option><% }) %></select></p>
+<p><label for="opportunity_id">Won deal <small>(optional)</small></label><select id="opportunity_id" name="opportunity_id"><option value="">—</option><% opportunities.forEach(function (o) { %><option value="<%= o.id %>" <%= sel(v('opportunity_id'), o.id) %>><%= o.ref %> · <%= o.name %></option><% }) %></select></p>
+<p><label for="contract_id">Contract <small>(optional)</small></label><select id="contract_id" name="contract_id"><option value="">—</option><% contracts.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(v('contract_id'), c.id) %>><%= c.reference %> · <%= c.title %></option><% }) %></select></p>
+<p><label for="start_date">Start date</label><input id="start_date" name="start_date" type="date" value="<%= d('start_date') %>"></p>
+<p><label for="end_date">Planned end date</label><input id="end_date" name="end_date" type="date" value="<%= d('end_date') %>"></p>
+<p><label for="budget">Budget</label><input id="budget" name="budget" inputmode="decimal" value="<%= v('budget') === 0 ? '' : v('budget') %>"></p>
+<p><label for="currency">Currency</label><select id="currency" name="currency"><% currencies.forEach(function (c) { %><option <%= sel(v('currency') || defaultCurrency, c) %>><%= c %></option><% }) %></select></p>
+</div>
+<p><label for="status_note">Latest status <small>(a sentence or two for the weekly report)</small></label><input id="status_note" name="status_note" maxlength="1000" value="<%= v('status_note') %>"></p>
+<p><label for="description">Scope and description</label><textarea id="description" name="description" rows="4" maxlength="5000"><%= v('description') %></textarea></p>

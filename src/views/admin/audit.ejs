@@ -1,0 +1,7 @@
+<%- include('../partials/header') %>
+<h1>Audit log</h1>
+<form method="get" class="filters wide"><select name="action"><option value="">Any action</option><% actions.forEach(function (a) { %><option <%= f.action === a ? 'selected' : '' %>><%= a %></option><% }) %></select><input name="actor" value="<%= f.actor %>" placeholder="Actor e-mail"><button class="btn ghost" type="submit">Filter</button></form>
+<table class="grid"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Detail</th><th>IP</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><%= fmt.dt(r.at) %></td><td><%= r.actor_email %></td><td><%= r.action %></td><td><%= r.entity %> <%= r.entity_id %></td><td><%= r.detail %></td><td><%= r.ip %></td></tr><% }) %></tbody></table>
+<p class="pager"><% if (page > 1) { %><a href="?action=<%= encodeURIComponent(f.action) %>&actor=<%= encodeURIComponent(f.actor) %>&page=<%= page - 1 %>">← Newer</a><% } %> Page <%= page %> <% if (rows.length === 100) { %><a href="?action=<%= encodeURIComponent(f.action) %>&actor=<%= encodeURIComponent(f.actor) %>&page=<%= page + 1 %>">Older →</a><% } %></p>
+<%- include('../partials/footer') %>

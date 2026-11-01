@@ -1,0 +1,6 @@
+<a class="optile <%= t.tone || '' %>" href="<%= t.href %>" title="<%= t.help %>">
+  <span class="oplabel"><%= t.label %></span>
+  <span class="opicon"><svg class="ic"><use href="#i-<%= t.icon %>"/></svg></span>
+  <span class="opvalue"><%= t.value %></span>
+  <span class="opnotes"><span><%= t.note %></span><span class="opdelta <%= t.delta.tone %>"><%= t.delta.pct %></span></span>
+</a>

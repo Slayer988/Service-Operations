@@ -1,0 +1,14 @@
+<%- include('../partials/header') %>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/portal/tickets', icon: 'doc', label: 'Open', value: d.k.open }) %>
+  <%- include('../partials/kpi', { href: '/portal/tickets', icon: 'pulse', label: 'In Progress', value: d.k.inProgress }) %>
+  <%- include('../partials/kpi', { href: '/portal/tickets', icon: 'alert', label: 'Waiting for you', value: d.k.waiting, tone: d.k.waiting ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/portal/tickets?view=closed', icon: 'check', label: 'Resolved (30d)', value: d.k.resolved30 }) %>
+</div>
+<section class="card"><div class="sechead"><h2>Request a Service</h2></div>
+  <div class="svc"><% tiles.forEach(function (t) { %><a href="/portal/tickets/new?type=<%= t.type %><%= t.category ? '&category=' + encodeURIComponent(t.category) : '' %>"><svg class="ic"><use href="#i-<%= t.icon %>"/></svg><b><%= t.label %></b><small><%= t.hint %></small></a><% }) %></div>
+</section>
+<section class="card"><div class="sechead"><h2>My Requests</h2><a href="/portal/tickets">View All →</a></div>
+  <%- include('../partials/tickettable', { mine: d.mine, base: '/portal', ticketBase: '/portal/tickets', withSla: false }) %>
+</section>
+<%- include('../partials/footer') %>

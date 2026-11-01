@@ -1,0 +1,30 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Projects</h1><span><% if (canManage) { %><a class="btn" href="/projects/new">New project</a><% } %></span></div>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/projects?status=open', icon: 'project', label: 'Open projects', value: k.open }) %>
+  <%- include('../partials/kpi', { href: '/projects?status=active', icon: 'pulse', label: 'Active', value: k.active }) %>
+  <%- include('../partials/kpi', { href: '/projects?health=red', icon: 'alert', label: 'Off track', value: k.red, tone: k.red ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/projects?escalated=1', icon: 'flag', label: 'Escalated', value: k.escalated, tone: k.escalated ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/projects?status=open', icon: 'clock', label: 'Past planned end', value: k.late, tone: k.late ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/projects?status=completed', icon: 'check', label: 'Completed', value: k.completed }) %>
+</div>
+<form method="get" class="filters wide">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Project, customer or reference" aria-label="Search">
+  <select name="status" aria-label="Status"><option value="">Any status</option><option value="open" <%= f.status === 'open' ? 'selected' : '' %>>Not finished</option><% Object.keys(statusLabels).forEach(function (s) { %><option value="<%= s %>" <%= f.status === s ? 'selected' : '' %>><%= statusLabels[s] %></option><% }) %></select>
+  <select name="health" aria-label="Health"><option value="">Any health</option><% Object.keys(healthLabels).forEach(function (s) { %><option value="<%= s %>" <%= f.health === s ? 'selected' : '' %>><%= healthLabels[s] %></option><% }) %></select>
+  <select name="customer_id" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <label class="check"><input type="checkbox" name="mine" value="1" <%= f.mine ? 'checked' : '' %>> My projects</label>
+  <button class="btn ghost" type="submit">Filter</button>
+</form>
+<section class="card">
+<% if (rows.length) { %><table class="grid"><thead><tr><th>Project</th><th>Customer</th><th>Manager</th><th>Status</th><th>Health</th><th>Progress</th><th>Planned end</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr>
+  <td><a href="/projects/<%= r.id %>"><%= r.ref %></a> <small><%= r.name %></small><% if (r.escalated) { %> <span class="pill hot">Escalated</span><% } %></td>
+  <td><%= r.customer_name || 'Internal' %></td><td><%= r.manager_name %></td>
+  <td><span class="pill ps-<%= r.status %>"><%= statusLabels[r.status] %></span></td>
+  <td><span class="health h-<%= r.health %>"><%= healthLabels[r.health] %></span></td>
+  <td class="progcell"><% if (r.progress === null) { %><span class="muted">No tasks</span><% } else { %><%- bar(r.progress) %> <small><%= r.progress %>%<%= r.task_overdue ? ' · ' + r.task_overdue + ' overdue' : '' %></small><% } %></td>
+  <td class="<%= r.late ? 'bad' : '' %>"><%= r.end_date ? fmt.date(r.end_date) : '–' %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No projects match.<% if (canManage) { %> <a href="/projects/new">Start one</a>.<% } %></p><% } %>
+</section>
+<%- include('../partials/footer') %>

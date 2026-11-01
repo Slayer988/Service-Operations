@@ -1,0 +1,8 @@
+<%- include('../partials/header') %>
+<p><a href="/projects">← Projects</a></p>
+<h1>New project</h1>
+<% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><form method="post" action="/projects"><%- include('../partials/csrf') %>
+<%- include('../partials/project_fields', { form: form }) %>
+<button class="btn" type="submit">Create project</button> <a class="btn ghost" href="/projects">Cancel</a></form></section>
+<%- include('../partials/footer') %>

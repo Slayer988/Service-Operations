@@ -1,0 +1,76 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Pipeline Tracker</h1><span>
+<a class="btn ghost" href="/pipeline/sde">Engineering support</a> <a class="btn ghost" href="/pipeline/reports">Reports</a>
+<% if (canManage) { %> <a class="btn" href="/pipeline/new">New opportunity</a><% } %></span></div>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/pipeline?view=list&stage=open', icon: 'funnel', label: 'Open opportunities', value: d.counts.open }) %>
+  <%- include('../partials/kpi', { href: '/pipeline?view=list&stage=open', icon: 'chart', label: 'Pipeline value (' + primary + ')', value: money(t.open, primary), small: true }) %>
+  <%- include('../partials/kpi', { href: '/pipeline/reports/forecast', icon: 'chart', label: 'Weighted value (' + primary + ')', value: money(t.weighted, primary), small: true }) %>
+  <%- include('../partials/kpi', { href: '/pipeline/reports/winloss', icon: 'check', label: 'Conversion rate', value: d.winRate === null ? '–' : d.winRate + '%' }) %>
+  <%- include('../partials/kpi', { href: '/pipeline?view=list&stage=open', icon: 'clock', label: 'Overdue follow-ups', value: d.counts.overdue_followups, tone: d.counts.overdue_followups ? 'bad' : '' }) %>
+</div>
+<% if (others.length) { %><p class="muted">Other currencies: <%= others.join(' · ') %></p><% } %>
+<div class="cols">
+  <div>
+    <section class="card"><div class="sechead"><h2>Open pipeline by stage <small>(<%= primary %>)</small></h2></div><%- stageChart %></section>
+    <section class="card"><div class="sechead"><h2>Expected revenue by month <small>(weighted, <%= primary %>)</small></h2></div>
+      <% if (monthChart && fc.months.some(function (m) { return m.count; })) { %><%- monthChart %><% } else { %><p class="empty">No open opportunities have an expected close date.</p><% } %>
+      <% if (fc.quarters && fc.quarters.length) { %><table class="grid"><thead><tr><th>Quarter</th><th>Opportunities</th><th>Value</th><th>Weighted</th></tr></thead><tbody>
+      <% fc.quarters.forEach(function (x) { %><tr><td><%= x.key %></td><td><%= x.count %></td><td class="num"><%= money(x.value, primary) %></td><td class="num"><%= money(x.weighted, primary) %></td></tr><% }) %></tbody></table><% } %>
+      <p class="muted">Overdue close dates count in the current month. <a href="/pipeline/reports/forecast">Full forecast</a></p></section>
+  </div>
+  <div class="side">
+    <section class="card"><div class="sechead"><h2>Top customers <small>(weighted)</small></h2></div><% if (d.byCustomer.length) { %><%- customerChart %><% } else { %><p class="empty">Nothing open.</p><% } %></section>
+    <section class="card"><div class="sechead"><h2>Wins and losses</h2></div>
+      <p>Won <b><%= d.counts.won %></b> · Lost <b><%= d.counts.lost %></b> · This year <b><%= d.counts.won_ytd %></b> / <b><%= d.counts.lost_ytd %></b></p>
+      <% if (d.lostReasons.length) { %><h3>Reasons for loss</h3><ul class="legendlist"><% d.lostReasons.forEach(function (r) { %><li><%= r.label %><em><%= r.n %></em></li><% }) %></ul><% } %></section>
+    <section class="card"><div class="sechead"><h2>Engineering workload</h2></div>
+      <p>Technical tasks completed: <b><%= d.taskCompletion === null ? '–' : d.taskCompletion + '%' %></b> (<%= d.tasks.done %> of <%= d.tasks.total %>)<%= d.tasks.overdue ? ' · ' + d.tasks.overdue + ' overdue' : '' %></p>
+      <% if (d.workload.length) { %><table class="grid"><thead><tr><th>Engineer</th><th>Opps</th><th>Open tasks</th><th>Overdue</th></tr></thead><tbody><% d.workload.forEach(function (w) { %><tr><td><%= w.name %></td><td><%= w.opportunities %></td><td><%= w.open_tasks %></td><td class="<%= w.overdue ? 'bad' : '' %>"><%= w.overdue %></td></tr><% }) %></tbody></table>
+      <% } else { %><p class="empty">No engineers are assigned to open opportunities.</p><% } %></section>
+  </div>
+</div>
+
+<nav class="tabs"><a href="?view=board" class="<%= mode === 'board' ? 'on' : '' %>">Board</a><a href="?view=list" class="<%= mode === 'list' ? 'on' : '' %>">List and search</a></nav>
+<form method="get" class="filters wide">
+  <input type="hidden" name="view" value="<%= mode %>">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Opportunity, customer or reference" aria-label="Search">
+  <select name="owner" aria-label="Owner"><option value="">Any owner</option><option value="me" <%= f.owner === 'me' ? 'selected' : '' %>>Me</option><% staff.forEach(function (s) { %><option value="<%= s.id %>" <%= String(f.owner) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% }) %></select>
+  <select name="customer" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <% if (mode === 'list') { %>
+  <select name="stage" aria-label="Stage"><option value="">Any stage</option><option value="open" <%= f.stage === 'open' ? 'selected' : '' %>>Open (counted in the pipeline)</option><% stages.forEach(function (s) { %><option value="<%= s %>" <%= f.stage === s ? 'selected' : '' %>><%= labels[s] %></option><% }) %></select>
+  <select name="classification" aria-label="Category"><option value="">Any category</option><% categories.forEach(function (c) { %><option <%= f.classification === c ? 'selected' : '' %>><%= c %></option><% }) %></select>
+  <input name="industry" value="<%= f.industry %>" placeholder="Industry" aria-label="Industry">
+  <input name="value_min" value="<%= f.value_min %>" class="num" placeholder="Value from" inputmode="decimal" aria-label="Minimum value"><input name="value_max" value="<%= f.value_max %>" class="num" placeholder="to" inputmode="decimal" aria-label="Maximum value">
+  <label class="inline">Closes from <input type="date" name="from" value="<%= f.from %>"></label><label class="inline">to <input type="date" name="to" value="<%= f.to %>"></label>
+  <% } %>
+  <button class="btn ghost" type="submit">Filter</button> <a href="/pipeline?view=<%= mode %>">Clear</a>
+</form>
+<% if (mode === 'board') { %>
+<div class="board wide">
+<% ['lead_identification','prospecting','qualification','solution_development','proposal_submission','negotiation','closing'].forEach(function (k) { var list = byStage[k]; %>
+  <div class="col"><h3><span><%= labels[k] %></span><small><%= list.length %></small></h3>
+    <% list.forEach(function (o) { %><div class="opp">
+      <a class="t" href="/pipeline/<%= o.id %>"><%= o.name %></a>
+      <small><%= o.org || '—' %></small>
+      <div class="meta"><b><%= money(o.value, o.currency) %></b><span><%= o.probability %>%</span></div>
+      <div class="meta"><small class="<%= o.late ? 'bad' : '' %>"><%= o.expected_close ? 'Close ' + o.expected_close : 'No close date' %></small><small><%= o.owner_name %></small></div>
+      <% if (o.next_step) { %><small class="<%= o.followup_late ? 'bad' : '' %>">Next: <%= o.next_step %><%= o.next_step_date ? ' (' + o.next_step_date + ')' : '' %></small><% } %>
+      <% if (canManage) { %><form method="post" action="/pipeline/<%= o.id %>/stage" class="mv"><%- include('../partials/csrf') %><input type="hidden" name="from" value="board">
+        <select name="stage" aria-label="Move to"><% stages.forEach(function (s) { if (s !== k && s !== 'lost') { %><option value="<%= s %>"><%= labels[s] %></option><% } }) %></select><button class="btn ghost small" type="submit">Move</button></form><% } %>
+    </div><% }) %>
+    <% if (!list.length) { %><p class="empty"><small>Nothing here.</small></p><% } %>
+  </div>
+<% }) %>
+</div>
+<p class="muted">On hold: <%= byStage.on_hold.length %> · Won: <%= byStage.won.length %> · Lost: <%= byStage.lost.length %> (see the list view). To mark an opportunity as lost (a reason is needed), open it.</p>
+<% } else { %>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Ref</th><th>Opportunity</th><th>Customer / prospect</th><th>Stage</th><th>Value</th><th>Prob.</th><th>Expected close</th><th>Next action</th><th>Owner</th></tr></thead><tbody>
+<% rows.forEach(function (o) { %><tr><td><a href="/pipeline/<%= o.id %>"><%= o.ref %></a></td><td><%= o.name %></td><td><%= o.org || '—' %></td>
+<td><span class="pill st-<%= o.stage %>"><%= labels[o.stage] %></span></td><td class="num"><%= money(o.value, o.currency) %></td><td><%= o.probability %>%</td>
+<td class="<%= o.late ? 'bad' : '' %>"><%= o.expected_close || '—' %></td><td class="<%= o.followup_late ? 'bad' : '' %>"><%= o.next_step ? o.next_step + (o.next_step_date ? ' (' + o.next_step_date + ')' : '') : '—' %></td><td><%= o.owner_name %></td></tr><% }) %></tbody></table>
+<p class="muted"><%= rows.length %> shown. Download: <a href="/pipeline/export?format=xlsx<%= qs ? '&' + qs : '' %>">Excel</a> · <a href="/pipeline/export?format=pdf<%= qs ? '&' + qs : '' %>">PDF</a> · <a href="/pipeline/export?format=csv<%= qs ? '&' + qs : '' %>">CSV</a></p>
+<% } else { %><p class="empty">No opportunities match.</p><% } %>
+<% } %>
+<%- include('../partials/footer') %>

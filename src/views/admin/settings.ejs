@@ -1,0 +1,45 @@
+<%- include('../partials/header') %>
+<h1>Settings</h1>
+<form method="post" action="/admin/settings"><%- include('../partials/csrf') %>
+<section class="card"><h2>Priority (impact × urgency)</h2>
+<table class="grid compact"><thead><tr><th>Impact \ Urgency</th><th>High</th><th>Medium</th><th>Low</th></tr></thead><tbody>
+<% [1,2,3].forEach(function (i) { %><tr><th><%= levelLabels[i] %></th><% [1,2,3].forEach(function (g) { %><td><select name="m_<%= i %>_<%= g %>"><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= (s.priority_matrix[i] || {})[g] === p ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select></td><% }) %></tr><% }) %>
+</tbody></table></section>
+<section class="card"><h2>Tickets</h2><div class="grid2">
+<p><label>Categories (one per line)</label><textarea name="categories" rows="8"><%= s.categories.join('\n') %></textarea></p>
+<p><label>Resolution codes (one per line)</label><textarea name="resolution_codes" rows="8"><%= s.resolution_codes.join('\n') %></textarea></p>
+<p><label>Customers can reopen within (days)</label><input name="reopen_window_days" value="<%= s.reopen_window_days %>"></p>
+<p><label>Close resolved tickets automatically after (days)</label><input name="auto_close_days" value="<%= s.auto_close_days %>"></p>
+<p><label>Warn when this % of a target is left</label><input name="sla_warn_percent" value="<%= s.sla_warn_percent %>"></p>
+<p><label>Default SLA policy (when none applies)</label><select name="default_sla_policy"><option value="">None</option><% policies.forEach(function (p) { %><option value="<%= p.id %>" <%= s.default_sla_policy === p.id ? 'selected' : '' %>><%= p.name %></option><% }) %></select></p>
+</div>
+<p><b>Statuses that pause the SLA clock</b> (approved pause conditions)</p>
+<p><% statuses.filter(function (x) { return !['new','resolved','closed','cancelled'].includes(x); }).forEach(function (x) { %><label class="inline"><input type="checkbox" name="sla_pause_statuses" value="<%= x %>" <%= s.sla_pause_statuses.includes(x) ? 'checked' : '' %>> <%= statusLabels[x] %></label> &nbsp; <% }) %></p>
+</section>
+<section class="card"><h2>Security</h2>
+<p><b>Roles that must use two-step verification</b></p>
+<p><% roles.forEach(function (x) { %><label class="inline"><input type="checkbox" name="mfa_required_roles" value="<%= x %>" <%= s.mfa_required_roles.includes(x) ? 'checked' : '' %>> <%= roleLabels[x] %></label> &nbsp; <% }) %></p>
+<div class="grid2"><p><label>Largest attachment (MB)</label><input name="attachment_max_mb" value="<%= s.attachment_max_mb %>"></p>
+<p><label>Blocked file types (extensions, comma separated)</label><input name="attachment_blocked_ext" value="<%= s.attachment_blocked_ext.join(', ') %>"></p>
+<p><label>Automatic replies per sender per hour (loop protection)</label><input name="email_ack_per_sender_per_hour" value="<%= s.email_ack_per_sender_per_hour %>"></p></div></section>
+<section class="card"><h2>Currencies and departments</h2>
+<div class="grid2"><p><label>Default currency</label><input name="default_currency" maxlength="8" value="<%= s.default_currency || 'UGX' %>"></p>
+<p><label>Currencies offered (comma separated)</label><input name="currencies" value="<%= (s.currencies || ['UGX', 'USD']).join(', ') %>"></p></div>
+<p><label>Departments (one per line)</label><textarea name="departments" rows="3"><%= (s.departments || []).join('\n') %></textarea></p></section>
+<section class="card"><h2>Contracts</h2>
+<div class="grid2"><p><label>Expiry reminders (days before the end date, comma separated)</label><input name="contract_reminder_days" value="<%= (s.contract_reminder_days || [90, 60, 30, 14, 7]).join(', ') %>"></p>
+<p><label>Show "Expiring Soon" this many days before the end date</label><input name="contract_expiring_days" value="<%= s.contract_expiring_days || 90 %>"></p></div>
+<p><label>Contract types (one per line)</label><textarea name="contract_types" rows="5"><%= (s.contract_types || contractTypes).join('\n') %></textarea></p></section>
+<section class="card"><h2>Tender management</h2>
+<div class="grid2"><p><label>Deadline reminders (days before, comma separated)</label><input name="tender_reminder_days" value="<%= (s.tender_reminder_days || [14, 7, 3, 1]).join(', ') %>"></p>
+<p><label class="inline"><input type="checkbox" name="tender_require_reviews" <%= s.tender_require_reviews === false ? '' : 'checked' %>> Require approved technical, commercial and management reviews before a bid can be submitted</label></p></div>
+<p><label>Tender types (one per line)</label><textarea name="tender_types" rows="4"><%= (s.tender_types || tenderTypes).join('\n') %></textarea></p>
+<details><summary>Rename tender statuses</summary><div class="grid2"><% Object.keys(tenderStatuses).forEach(function (k) { %><p><label><%= tenderStatuses[k] %></label><input name="tlabel_<%= k %>" maxlength="40" value="<%= ((s.tender_status_labels || {})[k]) || tenderStatuses[k] %>"></p><% }) %></div></details></section>
+<section class="card"><h2>Pipeline</h2>
+<p class="muted">The probability of each stage is used for weighted value and revenue forecasts. Won is always 100% and Lost 0%.</p>
+<div class="grid2"><% Object.keys(pipelineStages).filter(function (k) { return k !== 'won' && k !== 'lost'; }).forEach(function (k) { %><p><label><%= pipelineStages[k] %> (%)</label><input name="prob_<%= k %>" type="number" min="0" max="100" value="<%= ((s.pipeline_probabilities || {})[k] !== undefined) ? s.pipeline_probabilities[k] : pipelineDefaults[k] %>"></p><% }) %></div>
+<p><label>Opportunity categories (one per line)</label><textarea name="opportunity_categories" rows="4"><%= (s.opportunity_categories || ['Service', 'Solution', 'Product', 'Other']).join('\n') %></textarea></p>
+<details><summary>Rename pipeline stages</summary><div class="grid2"><% Object.keys(pipelineStages).forEach(function (k) { %><p><label><%= pipelineStages[k] %></label><input name="plabel_<%= k %>" maxlength="40" value="<%= ((s.pipeline_stage_labels || {})[k]) || pipelineStages[k] %>"></p><% }) %></div></details></section>
+<button class="btn" type="submit">Save settings</button>
+</form>
+<%- include('../partials/footer') %>

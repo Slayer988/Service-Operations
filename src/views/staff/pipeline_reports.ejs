@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<p><a href="/pipeline">← Pipeline Tracker</a></p>
+<h1>Pipeline reports</h1>
+<p class="muted">Every report can be viewed here and downloaded as Excel, PDF or CSV. The Opportunity Support Report is on each opportunity.</p>
+<div class="cols3">
+<% reports.forEach(function (r) { %>
+<section class="card"><h2><%= r.title %></h2><p class="muted"><%= r.description %></p>
+<p><a class="btn ghost small" href="/pipeline/reports/<%= r.id %>">View</a>
+<a href="/pipeline/reports/<%= r.id %>?format=xlsx">Excel</a> · <a href="/pipeline/reports/<%= r.id %>?format=pdf">PDF</a> · <a href="/pipeline/reports/<%= r.id %>?format=csv">CSV</a></p></section>
+<% }) %>
+</div>
+<%- include('../partials/footer') %>

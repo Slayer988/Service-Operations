@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<p><a href="/contracts">← Contracts</a></p>
+<h1>Register a contract</h1>
+<% if (from) { %><p class="banner">Carrying details forward from <%= from.type === 'tender' ? 'tender' : 'opportunity' %> <b><%= from.ref %></b>. Check them and complete the rest.</p><% } %>
+<section class="card"><form method="post" action="/contracts"><%- include('../partials/csrf') %>
+<% if (from) { %><input type="hidden" name="<%= from.type %>_id" value="<%= from.id %>"><% } %>
+<%- include('../partials/contract_fields', { form: form, isEdit: false }) %>
+<button class="btn" type="submit">Register contract</button></form></section>
+<%- include('../partials/footer') %>

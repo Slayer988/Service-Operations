@@ -1,0 +1,6 @@
+[Unit]
+Description=Service Operations (Ops) health check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/itsm-healthcheck

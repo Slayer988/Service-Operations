@@ -1,0 +1,26 @@
+<%- include('../partials/header') %>
+<section class="card">
+  <h1>Two-step verification</h1>
+  <% if (enabled) { %>
+    <p>Two-step verification is <b>on</b> for your account.</p>
+    <form method="post" action="/account/mfa/disable" data-confirm="Turn off two-step verification?">
+      <%- include('../partials/csrf') %>
+      <% if (user.auth_source !== 'ldap') { %><p><label for="current">Current password</label><input id="current" name="current" type="password" required></p><% } %>
+      <p><label for="code">Code from your app</label><input id="code" name="code" inputmode="numeric" required></p>
+      <button class="btn ghost" type="submit">Turn off</button>
+    </form>
+  <% } else { %>
+    <ol>
+      <li>Install an authenticator app (for example Microsoft Authenticator or Google Authenticator).</li>
+      <li>Add an account using this setup key: <code class="key"><%= secret %></code></li>
+      <li>Enter the 6-digit code the app shows.</li>
+    </ol>
+    <p class="muted">Advanced: the key as a link for apps that accept it: <code class="key"><%= uri %></code></p>
+    <form method="post" action="/account/mfa/enable">
+      <%- include('../partials/csrf') %>
+      <p><label for="code">Code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required></p>
+      <button class="btn" type="submit">Turn on</button>
+    </form>
+  <% } %>
+</section>
+<%- include('../partials/footer') %>

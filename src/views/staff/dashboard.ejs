@@ -1,0 +1,39 @@
+<%- include('../partials/header') %>
+<% if (extra.mailDown && extra.mailDown.length) { %><p class="banner">Not being read: <%= extra.mailDown.join(', ') %>. Customer e-mails are not becoming tickets. <a href="/mail">Check the E-mail page</a>.</p><% } %>
+<% if (extra.failedMail) { %><p class="banner">Failed e-mails in the last 7 days: <%= extra.failedMail %>. <a href="/mail">Open the E-mail page</a>.</p><% } %>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '/tickets?view=open', icon: 'doc', label: 'Open', value: d.k.open, delta: d.k.openDelta, good: 'down' }) %>
+  <%- include('../partials/kpi', { href: '/tickets?view=open', icon: 'pulse', label: 'In Progress', value: d.k.inProgress }) %>
+  <%- include('../partials/kpi', { href: '/tickets?view=breached', icon: 'alert', label: 'SLA At Risk', value: d.k.atRisk, tone: d.k.breached ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '/tickets?view=closed', icon: 'check', label: 'Resolved (7d)', value: d.k.resolved7, delta: d.k.resolvedDelta, good: 'up' }) %>
+  <%- include('../partials/kpi', { href: '/sla', icon: 'shield', label: 'SLA Compliance', value: d.k.compliance === null ? '–' : d.k.compliance + '%' }) %>
+</div>
+<% if (d.k.breached) { %><p class="banner"><%= d.k.breached %> ticket(s) have already breached an SLA target. <a href="/tickets?view=breached">Show them</a>.</p><% } %>
+<div class="dash">
+  <div>
+    <% if (tiles.length && can('ticket.create_for_customer')) { %>
+    <section class="card"><div class="sechead"><h2>Request a Service</h2></div>
+      <div class="svc"><% tiles.forEach(function (t) { %><a href="/tickets/new?type=<%= t.type %><%= t.category ? '&category=' + encodeURIComponent(t.category) : '' %>"><svg class="ic"><use href="#i-<%= t.icon %>"/></svg><b><%= t.label %></b><small><%= t.hint %></small></a><% }) %></div>
+    </section><% } %>
+    <section class="card"><div class="sechead"><h2>My Tickets</h2><a href="/tickets?view=mine">View All →</a></div>
+      <%- include('../partials/tickettable', { mine: d.mine, base: '/', ticketBase: '/tickets', withSla: true }) %>
+    </section>
+  </div>
+  <div>
+    <section class="card"><div class="sechead"><h2>Ticket Trend (30 Days)</h2></div>
+      <div class="legend"><span><i class="s0i"></i>Created</span><span><i class="s1i"></i>Resolved</span></div>
+      <div class="chartwrap"><%- d.trend %></div>
+    </section>
+    <section class="card"><div class="sechead"><h2>Tickets by Category</h2></div>
+      <% if (d.catTotal) { %><div class="donutrow">
+        <div class="donutbox"><%- d.catChart %><div class="mid"><b><%= d.catTotal %></b><span>Tickets</span></div></div>
+        <ul class="legendlist"><% d.categories.forEach(function (c) { %><li><i class="<%= c.cls %>i"></i><%= c.name %><em><%= c.pct %>%</em></li><% }) %></ul>
+      </div><% } else { %><p class="empty">No tickets in the last 30 days.</p><% } %>
+    </section>
+    <section class="card"><div class="sechead"><h2>SLA Compliance</h2><a href="/sla">Details →</a></div>
+      <% d.sla.forEach(function (r) { %><div class="slarow"><span><%= r.label %></span><%- r.bar %><em><%= r.pct === null ? '–' : r.pct + '%' %></em></div><% }) %>
+      <p class="muted">Last 30 days. Resolution targets for tickets resolved in the period; response targets for tickets opened in it.</p>
+    </section>
+  </div>
+</div>
+<%- include('../partials/footer') %>

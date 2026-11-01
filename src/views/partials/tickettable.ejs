@@ -1,0 +1,14 @@
+<%# mine: { tab, counts, rows }, base: '/' or '/portal', ticketBase: '/tickets' or '/portal/tickets', withSla: bool %>
+<nav class="tabs">
+  <% [['open','Open'],['in_progress','In Progress'],['resolved','Resolved']].forEach(function (t) { %>
+  <a href="<%= base %>?tab=<%= t[0] %>" class="<%= mine.tab === t[0] ? 'on' : '' %>"><%= t[1] %> (<%= mine.counts[t[0]] %>)</a><% }) %>
+</nav>
+<% if (mine.rows.length) { %>
+<table class="grid"><thead><tr><th>Ticket #</th><th>Title</th><th>Category</th><th>Priority</th><% if (withSla) { %><th>SLA Remaining</th><% } else { %><th>Updated</th><% } %><th>Status</th></tr></thead><tbody>
+<% mine.rows.forEach(function (t) { %><tr>
+<td><a href="<%= ticketBase %>/<%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td>
+<td><span class="catcell"><svg class="ic"><use href="#i-<%= catIcon(t.category) %>"/></svg><%= t.category || 'Other' %></span></td>
+<td><%- include('priority', { priority: t.priority }) %></td>
+<% if (withSla) { %><td><% if (t.sla) { %><span class="timecell <%= t.sla.over ? 'over' : '' %>"><svg class="ic"><use href="#i-clock"/></svg><%= t.sla.text %></span><% } else { %>—<% } %></td><% } else { %><td><%= fmt.date(t.updated_at) %></td><% } %>
+<td><span class="pill st-<%= t.status %>"><%= statusLabels[t.status] %></span></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">Nothing here.</p><% } %>

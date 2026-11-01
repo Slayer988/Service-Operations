@@ -1,0 +1,11 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/admin">Administration</a> › <a href="/mail">E-mail</a> › Message</p>
+<h1>Message <%= m.id %></h1>
+<section class="card"><dl>
+<dt>Mailbox</dt><dd><%= m.mailbox_key %></dd><dt>From</dt><dd><%= m.from_name %> &lt;<%= m.from_addr %>&gt;</dd><dt>To</dt><dd><%= m.to_addr %></dd>
+<dt>Subject</dt><dd><%= m.subject %></dd><dt>Sent</dt><dd><%= fmt.dt(m.sent_at) %></dd><dt>Received</dt><dd><%= fmt.dt(m.received_at) %></dd>
+<dt>Provider message id</dt><dd><code class="key"><%= m.provider_message_id %></code></dd>
+<dt>Outcome</dt><dd><%= m.outcome.replace('_', ' ') %> – <%= m.detail %></dd>
+<dt>Ticket</dt><dd><% if (m.ticket_ref) { %><a href="/tickets/<%= m.ticket_ref %>"><%= m.ticket_ref %></a><% } else { %>—<% } %></dd></dl></section>
+<section class="card"><h2>Preserved headers</h2><table class="grid compact"><tbody><% Object.keys(m.headers).forEach(function (k) { %><tr><th><%= k %></th><td class="mono"><%= m.headers[k] %></td></tr><% }) %></tbody></table></section>
+<%- include('../partials/footer') %>
