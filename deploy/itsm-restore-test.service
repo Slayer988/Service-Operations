@@ -1,0 +1,8 @@
+[Unit]
+Description=Service Operations (Ops) restore test (loads the newest backup into a throw-away database)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/itsm-restore-test
+Nice=10

@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/kb">Knowledge Base</a> › <a href="/kb/<%= a.code %>"><%= a.code %></a> › History</p>
+<h1>History of <%= a.title %></h1>
+<table class="grid"><thead><tr><th>Version</th><th>Title</th><th>Changed by</th><th>When</th><th>Note</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><%= r.version %><%= r.version === a.version ? ' (current)' : '' %></td><td><%= r.title %></td><td><%= r.editor || '—' %></td><td><%= fmt.dt(r.edited_at) %></td><td><%= r.note %></td>
+<td><a href="/kb/<%= a.code %>/versions/<%= r.version %>">View</a></td></tr><% }) %></tbody></table>
+<% if (shown) { %>
+<section class="card"><div class="sechead"><h2>Version <%= shown.version %>: <%= shown.title %></h2>
+  <% if (canEdit && shown.version !== a.version) { %><form method="post" action="/kb/<%= a.code %>/restore/<%= shown.version %>"><%- include('../partials/csrf') %><button class="btn" type="submit">Restore this version</button></form><% } %></div>
+  <div class="kbbody"><%- html %></div></section>
+<% } %>
+<%- include('../partials/footer') %>

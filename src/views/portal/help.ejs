@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<h1>Help Articles</h1>
+<p class="muted">Step-by-step answers to common questions. If you cannot find what you need, <a href="/portal/tickets/new">submit a request</a>.</p>
+<form method="get" action="/portal/help" class="kbsearch">
+  <input type="search" name="q" value="<%= text %>" placeholder="What do you need help with?" aria-label="Search help articles" maxlength="100" autofocus>
+  <select name="category" aria-label="Category"><option value="">All topics</option><% categories.forEach(function (c) { %><option value="<%= c.id %>" <%= String(category) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <button class="btn" type="submit">Search</button>
+</form>
+<% rows.forEach(function (r) { %>
+<article class="card kbitem"><h2><a href="/portal/help/<%= r.code %>"><%= r.title %></a></h2>
+  <p class="muted"><%= r.category || 'General' %> · updated <%= fmt.date(r.updated_at) %></p>
+  <p><%= r.summary || plain(r.body_start) %></p></article>
+<% }) %>
+<% if (!rows.length) { %><p class="empty"><%= text ? 'Nothing matches that search. Try fewer or different words, or submit a request.' : 'There are no help articles yet.' %></p><% } %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,33 @@
+<%- include('partials/header') %>
+<div class="head"><h1>Search</h1></div>
+<form method="get" action="/search" class="filters wide" role="search">
+  <input type="search" name="q" value="<%= raw %>" placeholder="<%= staff ? 'Reference, subject, sender, customer, CSID or words in a ticket' : 'Reference, subject or words in a ticket' %>" aria-label="Search" maxlength="100" autofocus>
+  <button class="btn" type="submit">Search</button>
+</form>
+<% if (!text) { %>
+<p class="empty"><%= raw ? 'Type at least two characters.' : 'Type what you are looking for.' %></p>
+<% } else { %>
+<h2>Tickets <small class="muted">(<%= ticketTotal %>)</small></h2>
+<% if (tickets.length) { %>
+<table class="grid"><thead><tr><th>Ref</th><th>Subject</th><% if (staff) { %><th>Customer</th><% } %><th>Priority</th><th>Status</th><th>Raised</th></tr></thead><tbody>
+<% tickets.forEach(function (t) { %>
+<tr><td><a href="<%= staff ? '/tickets/' : '/portal/tickets/' %><%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td><% if (staff) { %><td><%= t.customer_name || '—' %></td><% } %>
+<td><%- include('partials/priority', { priority: t.priority }) %></td><td><%= statusLabels[t.status] %></td><td><%= fmt.dt(t.created_at) %></td></tr>
+<% }) %></tbody></table>
+<% if (ticketTotal > tickets.length) { %><p class="muted">Showing the newest <%= tickets.length %> of <%= ticketTotal %>. <a href="<%= staff ? '/tickets?view=all&q=' : '/portal/tickets?view=closed&q=' %><%= encodeURIComponent(text) %>">Open the full list</a><%= staff ? '' : ' (this shows resolved and closed tickets; the Open tab shows the rest)' %>.</p><% } %>
+<% } else if (staff ? can('ticket.view') : true) { %><p class="empty">No ticket matches “<%= text %>”.</p><% } else { %><p class="empty">Your role has no ticket queue.</p><% } %>
+
+<% if (staff && can('customer.view')) { %>
+<h2>Customers <small class="muted">(<%= customers.length %>)</small></h2>
+<% if (customers.length) { %>
+<table class="grid"><thead><tr><th>Customer</th><th>Code</th><th>CSID</th></tr></thead><tbody>
+<% customers.forEach(function (c) { %><tr><td><a href="/customers/<%= c.id %>"><%= c.name %></a></td><td><%= c.code %></td><td><%= c.csids || '—' %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No customer matches.</p><% } %>
+<% } %>
+
+<% if (areas.length) { %>
+<h2>Search in</h2>
+<p><% areas.forEach(function (a) { %><a class="btn ghost" href="<%= a.href %>?q=<%= encodeURIComponent(text) %>"><%= a.label %></a> <% }) %></p>
+<% } %>
+<% } %>
+<%- include('partials/footer') %>

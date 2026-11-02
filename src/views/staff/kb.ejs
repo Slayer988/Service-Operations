@@ -1,0 +1,33 @@
+<%- include('../partials/header') %>
+<div class="sechead"><h1>Knowledge Base</h1><% if (canWrite) { %><a class="btn" href="/kb/new">New article</a><% } %></div>
+<p class="muted">How-to guides, fixes and procedures. Search before you write a new one. Articles marked <b>Staff and customers</b> also appear in the customer portal under Help Articles.</p>
+<form method="get" action="/kb" class="kbsearch">
+  <input type="search" name="q" value="<%= text %>" placeholder="Search by word, title or tag" aria-label="Search the Knowledge Base" maxlength="100">
+  <select name="category" aria-label="Category"><option value="">All categories</option><% categories.forEach(function (c) { %><option value="<%= c.id %>" <%= String(opts.category) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <% if (opts.mine) { %><input type="hidden" name="view" value="mine"><% } else if (opts.due) { %><input type="hidden" name="view" value="due"><% } else if (opts.archived) { %><input type="hidden" name="view" value="archived"><% } %>
+  <button class="btn" type="submit">Search</button>
+</form>
+<p class="tabs">
+  <a href="/kb" class="<%= !opts.mine && !opts.due && !opts.archived ? 'on' : '' %>">All articles</a>
+  <% if (canWrite) { %><a href="/kb?view=mine" class="<%= opts.mine ? 'on' : '' %>">My articles</a><a href="/kb?view=due" class="<%= opts.due ? 'on' : '' %>">Review due</a><a href="/kb?view=archived" class="<%= opts.archived ? 'on' : '' %>">Archived</a><% } %>
+</p>
+<% rows.forEach(function (r) { %>
+<article class="card kbitem">
+  <h2><a href="/kb/<%= r.code %>"><%= r.title %></a></h2>
+  <p class="muted"><%= r.code %> · <%= r.category || 'No category' %> · <span class="tag <%= r.status === 'published' ? '' : 'grey' %>"><%= labels[r.status] %></span>
+    <% if (r.audience === 'customers') { %><span class="tag">Customers can read it</span><% } %>
+    · updated <%= fmt.date(r.updated_at) %><% if (r.status === 'published' && r.review_by && r.review_by < new Date().toISOString().slice(0, 10)) { %> · <b class="bad">review due <%= fmt.date(r.review_by) %></b><% } %></p>
+  <p><%= r.summary || plain(r.body_start) %></p>
+  <% if (r.status === 'published') { %><p class="muted"><%= r.helpful %> found it helpful<% if (r.not_helpful) { %> · <%= r.not_helpful %> did not<% } %> · read <%= r.views %> time<%= r.views === 1 ? '' : 's' %></p><% } %>
+</article>
+<% }) %>
+<% if (!rows.length) { %><p class="empty"><%= text ? 'Nothing matches that search. Try fewer or different words.' : (opts.mine ? 'You have not written any articles yet.' : (opts.due ? 'No articles are due for review.' : 'There are no articles yet.')) %></p><% } %>
+<% if (canPublish) { %>
+<section class="card"><h2>Categories</h2>
+  <p class="muted">Articles in a removed category stay, without a category.</p>
+  <ul class="plain"><% categories.forEach(function (c) { %><li><%= c.name %> <small class="muted">(<%= c.published %> published)</small>
+    <form method="post" action="/kb/categories/<%= c.id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="btn ghost small" type="submit">Remove</button></form></li><% }) %></ul>
+  <form method="post" action="/kb/categories" class="testrow"><%- include('../partials/csrf') %><label for="kb_cat">New category</label><input id="kb_cat" name="name" maxlength="60" required><button class="btn ghost" type="submit">Add</button></form>
+</section>
+<% } %>
+<%- include('../partials/footer') %>

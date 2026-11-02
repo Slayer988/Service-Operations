@@ -1,0 +1,31 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/kb">Knowledge Base</a> › <%= a ? a.code : 'New article' %></p>
+<h1><%= a ? 'Edit article' : 'New article' %></h1>
+<% if (from) { %><p class="notice warn">Started from <b><%= from %></b>. The text below comes from that ticket: remove names, addresses and anything else about the customer before you publish.</p><% } %>
+<% var live = a && a.status === 'published'; var lockAud = live && !canPublish; %>
+<form method="post" action="<%= a ? '/kb/' + a.code : '/kb' %>" class="card"><%- include('../partials/csrf') %>
+  <% if (from) { %><input type="hidden" name="from_ticket" value="<%= from %>"><% } %>
+  <p><label for="kb_title">Title</label><input id="kb_title" name="title" value="<%= form.title %>" maxlength="200" required><small>Say what it solves, in the words people use: "Reset your VPN password", not "VPN procedure v2".</small></p>
+  <p><label for="kb_summary">Short summary</label><input id="kb_summary" name="summary" value="<%= form.summary %>" maxlength="300"><small>One or two sentences shown in search results. Optional.</small></p>
+  <div class="grid2">
+    <p><label for="kb_cat">Category</label><select id="kb_cat" name="category_id"><option value="">None</option><% categories.forEach(function (c) { %><option value="<%= c.id %>" <%= String(form.category_id) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select></p>
+    <p><label for="kb_aud">Who can read it</label><select id="kb_aud" name="audience" <%= lockAud ? 'disabled' : '' %>><% Object.keys(audiences).forEach(function (k) { %><option value="<%= k %>" <%= form.audience === k ? 'selected' : '' %>><%= audiences[k] %></option><% }) %></select>
+      <small><%= lockAud ? 'Only a publisher can change this on a live article.' : '"Staff and customers" shows it to every customer in the portal once it is published.' %></small></p>
+    <p><label for="kb_tags">Tags</label><input id="kb_tags" name="tags" value="<%= form.tags %>" placeholder="vpn password mobile"><small>Words people might search for, separated by spaces.</small></p>
+    <p><label for="kb_review">Review by</label><input id="kb_review" name="review_by" type="date" value="<%= form.review_by %>"><small>Empty: set to a year after publishing. It shows under "Review due" when it passes.</small></p>
+  </div>
+  <p><label for="kb_body">Article</label><textarea id="kb_body" name="body" rows="18" class="mono" required><%= form.body %></textarea></p>
+  <details class="adadv"><summary>How to format the text</summary>
+    <pre class="kbhelp"># Heading        ## Subheading
+**bold**   *italic*   `command or button`
+- a bullet        1. a numbered step
+&gt; a note that stands out
+[link text](https://example.com)       [[KB-0012]] links to another article
+```
+text shown exactly as typed,
+such as a command
+```</pre></details>
+  <% if (a) { %><p><label for="kb_note">What did you change? (optional)</label><input id="kb_note" name="note" maxlength="200"></p><% } %>
+  <div class="row-actions"><button class="btn" type="submit"><%= a ? 'Save changes' : 'Save draft' %></button><a class="btn ghost" href="<%= a ? '/kb/' + a.code : '/kb' %>">Cancel</a></div>
+</form>
+<%- include('../partials/footer') %>

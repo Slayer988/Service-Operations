@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/portal/help">Help Articles</a> › <%= a.code %></p>
+<h1><%= a.title %></h1>
+<p class="muted"><%= a.category || 'General' %> · updated <%= fmt.date(a.updated_at) %></p>
+<% if (a.summary) { %><p class="lead"><%= a.summary %></p><% } %>
+<section class="card kbbody"><%- html %></section>
+<section class="card"><h2>Did this help?</h2>
+  <div class="row-actions">
+    <form method="post" action="/portal/help/<%= a.code %>/vote"><%- include('../partials/csrf') %><input type="hidden" name="helpful" value="yes"><button class="btn ghost" type="submit">Yes, it helped</button></form>
+    <form method="post" action="/portal/help/<%= a.code %>/vote"><%- include('../partials/csrf') %><input type="hidden" name="helpful" value="no"><button class="btn ghost" type="submit">No</button></form>
+  </div>
+  <% if (a.mine) { %><p class="muted">You answered <b><%= a.mine.helpful ? 'yes' : 'no' %></b>. Thank you.</p><% } %>
+  <p class="muted">Still stuck? <a href="/portal/tickets/new">Submit a request</a> and we will help.</p>
+</section>
+<%- include('../partials/footer') %>

@@ -1,0 +1,37 @@
+<%- include('../partials/header') %>
+<p class="jump"><a href="/kb">Knowledge Base</a> › <%= a.code %></p>
+<div class="sechead"><h1><%= a.title %></h1>
+  <span class="row-actions"><% if (canEdit) { %><a class="btn" href="/kb/<%= a.code %>/edit">Edit</a><% } %><% if (canEdit) { %><a class="btn ghost" href="/kb/<%= a.code %>/history">History</a><% } %></span></div>
+<p class="muted"><%= a.code %> · <%= a.category || 'No category' %> · <span class="tag <%= a.status === 'published' ? '' : 'grey' %>"><%= labels[a.status] %></span> <span class="tag"><%= audiences[a.audience] %></span>
+  · version <%= a.version %> · by <%= a.author_name || '—' %><% if (a.updated_by_name && a.updated_by_name !== a.author_name) { %>, last changed by <%= a.updated_by_name %><% } %> on <%= fmt.date(a.updated_at) %>
+  <% if (a.review_by) { %> · review by <b class="<%= a.status === 'published' && a.review_by < new Date().toISOString().slice(0, 10) ? 'bad' : '' %>"><%= fmt.date(a.review_by) %></b><% } %></p>
+<% if (a.status !== 'published') { %><p class="notice warn"><b><%= a.status === 'draft' ? 'This is a draft.' : 'This article is archived.' %></b> Readers cannot see it<%= canPublish ? '' : ' until a service delivery manager publishes it' %>.</p><% } %>
+<% if (a.tags) { %><p><% a.tags.split(' ').forEach(function (t) { %><a class="tag" href="/kb?q=<%= encodeURIComponent(t) %>"><%= t %></a> <% }) %></p><% } %>
+<% if (a.summary) { %><p class="lead"><%= a.summary %></p><% } %>
+<section class="card kbbody"><%- html %></section>
+<% if (canPublish) { %>
+<section class="card"><h2>Publishing</h2>
+  <div class="row-actions">
+    <% if (a.status !== 'published') { %><form method="post" action="/kb/<%= a.code %>/status"><%- include('../partials/csrf') %><input type="hidden" name="action" value="publish"><button class="btn" type="submit">Publish</button></form><% } %>
+    <% if (a.status === 'published') { %><form method="post" action="/kb/<%= a.code %>/status"><%- include('../partials/csrf') %><input type="hidden" name="action" value="draft"><button class="btn ghost" type="submit">Take back to draft</button></form><% } %>
+    <% if (a.status !== 'archived') { %><form method="post" action="/kb/<%= a.code %>/status"><%- include('../partials/csrf') %><input type="hidden" name="action" value="archive"><button class="btn ghost" type="submit">Archive</button></form><% } else { %><form method="post" action="/kb/<%= a.code %>/status"><%- include('../partials/csrf') %><input type="hidden" name="action" value="draft"><button class="btn ghost" type="submit">Restore as draft</button></form><% } %>
+  </div>
+  <% if (a.audience === 'customers' && a.status !== 'published') { %><p class="muted">Publishing makes this article visible to every customer in the portal. Check that it contains nothing about a particular customer.</p><% } %>
+</section>
+<% } %>
+<% if (a.status === 'published') { %>
+<section class="card"><h2>Did this help?</h2>
+  <p class="muted"><%= a.helpful %> found it helpful<% if (a.not_helpful) { %> · <%= a.not_helpful %> did not<% } %> · read <%= a.views %> time<%= a.views === 1 ? '' : 's' %><% if (a.mine) { %> · you said <b><%= a.mine.helpful ? 'yes' : 'no' %></b><% } %></p>
+  <div class="row-actions">
+    <form method="post" action="/kb/<%= a.code %>/vote"><%- include('../partials/csrf') %><input type="hidden" name="helpful" value="yes"><button class="btn ghost" type="submit">Yes, it helped</button></form>
+    <form method="post" action="/kb/<%= a.code %>/vote"><%- include('../partials/csrf') %><input type="hidden" name="helpful" value="no"><button class="btn ghost" type="submit">No</button></form>
+  </div>
+</section>
+<% } %>
+<section class="card"><h2>Tickets this article was used for</h2>
+  <% if (linked.length) { %><ul class="plain"><% linked.forEach(function (t) { %><li><a href="/tickets/<%= t.ref %>"><%= t.ref %></a> <%= t.subject %>
+    <% if (canLink) { %><form method="post" action="/kb/<%= a.code %>/unlink" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="ref" value="<%= t.ref %>"><button class="btn ghost small" type="submit">Unlink</button></form><% } %></li><% }) %></ul>
+  <% } else { %><p class="muted">None yet.</p><% } %>
+  <% if (canLink) { %><form method="post" action="/kb/<%= a.code %>/link" class="testrow"><%- include('../partials/csrf') %><label for="kb_ref">Link a ticket</label><input id="kb_ref" name="ref" placeholder="INC-000123" maxlength="40" required><button class="btn ghost" type="submit">Link</button></form><% } %>
+</section>
+<%- include('../partials/footer') %>
