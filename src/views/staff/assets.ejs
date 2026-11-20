@@ -1,0 +1,35 @@
+<%- include('../partials/header') %>
+<% var tag = function (st) { return st.state === 'expired' ? 'bad' : (st.state === 'soon' ? 'warn' : ''); };
+   var when = function (date, which) { var st = S.dateState(date, d, 90); if (st.state === 'none') return '—'; return '<span class="tag ' + tag(st) + '">' + fmt.date(st.date) + '</span>'; };
+   var qs = function (extra) { var p = []; ['q','customer','category','status','cover','csid','contract'].forEach(function (k) { var v = extra.hasOwnProperty(k) ? extra[k] : f[k]; if (v) p.push(k + '=' + encodeURIComponent(v)); }); return '?' + p.join('&'); }; %>
+<div class="head"><h1>Assets</h1><% if (canManage) { %><div><a class="btn ghost" href="/assets/import">Import from a spreadsheet</a> <a class="btn" href="/assets/new<%= f.customer && f.customer !== 'none' ? '?customer=' + f.customer : '' %>">Add an asset</a></div><% } %></div>
+<div class="tiles assettiles">
+  <a class="tile<%= !f.cover && f.status === 'live' ? ' on' : '' %>" href="<%= qs({ cover: '', status: 'live' }) %>"><b><%= tiles.live %></b><span class="tl">In use or in stock</span><span>equipment and licences</span></a>
+  <a class="tile<%= tiles.warranty_soon ? ' warn' : '' %><%= f.cover === 'warranty_soon' ? ' on' : '' %>" href="<%= qs({ cover: 'warranty_soon', status: 'live' }) %>"><b><%= tiles.warranty_soon %></b><span class="tl">Warranty ends soon</span><span>within 90 days</span></a>
+  <a class="tile<%= tiles.warranty_expired ? ' alert' : '' %><%= f.cover === 'warranty_expired' ? ' on' : '' %>" href="<%= qs({ cover: 'warranty_expired', status: 'live' }) %>"><b><%= tiles.warranty_expired %></b><span class="tl">Out of warranty</span><span>still in use</span></a>
+  <a class="tile<%= tiles.expiry_soon ? ' warn' : '' %><%= f.cover === 'expiry_soon' ? ' on' : '' %>" href="<%= qs({ cover: 'expiry_soon', status: 'live' }) %>"><b><%= tiles.expiry_soon %></b><span class="tl">Licences and support ending</span><span>within 90 days</span></a>
+  <a class="tile<%= tiles.expired ? ' alert' : '' %><%= f.cover === 'expired' ? ' on' : '' %>" href="<%= qs({ cover: 'expired', status: 'live' }) %>"><b><%= tiles.expired %></b><span class="tl">Expired</span><span>licence or support lapsed</span></a>
+  <a class="tile<%= f.status === 'under_repair' ? ' on' : '' %>" href="<%= qs({ cover: '', status: 'under_repair' }) %>"><b><%= tiles.repair %></b><span class="tl">Under repair</span><span>away or being fixed</span></a>
+</div>
+<form method="get" class="filters wide">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Tag, name, serial, host name, IP, model" aria-label="Search assets">
+  <select name="customer" aria-label="Customer"><option value="">All customers</option><option value="none" <%= f.customer === 'none' ? 'selected' : '' %>>Our own equipment</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <select name="category" aria-label="Category"><option value="">All categories</option><% Object.keys(S.CATEGORIES).forEach(function (k) { %><option value="<%= k %>" <%= f.category === k ? 'selected' : '' %>><%= S.SHORT[k] %></option><% }) %></select>
+  <select name="status" aria-label="Status"><option value="live" <%= f.status === 'live' ? 'selected' : '' %>>In use, in stock or under repair</option><% Object.keys(S.STATUSES).forEach(function (k) { %><option value="<%= k %>" <%= f.status === k ? 'selected' : '' %>><%= S.STATUSES[k] %></option><% }) %><option value="all" <%= f.status === 'all' ? 'selected' : '' %>>Any status</option></select>
+  <% if (f.cover) { %><input type="hidden" name="cover" value="<%= f.cover %>"><% } %><% if (f.csid) { %><input type="hidden" name="csid" value="<%= f.csid %>"><% } %><% if (f.contract) { %><input type="hidden" name="contract" value="<%= f.contract %>"><% } %>
+  <button class="btn ghost" type="submit">Filter</button><% if (f.q || f.customer || f.category || f.cover || f.csid || f.contract || f.status !== 'live') { %> <a href="/assets">Clear</a><% } %></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Tag</th><th>Name</th><th>Customer / site</th><th>CSID</th><th>Make and model</th><th>Serial / IP</th><th>Status</th><th>Warranty</th><th>Expires</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr>
+  <td><a href="/assets/<%= r.id %>"><%= r.tag %></a></td>
+  <td><%= r.name %><% if (r.quantity > 1) { %> <small class="muted">× <%= r.quantity %></small><% } %><br><small class="muted"><%= S.SHORT[r.category] %></small><% if (r.open_tickets) { %> <span class="tag blue"><%= r.open_tickets %> open ticket<%= r.open_tickets === 1 ? '' : 's' %></span><% } %></td>
+  <td><%= r.customer_name || 'Our own' %><% if (r.site_name) { %><br><small class="muted"><%= r.site_name %></small><% } %></td>
+  <td><%= r.csid || '—' %></td>
+  <td><%= [r.manufacturer, r.model].filter(Boolean).join(' ') || '—' %></td>
+  <td><%= r.serial_number || '—' %><% if (r.ip_address) { %><br><small class="muted"><%= r.ip_address %></small><% } %></td>
+  <td><span class="tag <%= r.status === 'under_repair' ? 'warn' : (['retired','disposed'].includes(r.status) ? 'grey' : '') %>"><%= S.STATUSES[r.status] %></span></td>
+  <td><%- when(r.warranty_until) %></td><td><%- when(r.expires_on) %></td>
+</tr><% }) %></tbody></table>
+<p class="muted"><%= rows.length %> asset<%= rows.length === 1 ? '' : 's' %>. Download this list: <a href="/assets/export<%= qs({}) %>&format=xlsx">Excel</a> · <a href="/assets/export<%= qs({}) %>&format=pdf">PDF</a> · <a href="/assets/export<%= qs({}) %>&format=csv">CSV</a></p>
+<% } else { %><p class="empty">No assets match.<% if (canManage) { %> <a href="/assets/new">Add one</a> or <a href="/assets/import">import a spreadsheet</a>.<% } %></p><% } %>
+<%- include('../partials/footer') %>

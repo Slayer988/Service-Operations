@@ -1,0 +1,23 @@
+<%- include('../partials/header') %>
+<p><a href="/assets">← Assets</a></p>
+<h1>Import assets from a spreadsheet</h1>
+<% if (result && result.errors && result.errors.length) { %>
+<section class="card bad" role="alert"><h2>Nothing was imported</h2>
+<p>Every row is checked first, and the file goes in whole or not at all. Correct these rows and import the file again:</p>
+<ul class="errors"><% result.errors.slice(0, 200).forEach(function (e) { %><li><%= e %></li><% }) %></ul>
+<% if (result.errors.length > 200) { %><p class="muted">…and <%= result.errors.length - 200 %> more.</p><% } %></section>
+<% } %>
+<section class="card"><h2>1. Prepare the file</h2>
+<p>Save the spreadsheet as <b>CSV</b> (Excel: File, Save As, "CSV UTF-8"). The first line names the columns; then one asset per line. <a href="/assets/import/template.csv">Download the template</a> with every column and two example rows.</p>
+<ul>
+  <li><b>Required:</b> <code>name</code> and <code>category</code> (network, security, server, storage, end_user, printer, phone, power, software, cloud, other; words like switch, firewall, laptop, UPS or licence are understood too).</li>
+  <li><b>Customer</b> by its code or name; <b>site</b> by name and <b>CSID</b> by its number, both of that customer. Leave the customer empty for our own equipment.</li>
+  <li><b>Dates</b> as 2026-12-31 or 31/12/2026: <code>purchase_date</code>, <code>warranty_until</code>, <code>expires_on</code> (licence, subscription or end of support).</li>
+  <li>Optional: manufacturer, model, serial_number, hostname, ip_address, quantity (licence seats), status (active, in_stock, under_repair, retired, disposed), contract (its reference), owner_contact, notes.</li>
+  <li>A serial number already registered (same manufacturer) is refused, so a file can be fixed and imported again safely.</li>
+</ul></section>
+<section class="card"><h2>2. Import it</h2>
+<form method="post" action="/assets/import" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+<p><label for="ai_file">CSV file <small class="muted">(at most 2 MB and 2,000 assets)</small></label><input id="ai_file" type="file" name="file" accept=".csv,text/csv" required></p>
+<button class="btn" type="submit">Check and import</button></form></section>
+<%- include('../partials/footer') %>

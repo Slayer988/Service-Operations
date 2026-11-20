@@ -19,7 +19,7 @@ const user_admin = (u) => require('./lib/admin_tiles').tiles(u).length > 0;
 const dashboard = require('./services/dashboard');
 
 const MULTIPART_ROUTES = [/^\/tickets\/new$/, /^\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/portal\/tickets\/new$/, /^\/portal\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/(contracts|tenders|pipeline)\/\d+\/files$/,
-  /^\/suppliers\/\d+\/documents$/, /^\/lpo\/\d+\/files$/, /^\/admin\/branding\/logo$/];
+  /^\/suppliers\/\d+\/documents$/, /^\/lpo\/\d+\/files$/, /^\/admin\/branding\/logo$/, /^\/assets\/import$/];
 
 function createApp() {
   const app = express();
@@ -163,6 +163,10 @@ function createApp() {
           approver = await A.isApprover({ query: q }, req.user);
           if (approver) waiting = (await A.waitingFor({ query: q }, req.user)).length;
           if (waiting) { alerts.items.unshift({ text: `${waiting} approval${waiting === 1 ? ' is' : 's are'} waiting for you`, href: '/approvals' }); alerts.count = alerts.items.length; }
+          if (perms.can(req.user, 'asset.manage')) {
+            const ending = await require('./services/assets').endingSoon({ query: q }, require('./lib/util').localDay(config.timezone), 30);
+            if (ending) { alerts.items.push({ text: `${ending} warrant${ending === 1 ? 'y or licence ends' : 'ies or licences end'} within 30 days`, href: '/assets?cover=warranty_soon' }); alerts.count = alerts.items.length; }
+          }
         }
         res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0, approver, approvals: waiting });
       }
@@ -189,6 +193,7 @@ function createApp() {
   app.use(require('./routes/suppliers'));
   app.use(require('./routes/lpo'));
   app.use(require('./routes/approvals'));
+  app.use(require('./routes/assets'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

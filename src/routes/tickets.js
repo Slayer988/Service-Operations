@@ -72,7 +72,7 @@ async function newTicketData() {
 }
 
 router.get('/api/customers/:id/structure', requireStaff, wrap(async (req, res) => {
-  if (!['ticket.create_for_customer', 'ticket.verify', 'renewal.manage'].some((p) => perms.can(req.user, p))) return res.status(403).json({ error: 'forbidden' });
+  if (!['ticket.create_for_customer', 'ticket.verify', 'renewal.manage', 'asset.manage'].some((p) => perms.can(req.user, p))) return res.status(403).json({ error: 'forbidden' });
   const id = u.id(req.params.id);
   if (!id) return res.status(400).json({ error: 'bad id' });
   const csids = (await q('select id, csid from csids where customer_id = $1 order by csid', [id])).rows;
@@ -138,7 +138,14 @@ router.get('/tickets/:ref', requireStaff, requirePerm('ticket.view'), wrap(async
   const staff = (await q(`select id, name, role from users where kind = 'staff' and active order by name`)).rows
     .filter((s) => ticket.queue !== 'security' || perms.can(s, 'security.view'));
   const customers = ticket.needs_verification ? (await q(`select id, name from customers where status = 'active' order by name`)).rows : [];
-  res.render('staff/ticket', { title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
+  // equipment (asset register): what is linked, and this customer's equipment to choose from (same CSID first)
+  const canAssets = perms.can(req.user, 'asset.view');
+  const linkedAssets = canAssets ? (await q(`select a.id, a.tag, a.name, a.category, a.status, a.warranty_until, a.expires_on, a.contract_id, k.reference as contract_reference
+                                                from ticket_assets ta join assets a on a.id = ta.asset_id left join contracts k on k.id = a.contract_id where ta.ticket_id = $1 order by a.tag`, [ticket.id])).rows : [];
+  const assetChoices = canAssets && ticket.customer_id ? (await q(`select a.id, a.tag, a.name from assets a where a.customer_id = $1 and a.status in ('in_stock','active','under_repair')
+                                                and not exists (select 1 from ticket_assets ta where ta.ticket_id = $2 and ta.asset_id = a.id)
+                                              order by (a.csid_id is not distinct from $3::bigint) desc, a.name limit 300`, [ticket.customer_id, ticket.id, ticket.csid_id || null])).rows : [];
+  res.render('staff/ticket', { canAssets, linkedAssets, assetChoices, assetSvc: require('../services/assets'), today: u.localDay(require('../config').timezone), title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
     kbArticles: await kb.forTicket(q, req.user, ticket.id), canKbWrite: perms.can(req.user, 'kb.write'), canWork: perms.can(req.user, 'ticket.work'), canVerify: perms.can(req.user, 'ticket.verify'), canSla: perms.can(req.user, 'ticket.sla_note') });
 }));
 

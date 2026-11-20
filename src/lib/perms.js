@@ -22,6 +22,9 @@ const GRANTS = {
   'security.view': ['platform_admin', 'security_analyst'],
   'customer.view': STAFF_ALL,
   'customer.manage': ['platform_admin', 'service_manager'],
+  // asset register (1.24.0): those who work on customer equipment keep it up to date; managers and auditors read it
+  'asset.view': ['platform_admin', 'service_manager', 'agent', 'engineer', 'security_analyst', 'contract_manager', 'technical_team', 'sde', 'procurement', 'management', 'dept_head', 'auditor', 'readonly'],
+  'asset.manage': ['platform_admin', 'service_manager', 'agent', 'engineer', 'security_analyst', 'technical_team', 'procurement'],
   'catalogue.manage': ['platform_admin', 'service_manager'],
   'sla.configure': ['platform_admin', 'contract_manager'],
   'engineer.assign': ['platform_admin', 'service_manager', 'contract_manager'],

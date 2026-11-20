@@ -2191,3 +2191,88 @@ test('1.23.0 approvals: a large quote waits for finance; nobody approves their o
   assert.equal((await q('select status from quotes where id = $1', [off])).rows[0].status, 'sent');
   await settingsLib.set(db, 'approvals_quote_enabled', true);
 });
+
+test('1.24.0 asset register: add, change, link to a ticket, import a spreadsheet whole or not at all, export, search; customers see only theirs', async () => {
+  const { A, B } = ctx;
+  const site = (await q(`insert into sites (customer_id, name) values ($1, 'HQ') returning id`, [A.c.id])).rows[0];
+  const eng = new Client(); await eng.login(ctx.eng.email);
+  // ---- add
+  let r = await eng.post('/assets', { name: 'Core switch', category: 'network', customer_id: String(A.c.id), site_id: String(site.id), csid_id: String(A.cs.id), manufacturer: 'Cisco', model: 'C9300',
+    serial_number: 'SN-ALPHA-1', ip_address: '10.9.0.2', quantity: '1', status: 'active', purchase_date: '2024-01-10', warranty_until: '2027-01-09', expires_on: '' });
+  assert.equal(r.status, 302);
+  const a1 = (await q(`select * from assets where serial_number = 'SN-ALPHA-1'`)).rows[0];
+  assert.match(a1.tag, /^AST-\d{6}$/); assert.equal(a1.site_id, Number(site.id)); assert.equal(r.location, `/assets/${a1.id}`);
+  // refused: a site of another customer, a duplicate serial, a bad IP
+  r = await eng.post('/assets', { name: 'Wrong', category: 'network', customer_id: String(B.c.id), site_id: String(site.id), csid_id: '', serial_number: 'SN-ALPHA-1', manufacturer: 'Cisco', ip_address: '300.1.1.1' });
+  assert.equal(r.status, 400);
+  assert.ok(/must belong to the asset(&#39;|')s customer/.test(r.text) && /already registered as AST-/.test(r.text) && /300\.1\.1\.1/.test(r.text), 'all three problems are explained at once');
+  // ---- change: history records it
+  await eng.post(`/assets/${a1.id}`, { ...a1, customer_id: String(A.c.id), site_id: String(site.id), csid_id: String(A.cs.id), contract_id: '', supplier_id: '', purchase_order_id: '',
+    purchase_date: '2024-01-10', warranty_until: '2027-01-09', expires_on: '', status: 'under_repair' });
+  const page = (await eng.get(`/assets/${a1.id}`)).text;
+  assert.ok(page.includes('Under repair') && /changed status In use → Under repair/.test(page), 'the change is in the history');
+  // ---- a ticket of customer A: link the switch; another customer's asset cannot be linked
+  const t = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'Switch down', description: 'x', requester: ctx.aUser });
+  const bAsset = (await tx((db) => require('../../src/services/assets').create(db, { name: 'Beta router', category: 'network', customer_id: B.c.id }, staffActor(ctx.admin)))).id;
+  await eng.post(`/tickets/${t.ref}/assets`, { asset_id: String(a1.id) });
+  await eng.post(`/tickets/${t.ref}/assets`, { asset_id: String(bAsset) });
+  assert.deepEqual((await q('select asset_id from ticket_assets where ticket_id = $1', [t.id])).rows.map((x) => Number(x.asset_id)), [Number(a1.id)], 'only customer A\'s own equipment');
+  const tp = (await eng.get(`/tickets/${t.ref}`)).text;
+  assert.ok(tp.includes('id="assets"') && tp.includes(a1.tag) && /in warranty to/.test(tp), 'the ticket shows the equipment and its warranty');
+  assert.ok((await eng.get(`/assets/${a1.id}`)).text.includes(t.ref), 'the asset lists the ticket');
+  await eng.post(`/tickets/${t.ref}/assets`, { tag: 'AST-999999' });
+  assert.match((await eng.get(`/tickets/${t.ref}`)).text, /There is no asset AST-999999/);
+  // ---- import: one bad row and nothing goes in; corrected, all go in
+  const upload = async (csv) => {
+    const fd = new FormData(); fd.append('_csrf', eng.token); fd.append('file', new Blob([csv], { type: 'text/csv' }), 'assets.csv');
+    return fetch(`${base}/assets/import`, { method: 'POST', body: fd, headers: { cookie: eng.cookie() }, redirect: 'manual' });
+  };
+  const before = (await q('select count(*)::int as n from assets')).rows[0].n;
+  const bad = 'name,category,customer,site,csid,serial_number,warranty_until,quantity\nSwitch 2,switch,ALPHA,HQ,,SN-IMP-1,31/12/2027,1\nMystery box,banana,ALPHA,,,,,\nLaptops,laptop,NOPE,,,,,5\n';
+  r = await upload(bad);
+  assert.equal(r.status, 400);
+  const bt = await r.text();
+  assert.ok(/Nothing was imported/.test(bt) && /Row 3 \(Mystery box\)/.test(bt) && /Row 4 \(Laptops\): no customer &#34;NOPE&#34;|Row 4 \(Laptops\): no customer "NOPE"/.test(bt), 'each wrong row is named');
+  assert.equal((await q('select count(*)::int as n from assets')).rows[0].n, before, 'nothing imported');
+  const good = `name,category,customer,site,csid,serial_number,warranty_until,expires_on,quantity\nSwitch 2,switch,ALPHA,HQ,${A.cs.csid},SN-IMP-1,31/12/2027,,1\nOffice licences,licence,Alpha Bank,,,,,2027-06-30,40\nOur spare firewall,firewall,,,,SN-IMP-3,,,1\n`;
+  r = await upload(good);
+  assert.equal(r.status, 302);
+  assert.equal((await q('select count(*)::int as n from assets')).rows[0].n, before + 3);
+  const imp = (await q(`select name, category, customer_id, quantity, warranty_until from assets where name in ('Switch 2','Office licences','Our spare firewall') order by name`)).rows;
+  assert.deepEqual(imp.map((x) => [x.name, x.category, x.customer_id === null ? null : Number(x.customer_id), x.quantity]), [['Office licences', 'software', Number(A.c.id), 40], ['Our spare firewall', 'security', null, 1], ['Switch 2', 'network', Number(A.c.id), 1]]);
+  r = await upload(good);
+  assert.equal(r.status, 400, 'importing the same file twice is refused: the serial numbers are already registered');
+  assert.match((await eng.get('/assets/import/template.csv')).text, /^﻿?name,category,customer/);
+  // ---- list, tiles, filters, export, search
+  const list = (await eng.get(`/assets?customer=${A.c.id}&status=all`)).text;
+  assert.ok(list.includes('Core switch') && list.includes('Office licences') && !list.includes('Beta router'));
+  const xl = await fetch(`${base}/assets/export?format=xlsx&status=all`, { headers: { cookie: eng.cookie() } });
+  assert.equal(xl.status, 200); assert.match(xl.headers.get('content-type'), /spreadsheetml/);
+  const s = (await eng.get('/search?q=SN-ALPHA')).text;
+  assert.ok(s.includes('Equipment') && s.includes(a1.tag), 'the search box finds equipment by serial number');
+  // ---- the customer portal: only their own equipment, read only
+  const cu = new Client(); await cu.login(ctx.aUser.email);
+  const portal = (await cu.get('/portal/assets')).text;
+  assert.ok(portal.includes('Core switch') && portal.includes('SN-ALPHA-1') && !portal.includes('Beta router') && !portal.includes('10.9.0.2'), 'their equipment, without our network details');
+  const staffPage = await cu.get(`/assets/${a1.id}`);
+  assert.ok([302, 403].includes(staffPage.status) && !String(staffPage.text || '').includes('SN-ALPHA-1'), 'customers never see the staff register (sent back to the portal)');
+  const bu = new Client(); await bu.login(ctx.bUser.email);
+  assert.ok(!(await bu.get('/portal/assets')).text.includes('Core switch'));
+  // ---- who may change: an auditor reads, finance does not even see it
+  const aud = await mkUser('auditor24@t.local', 'Ada Auditor', 'staff', 'auditor'); const audC = new Client(); await audC.login(aud.email);
+  assert.equal((await audC.get('/assets')).status, 200);
+  assert.equal((await audC.post(`/assets/${a1.id}`, { name: 'hacked', category: 'other' })).status, 403);
+  const fin = await mkUser('fin24@t.local', 'Finn Finance', 'staff', 'finance'); const finC = new Client(); await finC.login(fin.email);
+  assert.equal((await finC.get('/assets')).status, 403);
+  // ---- the bell: a warranty ending within 30 days
+  await q(`update assets set warranty_until = current_date + 10, status = 'active' where id = $1`, [a1.id]);
+  assert.match((await eng.get('/assets')).text, /warrant(y or licence ends|ies or licences end) within 30 days/);
+  // ---- a customer with equipment cannot be deleted
+  const D = await mkCustomer('Delta Gone', 'DELTA');
+  await tx((db) => require('../../src/services/assets').create(db, { name: 'Delta box', category: 'other', customer_id: D.c.id }, staffActor(ctx.admin)));
+  await asAdmin(async (adm) => {
+    await q('delete from services where customer_id = $1', [D.c.id]);
+    await adm.post(`/customers/${D.c.id}/delete`, { confirm: 'DELTA' });
+    assert.ok((await q('select 1 from customers where id = $1', [D.c.id])).rowCount, 'still there: it has equipment');
+  });
+});

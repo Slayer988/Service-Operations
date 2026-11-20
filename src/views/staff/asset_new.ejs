@@ -1,0 +1,8 @@
+<%- include('../partials/header') %>
+<p><a href="/assets">← Assets</a></p>
+<h1>Add an asset</h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<section class="card"><form method="post" action="/assets"><%- include('../partials/csrf') %>
+<%- include('../partials/asset_fields', { form: form, S: S, customers: customers, sites: sites, csids: csids, contracts: contracts, suppliers: suppliers, lpos: lpos }) %>
+<button class="btn" type="submit">Register the asset</button> <span class="muted">It gets its tag (AST-…) when saved.</span></form></section>
+<%- include('../partials/footer') %>

@@ -15,6 +15,7 @@ function build(user, ctx, counts = {}) {
       { label: 'My Requests', href: '/portal/tickets', icon: 'doc', on: path === '/portal/tickets' || /^\/portal\/tickets\/(?!new$)/.test(path) },
       { label: 'Submit Request', href: '/portal/tickets/new', icon: 'plus', on: path === '/portal/tickets/new' },
       { label: 'My Services', href: '/portal/services', icon: 'grid', on: path === '/portal/services' },
+      { label: 'Our Equipment', href: '/portal/assets', icon: 'server', on: path === '/portal/assets' },
       { label: 'Service Catalogue', href: '/portal/catalogue', icon: 'clipboard', on: path === '/portal/catalogue' },
       { label: 'Help Articles', href: '/portal/help', icon: 'book', on: starts('/portal/help') },
     ];
@@ -35,6 +36,7 @@ function build(user, ctx, counts = {}) {
     can('ticket.view') && { label: 'Service Requests', href: '/tickets?type=request', icon: 'shield', on: req },
     can('ticket.view') && { label: 'All Tickets', href: '/tickets', icon: 'list', on: starts('/tickets') && path !== '/tickets/new' && !mine && !inc && !req },
     can('customer.view') && { label: 'Customers', href: '/customers', icon: 'building', on: starts('/customers', '/services', '/customer-contracts') },
+    can('asset.view') && { label: 'Assets', href: '/assets', icon: 'server', on: starts('/assets') },
     can('kb.view') && { label: 'Knowledge Base', href: '/kb', icon: 'book', on: starts('/kb') },
     { label: 'Reports', href: '/reports', icon: 'chart', on: starts('/reports') },
   ].filter(Boolean);

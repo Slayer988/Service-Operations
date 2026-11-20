@@ -61,6 +61,7 @@
       .then(function (data) {
         targets.forEach(function (sel) {
           var kind = sel.dataset.fill;
+          var keep = sel.value;                                   // a value already chosen (an edit form) survives the reload
           sel.innerHTML = '';
           var blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Choose…'; sel.appendChild(blank);
           (data[kind] || []).forEach(function (item) {
@@ -68,6 +69,7 @@
             if (kind === 'services') o.dataset.parent = item.csid_id;
             sel.appendChild(o);
           });
+          if (keep && sel.querySelector('option[value="' + keep.replace(/"/g, '') + '"]')) sel.value = keep;
         });
         applyFilters(form);
       })

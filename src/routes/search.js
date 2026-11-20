@@ -16,7 +16,7 @@ const AREAS = [['/contracts', 'contract.view', 'Contracts'], ['/tenders', 'tende
 router.get('/search', requireLogin, wrap(async (req, res) => {
   const text = search.term(req.query.q);
   const staff = req.user.kind === 'staff';
-  const out = { text, raw: String(req.query.q || '').trim().slice(0, 100), staff, tickets: [], ticketTotal: 0, customers: [], areas: [] };
+  const out = { text, raw: String(req.query.q || '').trim().slice(0, 100), staff, tickets: [], ticketTotal: 0, customers: [], assets: [], areas: [] };
   if (text) {
     // a ticket reference opens that ticket, if this person may see it
     if (search.looksLikeRef(text)) {
@@ -40,6 +40,11 @@ router.get('/search', requireLogin, wrap(async (req, res) => {
            from customers c
           where c.name ilike $1 or c.code ilike $1 or exists (select 1 from csids x where x.customer_id = c.id and x.csid ilike $1)
           order by c.name limit 10`, [search.like(text)])).rows;
+    }
+    if (staff && perms.can(req.user, 'asset.view')) {
+      out.assets = (await q(`select a.id, a.tag, a.name, a.serial_number, a.ip_address, a.hostname, c.name as customer_name from assets a left join customers c on c.id = a.customer_id
+                              where a.tag ilike $1 or a.name ilike $1 or a.serial_number ilike $1 or a.hostname ilike $1 or a.ip_address ilike $1 or a.model ilike $1
+                              order by (a.status in ('in_stock','active','under_repair')) desc, a.tag limit 15`, [search.like(text)])).rows;
     }
     out.areas = staff ? AREAS.filter((a) => perms.can(req.user, a[1])).map((a) => ({ href: a[0], label: a[2] })) : [{ href: '/portal/help', label: 'Help articles' }];
   }

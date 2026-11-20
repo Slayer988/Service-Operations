@@ -174,7 +174,8 @@ router.get('/contracts/:id', ...view, wrap(async (req, res) => {
   const scheduled = payments.reduce((a, p) => a + Number(p.amount), 0);
   const met = perf.filter((p) => p.ok).length;
   const fd = await formData();
-  res.render('staff/contract', {
+  const coveredAssets = perms.can(req.user, 'asset.view') ? (await q(`select id, tag, name, category, status, warranty_until, expires_on from assets where contract_id = $1 order by tag limit 500`, [id])).rows : null;
+  res.render('staff/contract', { coveredAssets,
     title: c.title, c, events, contacts, payments, obligations, targets, perf, amendments, reviews, review: C.reviewSummary(reviews), linked, availableServices, mail, engineerHistory, staff,
     files: await docs.list(db0, 'contract', id), docKinds: docs.KINDS.contract, totals: { paid, scheduled, outstanding: scheduled - paid }, compliance: perf.length ? Math.round((met / perf.length) * 1000) / 10 : null,
     canManage, canFin, canReview: perms.can(req.user, 'contract.review'), canAssign: perms.can(req.user, 'engineer.assign'), myStages: C.stagesFor(req.user.role),

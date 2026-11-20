@@ -121,6 +121,13 @@ function sections(user) {
       ],
     },
     {
+      id: 'c-assets', title: 'Our Equipment', who: 'customer',
+      blocks: [
+        { p: '**Our Equipment** lists the equipment and licences we look after for you: what it is, its make, model and serial number, the site and CSID it belongs to, and when its **warranty** and its **renewal or end of support** fall. A date in amber falls within 90 days; red has passed.' },
+        { tip: 'When you raise a request about a device, mention its tag (for example AST-000012): we see at once what it is and whether it is still under warranty. If something on the list is wrong or missing, tell us in a request.' },
+      ],
+    },
+    {
       id: 'c-help', title: 'Help Articles', who: 'customer',
       blocks: [
         { p: 'Many questions already have an answer. Open **Help Articles**, type a few words and read the steps. Press **Yes, it helped** or **No** at the end: it tells us which articles to improve.' },
@@ -325,6 +332,42 @@ function sections(user) {
           'Company details, the standard LPO terms and the default delivery address are set by an administrator in **Settings**, Quotes and purchase orders.',
         ] },
         { tip: 'An LPO is approved before it is issued (see **Approvals**): press **Ask for approval** on the draft. Until it is approved, Issue is not offered.' },
+      ],
+    },
+    {
+      id: 'assets', title: 'Assets: equipment and licences', who: 'staff', perm: 'asset.view',
+      intro: 'The asset register (CMDB) records the equipment, licences and subscriptions at each customer site, and our own, with their warranty and renewal dates, the CSID and contract that cover them, and the tickets about them.',
+      blocks: [
+        { h: 'The list' },
+        { list: [
+          'Open **Assets** in the menu. The boxes at the top count what is **in use or in stock**, what has a **warranty ending soon** (90 days), what is **out of warranty** but still in use, **licences and support ending** soon, what has **expired**, and what is **under repair**. Press a box to list those.',
+          'Search by tag, name, serial number, host name, IP address or model; filter by customer, category and status. **Download** the list as Excel, PDF or CSV (for a customer\'s renewal review, for example).',
+          'The search box in the top bar finds equipment too, by serial number, host name or IP address.',
+        ] },
+        { h: 'Adding and changing equipment' },
+        { steps: [
+          'Press **Add an asset** (or Add an asset on the customer\'s page). Give it a name and category, choose the customer, then its site, CSID and the contract that covers it; leave the customer empty for our own equipment.',
+          'Add what identifies it (manufacturer, model, serial number, host name, IP address) and its dates: **purchase**, **warranty ends**, and **expires / end of support** (for a licence, subscription or vendor support). For a licence, Quantity is the number of seats.',
+          'It gets its tag (AST-000001) when saved. Change it on its page; every change is kept in its **History**. Equipment is never deleted: mark it **Retired** or **Disposed**.',
+        ] },
+        { tip: 'A serial number can be registered only once per manufacturer, so the same switch cannot be entered twice.' },
+        { h: 'Importing a spreadsheet' },
+        { steps: [
+          'Press **Import from a spreadsheet** and **download the template**. Fill one asset per line (Excel: save as "CSV UTF-8").',
+          'Give the customer by its code or name, the site by name and the CSID by its number. Words such as switch, firewall, laptop, UPS or licence are understood as categories; dates can be 2026-12-31 or 31/12/2026.',
+          'Press **Check and import**. Every row is checked first: if any row is wrong, nothing is imported and each wrong row is listed with what to fix. Correct the file and import it again.',
+        ] },
+        { h: 'Equipment on tickets' },
+        { list: [
+          'On a ticket, the **Equipment** box links the customer\'s equipment the ticket is about (choose it, or type its tag). It shows at once whether it is **in warranty**, **out of warranty** or its support or licence has **expired**, and which contract covers it, so the engineer knows whether to raise a warranty claim with the vendor.',
+          'The asset\'s page lists every ticket about it. A contract\'s page lists the equipment it covers.',
+        ] },
+        { h: 'Reminders and the customer portal' },
+        { list: [
+          'The **bell** tells those who manage assets when warranties or licences end within 30 days.',
+          'Customers see their own equipment (not other customers\', and not our notes or IP addresses) under **Our Equipment** in the portal, with warranty and renewal dates, and can mention the tag when they raise a request.',
+          'Who can do what: engineers, agents, service managers, security analysts, the technical team and procurement add and change equipment; contract managers, management, department heads, SDEs, auditors and read-only users can see it.',
+        ] },
       ],
     },
     {

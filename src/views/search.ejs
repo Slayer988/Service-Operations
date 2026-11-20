@@ -25,6 +25,15 @@
 <% } else { %><p class="empty">No customer matches.</p><% } %>
 <% } %>
 
+<% if (staff && can('asset.view')) { %>
+<h2>Equipment <small class="muted">(<%= assets.length %><%= assets.length === 15 ? '+' : '' %>)</small></h2>
+<% if (assets.length) { %>
+<table class="grid"><thead><tr><th>Tag</th><th>Equipment</th><th>Customer</th><th>Serial</th><th>Host / IP</th></tr></thead><tbody>
+<% assets.forEach(function (a) { %><tr><td><a href="/assets/<%= a.id %>"><%= a.tag %></a></td><td><%= a.name %></td><td><%= a.customer_name || 'Our own' %></td><td><%= a.serial_number || '—' %></td><td><%= [a.hostname, a.ip_address].filter(Boolean).join(' / ') || '—' %></td></tr><% }) %></tbody></table>
+<% if (assets.length === 15) { %><p><a href="/assets?status=all&q=<%= encodeURIComponent(text) %>">See all matching equipment</a></p><% } %>
+<% } else { %><p class="empty">No equipment matches.</p><% } %>
+<% } %>
+
 <% if (areas.length) { %>
 <h2>Search in</h2>
 <p><% areas.forEach(function (a) { %><a class="btn ghost" href="<%= a.href %>?q=<%= encodeURIComponent(text) %>"><%= a.label %></a> <% }) %></p>

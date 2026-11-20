@@ -86,6 +86,22 @@
   </section>
 
 
+  <% if (canAssets && ticket.customer_id) { %>
+  <section class="card" id="assets">
+    <h2>Equipment</h2>
+    <% if (linkedAssets.length) { %><ul class="assets"><% linkedAssets.forEach(function (a) { var w = assetSvc.dateState(a.warranty_until, today, 90); var e = assetSvc.dateState(a.expires_on, today, 90); %>
+      <li><a href="/assets/<%= a.id %>"><%= a.tag %></a> <%= a.name %>
+        <br><small><% if (w.state === 'none') { %><span class="muted">warranty not recorded</span><% } else if (w.state === 'expired') { %><span class="tag bad">out of warranty</span><% } else { %><span class="tag <%= w.state === 'soon' ? 'warn' : '' %>">in warranty to <%= fmt.date(w.date) %></span><% } %>
+        <% if (e.state === 'expired') { %> <span class="tag bad">support / licence expired</span><% } %>
+        <% if (a.contract_id) { %> <span class="muted">contract <%= a.contract_reference %></span><% } %></small>
+        <% if (canWork) { %><form method="post" action="/tickets/<%= ticket.ref %>/assets/<%= a.id %>/unlink" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit">Unlink</button></form><% } %></li>
+    <% }) %></ul><% } else { %><p class="muted">No equipment is linked to this ticket.</p><% } %>
+    <% if (canWork) { %><form method="post" action="/tickets/<%= ticket.ref %>/assets" class="assetlink"><%- include('../partials/csrf') %>
+      <% if (assetChoices.length) { %><select name="asset_id" aria-label="Equipment"><option value="">Choose this customer's equipment…</option><% assetChoices.forEach(function (a) { %><option value="<%= a.id %>"><%= a.tag %> <%= a.name %></option><% }) %></select><% } %>
+      <input name="tag" maxlength="20" placeholder="or tag AST-…" aria-label="Asset tag"><button class="btn ghost" type="submit">Link</button></form><% } %>
+  </section>
+  <% } %>
+
   <% if (canWork && !ticket.needs_verification && nextStatuses.length) { %>
   <section class="card">
     <h2>Change status</h2>

@@ -588,3 +588,20 @@ html[data-theme="sunset"] img.tint{filter:url(#logo-tint-sunset)}
 .apdecide.compact{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .apdecide.compact input{min-width:160px;flex:1}
 .btn.ghost.danger{background:var(--surface);color:var(--bad);border:1px solid var(--bad)}.btn.ghost.danger:hover{background:var(--bad-l)}
+/* asset register (1.24.0) */
+.tile.warn{border-color:var(--warn)}.tile.warn b{color:var(--warn)}
+.tile.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-l)}
+.assettiles .tile .tl{color:var(--fg);font-weight:600;font-size:14px}
+.assettiles .tile:hover{border-color:var(--acc)}
+.pre{white-space:pre-wrap}
+.timeline.compact{list-style:none;margin:0;padding:0}
+.timeline.compact li{padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.timeline.compact li:last-child{border-bottom:0}
+.card.bad{border-left:4px solid var(--bad)}
+ul.errors li{margin:4px 0;color:var(--bad)}
+.assetlink{display:flex;gap:6px;flex-wrap:wrap;align-items:end}
+.assetlink select{flex:1;min-width:140px}
+.assetlink input{width:120px}
+ul.assets{list-style:none;margin:0 0 10px;padding:0}
+ul.assets li{padding:6px 0;border-bottom:1px solid var(--line)}
+ul.assets li:last-child{border-bottom:0}

@@ -1,0 +1,44 @@
+<%- include('../partials/header') %>
+<% var st = function (date) { return S.dateState(date, d, 90); };
+   var cover = function (date, what) { var s = st(date); if (s.state === 'none') return '<span class="muted">not recorded</span>';
+     var t = s.state === 'expired' ? 'ended ' + (-s.days) + ' days ago' : (s.days === 0 ? 'ends today' : 'ends in ' + s.days + ' days');
+     return '<span class="tag ' + (s.state === 'expired' ? 'bad' : s.state === 'soon' ? 'warn' : '') + '">' + fmt.date(s.date) + '</span> <small class="muted">' + t + '</small>'; }; %>
+<p><a href="/assets<%= a.customer_id ? '?customer=' + a.customer_id : '' %>">← Assets</a></p>
+<div class="head"><h1><%= a.tag %> <%= a.name %></h1><span class="tag <%= a.status === 'under_repair' ? 'warn' : (['retired','disposed'].includes(a.status) ? 'grey' : '') %>"><%= S.STATUSES[a.status] %></span></div>
+<div class="cols">
+<div>
+<section class="card"><h2>What and where</h2>
+<dl class="facts">
+  <dt>Category</dt><dd><%= S.CATEGORIES[a.category] %><%= a.quantity > 1 ? ' × ' + a.quantity : '' %></dd>
+  <dt>Customer</dt><dd><% if (a.customer_id) { %><a href="/customers/<%= a.customer_id %>"><%= a.customer_name %></a><% } else { %>Our own equipment<% } %></dd>
+  <dt>Site</dt><dd><%= a.site_name || '—' %></dd>
+  <dt>CSID</dt><dd><% if (a.csid) { %><a href="/assets?csid=<%= a.csid_id %>&status=all"><%= a.csid %></a> <small class="muted">(all equipment on it)</small><% } else { %>—<% } %></dd>
+  <dt>Make and model</dt><dd><%= [a.manufacturer, a.model].filter(Boolean).join(' ') || '—' %></dd>
+  <dt>Serial number</dt><dd><%= a.serial_number || '—' %></dd>
+  <dt>Host name / IP</dt><dd><%= a.hostname || '—' %> / <%= a.ip_address || '—' %></dd>
+  <dt>Contact / user</dt><dd><%= a.owner_contact || '—' %></dd>
+</dl></section>
+<section class="card" id="cover"><h2>Warranty, licence and contract</h2>
+<dl class="facts">
+  <dt>Warranty</dt><dd><%- cover(a.warranty_until) %></dd>
+  <dt>Expires / end of support</dt><dd><%- cover(a.expires_on) %></dd>
+  <dt>Covered by contract</dt><dd><% if (a.contract_id) { %><a href="/contracts/<%= a.contract_id %>"><%= a.contract_reference %></a> <%= a.contract_title %><% } else { %><span class="muted">no contract</span><% } %></dd>
+  <dt>Purchased</dt><dd><%= a.purchase_date ? fmt.date(a.purchase_date) : '—' %><% if (a.supplier_name) { %> from <a href="/suppliers/<%= a.supplier_id %>"><%= a.supplier_name %></a><% } %><% if (a.po_ref) { %>, <a href="/lpo/<%= a.purchase_order_id %>"><%= a.po_ref %></a><% } %></dd>
+</dl></section>
+<% if (a.notes) { %><section class="card"><h2>Notes</h2><p class="pre"><%= a.notes %></p></section><% } %>
+<section class="card" id="tickets"><h2>Tickets about it</h2>
+<% if (linked.length) { %><table class="grid"><thead><tr><th>Ticket</th><th>Subject</th><th>Status</th><th>Opened</th></tr></thead><tbody>
+<% linked.forEach(function (t) { %><tr><td><% if (canTickets) { %><a href="/tickets/<%= t.ref %>"><%= t.ref %></a><% } else { %><%= t.ref %><% } %></td><td><%= t.subject %></td><td><%= statusLabels[t.status] || t.status %></td><td><%= fmt.date(t.created_at) %></td></tr><% }) %>
+</tbody></table><% } else { %><p class="empty">No ticket is linked yet. Link it from the ticket, under "Equipment".</p><% } %></section>
+<% if (canManage) { %>
+<section class="card" id="change"><h2>Change</h2><form method="post" action="/assets/<%= a.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/asset_fields', { form: a, S: S, customers: customers, sites: sites, csids: csids, contracts: contracts, suppliers: suppliers, lpos: lpos }) %>
+<button class="btn" type="submit">Save</button> <span class="muted">Retired or disposed equipment stays in the register with its history.</span></form></section>
+<% } %>
+</div>
+<div>
+<section class="card"><h2>History</h2>
+<ul class="timeline compact"><% events.forEach(function (e) { %><li><small class="muted"><%= fmt.dt(e.at) %></small><br><%= e.text %></li><% }) %></ul></section>
+</div>
+</div>
+<%- include('../partials/footer') %>

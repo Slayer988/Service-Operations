@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<h1>Our equipment</h1>
+<p class="muted">The equipment and licences we look after for you, with their warranty and renewal dates. If something here is wrong or missing, <a href="/portal/tickets/new">tell us in a request</a>.</p>
+<% var when = function (date) { var s = S.dateState(date, d, 90); if (s.state === 'none') return '—'; return '<span class="tag ' + (s.state === 'expired' ? 'bad' : s.state === 'soon' ? 'warn' : '') + '">' + fmt.date(s.date) + '</span>'; }; %>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Tag</th><th>Equipment</th><th>Make and model</th><th>Serial number</th><th>Site</th><th>CSID</th><th>Warranty</th><th>Renewal / end of support</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><%= r.tag %></td><td><%= r.name %><% if (r.quantity > 1) { %> <small class="muted">× <%= r.quantity %></small><% } %><br><small class="muted"><%= S.SHORT[r.category] %><%= r.status === 'under_repair' ? ', under repair' : '' %></small></td>
+<td><%= [r.manufacturer, r.model].filter(Boolean).join(' ') || '—' %></td><td><%= r.serial_number || '—' %></td><td><%= r.site_name || '—' %></td><td><%= r.csid || '—' %></td><td><%- when(r.warranty_until) %></td><td><%- when(r.expires_on) %></td></tr><% }) %>
+</tbody></table>
+<p class="muted">When you raise a request about one of these, mention its tag (for example <%= rows[0].tag %>).</p>
+<% } else { %><p class="empty">No equipment is recorded for you yet.</p><% } %>
+<%- include('../partials/footer') %>

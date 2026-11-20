@@ -84,7 +84,11 @@ async function customerPage(req, res, extra = {}) {
             (select count(*)::int from services where customer_id = $1) as services, (select count(*)::int from opportunities where customer_id = $1) as opportunities,
             (select count(*)::int from tenders where customer_id = $1) as tenders`, [id])).rows[0];
   const canDelete = !Object.values(used).some((n) => n > 0);
-  return res.render('staff/customer', { title: customer.name, customer, sites, csid, services, contracts, users, staff, catalogue, policies, used, canDelete,
+  const assetSummary = perms.can(req.user, 'asset.view') ? (await q(`select count(*) filter (where status in ('in_stock','active','under_repair'))::int as live,
+       count(*) filter (where status in ('in_stock','active','under_repair') and (warranty_until < current_date or expires_on < current_date))::int as lapsed,
+       count(*) filter (where status in ('in_stock','active','under_repair') and (warranty_until between current_date and current_date + 90 or expires_on between current_date and current_date + 90))::int as soon,
+       count(*)::int as total from assets where customer_id = $1`, [customer.id])).rows[0] : null;
+  return res.render('staff/customer', { assetSummary, canAssetManage: perms.can(req.user, 'asset.manage'), title: customer.name, customer, sites, csid, services, contracts, users, staff, catalogue, policies, used, canDelete,
     canManage: perms.can(req.user, 'customer.manage'), canContract: perms.can(req.user, 'contract.manage'), canContractView: perms.can(req.user, 'contract.view'), ...extra });
 }
 
@@ -127,8 +131,9 @@ router.post('/customers/:id/delete', manage, wrap(async (req, res) => {
       await db.query('select 1 from customers where id = $1 for update', [id]);
       const n = (await db.query(
         `select (select count(*) from tickets where customer_id = $1) + (select count(*) from contracts where customer_id = $1) + (select count(*) from services where customer_id = $1)
-              + (select count(*) from opportunities where customer_id = $1) + (select count(*) from tenders where customer_id = $1) + (select count(*) from quotes where customer_id = $1) as n`, [id])).rows[0].n;
-      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities, tenders or quotes. Suspend it instead; history is kept.');
+              + (select count(*) from opportunities where customer_id = $1) + (select count(*) from tenders where customer_id = $1) + (select count(*) from quotes where customer_id = $1)
+              + (select count(*) from assets where customer_id = $1) as n`, [id])).rows[0].n;
+      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities, tenders, quotes or equipment. Suspend it instead; history is kept.');
       await db.query('delete from users where customer_id = $1', [id]);
       await db.query('delete from sites where customer_id = $1', [id]);
       await db.query('delete from csids where customer_id = $1', [id]);

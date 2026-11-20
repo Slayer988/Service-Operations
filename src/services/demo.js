@@ -49,6 +49,7 @@ async function status(db) {
     quotes: await n('select count(*)::int as n from quotes where internal_notes like $1', [`${TAG}%`]),
     suppliers: await n('select count(*)::int as n from suppliers where notes like $1', [`${TAG}%`]),
     lpos: await n('select count(*)::int as n from purchase_orders where internal_notes like $1', [`${TAG}%`]),
+    assets: await n('select count(*)::int as n from assets where customer_id = any($1) or notes like $2', [cust, `${TAG}%`]),
   };
 }
 const isEmpty = (s) => Object.values(s).every((v) => v === 0);
@@ -324,7 +325,70 @@ async function load(db, { now = new Date() } = {}) {
   await loadQuotes(db, U, oppIds, cur, now);
   await loadProcurement(db, U, cur, now);
   await loadExtras(db, U, oppIds, cur, now);
+  await loadAssets(db, U, now);
   return status(db);
+}
+
+/** The asset register: equipment and licences at each demo customer, some with a warranty or licence ending soon or already ended,
+ *  linked to their site, CSID and contract, a few bought through a demo LPO, and linked to open tickets. */
+async function loadAssets(db, U, now) {
+  const A = require('./assets');
+  const day = (n) => ymd(addDays(now, n));
+  const eng = { id: U.engineer1, name: 'David Mugisha', kind: 'staff', role: 'engineer' };
+  const dist = (await db.query(`select id from suppliers where notes like $1 and kind = 'distributor' limit 1`, [`${TAG}%`])).rows[0];
+  const po = dist ? (await db.query(`select id from purchase_orders where supplier_id = $1 and status in ('issued','received','closed') order by id limit 1`, [dist.id])).rows[0] : null;
+  const KIT = {
+    'DEMO-KCB': [
+      ['Core switch A, server room', 'network', 'Cisco', 'Catalyst 9300-48P', 'FOC2231X0A1', 'kcb-core-sw-a', '10.1.0.2', 1, -700, 395, null],
+      ['Core switch B, server room', 'network', 'Cisco', 'Catalyst 9300-48P', 'FOC2231X0A2', 'kcb-core-sw-b', '10.1.0.3', 1, -700, 395, null],
+      ['Perimeter firewall', 'security', 'Fortinet', 'FortiGate 200F', 'FG200FTK21000123', 'kcb-fw-01', '10.1.0.1', 1, -500, 230, 21, 'supplier'],
+      ['Core banking database server', 'server', 'Dell', 'PowerEdge R750', 'CN0DBSRV7501', 'kcb-db-01', '10.1.10.11', 1, -1130, -35, null],
+      ['Application server', 'server', 'Dell', 'PowerEdge R650', 'CN0APPSRV6502', 'kcb-app-01', '10.1.10.12', 1, -400, 690, null],
+      ['Backup storage', 'storage', 'Synology', 'RS3621xs+', '2140PDN123456', 'kcb-nas-01', '10.1.10.20', 1, -300, 790, null],
+      ['UPS, server room', 'power', 'APC', 'Smart-UPS SRT 10kVA', 'AS2109123456', '', '', 1, -1050, 45, null],
+      ['Microsoft 365 E3', 'software', 'Microsoft', '365 E3 (annual)', '', '', '', 250, -290, null, 75],
+      ['Branch router, Entebbe', 'network', 'Cisco', 'ISR 1111-8P', 'FGL2245L0E1', 'kcb-ent-rtr', '10.2.0.1', 1, -600, 130, null, null, 'Entebbe branch'],
+    ],
+    'DEMO-LVH': [
+      ['Core switch, main hospital', 'network', 'HPE Aruba', 'CX 6300M', 'SG12KX0LV1', 'lvh-core-01', '172.16.0.2', 1, -420, 680, null],
+      ['Wi-Fi 6 access points, wards', 'network', 'HPE Aruba', 'AP-515', '', '', '', 30, -60, 1035, null],
+      ['Patient records server', 'server', 'HPE', 'ProLiant DL380 Gen10', 'CZJ0512LVH1', 'lvh-emr-01', '172.16.10.5', 1, -1400, -300, null],
+      ['Nurse-call system controller', 'phone', 'Ascom', 'Telligence', 'ASC-778812', '', '172.16.20.4', 1, -900, 200, null],
+      ['UPS, data room', 'power', 'Eaton', '9PX 6kVA', 'GA12K0LVH9', '', '', 1, -800, 280, null, null, null, 'under_repair'],
+      ['Reception printer', 'printer', 'HP', 'LaserJet Pro M404dn', 'PHBLV40411', '', '172.16.30.9', 1, -500, 50, null, null, 'Outpatient clinic'],
+      ['Backup software', 'software', 'Veeam', 'Backup & Replication (10 instances)', '', '', '', 10, -340, null, 25],
+    ],
+    'DEMO-NLL': [
+      ['Firewall, depot', 'security', 'Fortinet', 'FortiGate 60F', 'FGT60FTK22009876', 'nll-fw-01', '192.168.1.1', 1, -380, 350, 350],
+      ['Fleet tracking server', 'server', 'Lenovo', 'ThinkSystem SR630', 'J30ABCD1', 'nll-fleet-01', '192.168.1.20', 1, -650, 80, null],
+      ['Dispatch laptops', 'end_user', 'Lenovo', 'ThinkPad E14', '', '', '', 12, -200, 165, null],
+      ['Virtualisation licences', 'software', 'VMware', 'vSphere Standard (2 CPUs)', '', '', '', 2, -760, null, -10],
+    ],
+  };
+  const made = {};
+  for (const [code, rows] of Object.entries(KIT)) {
+    const c = (await db.query('select id from customers where code = $1', [code])).rows[0]; if (!c) continue;
+    const sites = (await db.query('select id, name from sites where customer_id = $1 order by id', [c.id])).rows;
+    const csid = (await db.query('select id from csids where customer_id = $1 order by id limit 1', [c.id])).rows[0];
+    const contract = (await db.query(`select id from contracts where customer_id = $1 and status in ('active','renewal_in_progress','expiring') order by id limit 1`, [c.id])).rows[0];
+    made[code] = [];
+    for (const [name, category, manufacturer, model, serial, hostname, ip, quantity, boughtAgo, warrantyIn, expiresIn, from, siteName, status] of rows) {
+      const site = (siteName && sites.find((s) => s.name === siteName)) || sites[0];
+      const a = await A.create(db, { name, category, manufacturer, model, serial_number: serial, hostname, ip_address: ip, quantity, status: status || 'active',
+        customer_id: c.id, site_id: site ? site.id : null, csid_id: csid ? csid.id : null, contract_id: contract ? contract.id : null,
+        supplier_id: from === 'supplier' && dist ? dist.id : null, purchase_order_id: from === 'supplier' && po ? po.id : null,
+        purchase_date: day(boughtAgo), warranty_until: warrantyIn === null || warrantyIn === undefined ? null : day(warrantyIn), expires_on: expiresIn === null || expiresIn === undefined ? null : day(expiresIn),
+        owner_contact: category === 'end_user' ? 'Dispatch team' : 'IT manager', notes: `${TAG} sample equipment` }, eng, '', { quiet: true });
+      made[code].push(a);
+    }
+  }
+  await A.create(db, { name: 'Monitoring server (ours)', category: 'server', manufacturer: 'Dell', model: 'PowerEdge R350', serial_number: 'CN0OURMON01', hostname: 'ops-mon-01', ip_address: '10.250.0.10',
+    purchase_date: day(-250), warranty_until: day(845), notes: `${TAG} our own equipment: the monitoring server` }, eng, '', { quiet: true });
+  // link the main equipment to open tickets of the same customer, so tickets show what they are about and its warranty
+  for (const [code, list] of Object.entries(made)) {
+    const t = (await db.query(`select t.id, t.ref, t.customer_id from tickets t join customers c on c.id = t.customer_id where c.code = $1 and t.status in ('new','open','in_progress','pending_customer','pending_vendor') and not t.needs_verification order by t.id limit 2`, [code])).rows;
+    for (const [i, tk] of t.entries()) if (list[i * 3]) await A.linkTicket(db, tk, list[i * 3].id, eng);
+  }
 }
 
 /** The rest of every module, so each screen and tab has something in it: contract obligations, payments, SLA performance, reviews and
@@ -588,6 +652,8 @@ async function remove(db) {
   const files = (await db.query(`select storage_name from attachments where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or customer_id = any($5)
                                     or supplier_id in (select id from suppliers where notes like $6)`, [tix, opps, tends, cons, cust, like])).rows.map((r) => r.storage_name);
   await run('delete from kb_votes where user_id = any($1)', [usr]);
+  await run('delete from assets where customer_id = any($1) or notes like $2 or created_by = any($3)', [cust, like, usr]);
+  await run('delete from asset_events where actor_id = any($1)', [usr]);
   await run('delete from notifications where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or recipient_user_id = any($5) or recipient_email like $6', [tix, opps, tends, cons, usr, `%@${DEMO_DOMAIN}`]);
   await run('delete from attachments where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or customer_id = any($5)', [tix, opps, tends, cons, cust]);
   await run('delete from inbound_messages where ticket_id = any($1)', [tix]);

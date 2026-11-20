@@ -56,6 +56,14 @@
 </section>
 <% } %>
 
+<% if (assetSummary) { %>
+<section class="card" id="assets"><h2>Equipment and licences</h2>
+<% if (assetSummary.total) { %><p><b><%= assetSummary.live %></b> in use or in stock<% if (assetSummary.soon) { %>, <span class="tag warn"><%= assetSummary.soon %> ending within 90 days</span><% } %><% if (assetSummary.lapsed) { %>, <span class="tag bad"><%= assetSummary.lapsed %> out of warranty or expired</span><% } %>.</p>
+<p><a class="btn ghost" href="/assets?customer=<%= customer.id %>">See the equipment</a><% if (canAssetManage) { %> <a class="btn ghost" href="/assets/new?customer=<%= customer.id %>">Add an asset</a><% } %></p>
+<% } else { %><p class="empty">No equipment is registered for <%= customer.name %>.<% if (canAssetManage) { %> <a href="/assets/new?customer=<%= customer.id %>">Add an asset</a> or <a href="/assets/import">import a spreadsheet</a>.<% } %></p><% } %>
+</section>
+<% } %>
+
 <section class="card"><h2>Sites</h2>
 <% if (!sites.length) { %><p class="empty">No sites yet.</p><% } %>
 <% sites.forEach(function (s) { %>

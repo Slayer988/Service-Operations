@@ -54,6 +54,14 @@
 <select name="service_id" required aria-label="Service to link"><option value="">Link a service…</option><% availableServices.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %></option><% }) %></select><button class="btn ghost" type="submit">Link service</button></form><% } %>
 <% } %></section>
 
+<% if (coveredAssets) { %>
+<section class="card" id="assets"><h2>Equipment covered <span class="tag"><%= coveredAssets.length %></span></h2>
+<% if (coveredAssets.length) { %><table class="grid"><thead><tr><th>Tag</th><th>Equipment</th><th>Status</th><th>Warranty</th><th>Expires</th></tr></thead><tbody>
+<% coveredAssets.slice(0, 50).forEach(function (a) { %><tr><td><a href="/assets/<%= a.id %>"><%= a.tag %></a></td><td><%= a.name %></td><td><%= a.status.replace(/_/g, ' ') %></td><td><%= a.warranty_until ? fmt.date(a.warranty_until) : '—' %></td><td><%= a.expires_on ? fmt.date(a.expires_on) : '—' %></td></tr><% }) %>
+</tbody></table><% if (coveredAssets.length > 50) { %><p><a href="/assets?contract=<%= c.id %>&status=all">All <%= coveredAssets.length %> items</a></p><% } %>
+<% } else { %><p class="empty">No equipment is linked to this contract. Set "Covered by contract" on an asset to list it here.</p><% } %></section>
+<% } %>
+
 <section class="card" id="documents"><h2>Documents</h2>
 <table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Version</th><th>Size</th><th>Added</th><th>By</th></tr></thead><tbody>
 <% files.forEach(function (f) { %><tr class="<%= f.latest ? '' : 'old' %>"><td><a href="/documents/<%= f.id %>"><%= f.filename %></a><% if (f.scan_status === 'infected') { %> <span class="tag bad">blocked</span><% } %></td><td><%= f.kind_label %></td><td>v<%= f.version %><%= f.latest ? '' : ' (superseded)' %></td><td><%= fmt.size(f.size_bytes) %></td><td><%= fmt.dt(f.created_at) %></td><td><%= f.uploader || '—' %></td></tr><% }) %></tbody></table>

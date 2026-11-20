@@ -1,0 +1,24 @@
+<%# Asset form fields. Locals: form, S, customers, sites, csids, contracts, suppliers, lpos %>
+<% var cid = String(form.customer_id || ''); var sel = function (a, b) { return String(a || '') === String(b) ? 'selected' : ''; }; %>
+<div class="grid2">
+<p><label for="af_name">Name</label><input id="af_name" name="name" maxlength="200" required value="<%= form.name || '' %>" placeholder="Core switch, server room"></p>
+<p><label for="af_cat">Category</label><select id="af_cat" name="category" required><option value="">Choose…</option><% Object.keys(S.CATEGORIES).forEach(function (k) { %><option value="<%= k %>" <%= sel(form.category, k) %>><%= S.CATEGORIES[k] %></option><% }) %></select></p>
+<p><label for="af_cust">Customer <small class="muted">(empty = our own equipment)</small></label><select id="af_cust" name="customer_id" data-structure-source="1"><option value="">Our own equipment</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(cid, c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="af_status">Status</label><select id="af_status" name="status"><% Object.keys(S.STATUSES).forEach(function (k) { %><option value="<%= k %>" <%= sel(form.status || 'active', k) %>><%= S.STATUSES[k] %></option><% }) %></select></p>
+<p><label for="af_site">Site</label><select id="af_site" name="site_id" data-fill="sites"><option value="">Choose…</option><% sites.filter(function (s) { return String(s.customer_id) === cid; }).forEach(function (s) { %><option value="<%= s.id %>" <%= sel(form.site_id, s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label for="af_csid">CSID <small class="muted">(the service it belongs to)</small></label><select id="af_csid" name="csid_id" data-fill="csids"><option value="">Choose…</option><% csids.filter(function (x) { return String(x.customer_id) === cid; }).forEach(function (x) { %><option value="<%= x.id %>" <%= sel(form.csid_id, x.id) %>><%= x.csid %></option><% }) %></select></p>
+<p><label for="af_contract">Covered by contract</label><select id="af_contract" name="contract_id" data-fill="contracts"><option value="">Choose…</option><% contracts.filter(function (k) { return !k.customer_id || String(k.customer_id) === cid; }).forEach(function (k) { %><option value="<%= k.id %>" <%= sel(form.contract_id, k.id) %>><%= k.reference %> <%= k.title %></option><% }) %></select></p>
+<p><label for="af_qty">Quantity <small class="muted">(seats, for a licence)</small></label><input id="af_qty" name="quantity" type="number" min="1" value="<%= form.quantity || 1 %>"></p>
+<p><label for="af_make">Manufacturer</label><input id="af_make" name="manufacturer" maxlength="100" value="<%= form.manufacturer || '' %>" placeholder="Cisco, HPE, Fortinet, Microsoft…"></p>
+<p><label for="af_model">Model</label><input id="af_model" name="model" maxlength="120" value="<%= form.model || '' %>"></p>
+<p><label for="af_serial">Serial number</label><input id="af_serial" name="serial_number" maxlength="120" value="<%= form.serial_number || '' %>"></p>
+<p><label for="af_host">Host name</label><input id="af_host" name="hostname" maxlength="120" value="<%= form.hostname || '' %>"></p>
+<p><label for="af_ip">IP address</label><input id="af_ip" name="ip_address" maxlength="60" value="<%= form.ip_address || '' %>" placeholder="10.1.0.2"></p>
+<p><label for="af_contact">Contact / user</label><input id="af_contact" name="owner_contact" maxlength="200" value="<%= form.owner_contact || '' %>"></p>
+<p><label for="af_bought">Purchase date</label><input id="af_bought" name="purchase_date" type="date" value="<%= form.purchase_date || '' %>"></p>
+<p><label for="af_warranty">Warranty ends</label><input id="af_warranty" name="warranty_until" type="date" value="<%= form.warranty_until || '' %>"></p>
+<p><label for="af_expires">Expires / end of support <small class="muted">(licence, subscription or vendor support)</small></label><input id="af_expires" name="expires_on" type="date" value="<%= form.expires_on || '' %>"></p>
+<p><label for="af_sup">Bought from</label><select id="af_sup" name="supplier_id"><option value="">—</option><% suppliers.forEach(function (s) { %><option value="<%= s.id %>" <%= sel(form.supplier_id, s.id) %>><%= s.name %></option><% }) %></select></p>
+<p><label for="af_po">Purchase order</label><select id="af_po" name="purchase_order_id"><option value="">—</option><% lpos.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.purchase_order_id, p.id) %>><%= p.ref %> <%= p.title %></option><% }) %></select></p>
+</div>
+<p><label for="af_notes">Notes <small class="muted">(staff only: configuration, location in the rack, passwords never)</small></label><textarea id="af_notes" name="notes" rows="3" maxlength="4000"><%= form.notes || '' %></textarea></p>

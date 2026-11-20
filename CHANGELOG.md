@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.24.0
+- **Asset register (CMDB)** (migration 023): the equipment, licences and subscriptions at each customer site, and our own, with a tag (AST-000001), category, make, model, serial number, host name and IP address, quantity (licence seats), status (in stock, in use, under repair, retired, disposed), purchase date, **warranty end** and **expiry / end of support**, and links to the customer, site, **CSID**, **covering contract**, supplier and purchase order.
+  - **Assets** in the menu: boxes for what is in use, warranties ending within 90 days, out of warranty, licences and support ending, expired, and under repair; search by tag, name, serial, host name, IP or model; filter by customer, category and status; download as Excel, PDF or CSV.
+  - **Import from a spreadsheet** (CSV, with a downloadable template): customers by code or name, sites by name, CSIDs by number, everyday words for categories (switch, firewall, laptop, UPS, licence…), dates as 2026-12-31 or 31/12/2026. Every row is checked first; if any is wrong nothing is imported and each wrong row is listed. A serial number is registered once per manufacturer, so the same file cannot be imported twice.
+  - **Tickets**: an *Equipment* box links the customer's equipment to the ticket and shows at once whether it is in warranty, out of warranty or its support has expired, and which contract covers it. The asset lists its tickets; a contract lists the equipment it covers; the customer's page summarises their equipment.
+  - The **bell** tells those who manage assets when warranties or licences end within 30 days. The **search box** finds equipment by serial number, host name or IP address.
+  - **Customer portal**: *Our Equipment* lists the customer's own equipment with warranty and renewal dates (without our notes or IP addresses).
+  - Every change is kept in the asset's history and the audit log. Engineers, agents, service managers, security analysts, the technical team and procurement manage assets; contract managers, management, department heads, SDEs, auditors and read-only users see them. A customer with equipment cannot be deleted (suspend it instead).
+  - Demo data: 21 items across the three demo customers and our own monitoring server, with warranties and licences ending soon or expired, one under repair, linked to open tickets, their contract, and a demo supplier and LPO.
+  - User manual: *Assets: equipment and licences* for staff and *Our Equipment* for customers.
+- **Fixed: forms that fill a customer's sites, CSIDs and contracts lost the values already chosen** when the page opened with a customer selected (an asset being edited, a new ticket shown again after a mistake, ticket verification). The choices now stay.
+
 ## 1.23.0
 - **Approval of quotes and purchase orders** (migration 022). A quote above a set amount, or with a large discount, must be approved before it can be sent; every purchase order before it is issued, and a large order by a second approver as well.
   - **Defaults** (all changeable in *Settings, Approvals*): quotes at **UGX 20,000,000 / USD 5,000** and above, or with a discount of **10%** or more, are approved by finance, management or a department head; a quote in a currency without a limit always needs approval. Every LPO is approved by finance or a department head, and from **UGX 50,000,000 / USD 13,000** also by management.
