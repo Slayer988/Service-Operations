@@ -4,6 +4,7 @@ const u = require('./util');
 const xlsx = require('./xlsx');
 const pdf = require('./pdf');
 const config = require('../config');
+const docTheme = require('./doc_theme');
 
 const FORMATS = ['html', 'csv', 'xlsx', 'pdf'];
 const fileSafe = (s) => String(s || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'report';
@@ -22,6 +23,7 @@ const plain = (v, c) => {
  */
 function send(res, format, report, user) {
   if (!FORMATS.includes(format) || format === 'html') return false;
+  const brand = (res.locals && res.locals.docBrand) || {};
   const base = `${fileSafe(report.title)}-${new Date().toISOString().slice(0, 10)}`;
   if (format === 'csv') {
     res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${base}.csv"` });
@@ -29,8 +31,8 @@ function send(res, format, report, user) {
     return true;
   }
   if (format === 'xlsx') {
-    const buf = xlsx.workbook([{ name: report.title, title: report.title, columns: report.columns.map((c) => ({ ...c, width: c.width || 18, type: c.type === 'money' || c.type === 'date' || c.type === 'integer' || c.type === 'percent' ? c.type : undefined })), rows: report.rows }],
-      { title: report.title, creator: user ? user.name : undefined });
+    const buf = xlsx.workbook([{ name: report.title, title: brand.name ? `${brand.name}: ${report.title}` : report.title, columns: report.columns.map((c) => ({ ...c, width: c.width || 18, type: c.type === 'money' || c.type === 'date' || c.type === 'integer' || c.type === 'percent' ? c.type : undefined })), rows: report.rows }],
+      { title: report.title, creator: user ? user.name : undefined, palette: docTheme.palette(user) });
     res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${base}.xlsx"` });
     res.send(buf);
     return true;
@@ -40,7 +42,7 @@ function send(res, format, report, user) {
   blocks.push({ type: 'table', columns: report.columns.map((c) => ({ header: c.header, key: c.key, weight: c.weight || 1, align: c.type === 'money' || c.type === 'integer' || c.type === 'percent' ? 'right' : undefined })),
     rows: report.rows.map((r) => Object.fromEntries(report.columns.map((c) => [c.key, plain(r[c.key], c)]))), empty: 'No records match this report.' });
   res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${base}.pdf"` });
-  res.send(pdf.document({ title: report.title, subtitle: report.subtitle, appName: config.appName, blocks }));
+  res.send(pdf.document({ title: report.title, subtitle: report.subtitle, appName: config.appName, blocks, palette: docTheme.palette(user), brand }));
   return true;
 }
 

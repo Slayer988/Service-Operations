@@ -4,6 +4,19 @@ const FIRST_RUN_DAYS = 2;      // when a mailbox is first connected, only unread
 const BATCH = 50;              // messages handled per check
 const FIRST_RUN_MAX = 100;
 
+/**
+ * The secret of a mailbox (IMAP password, Microsoft client secret, Gmail service-account key): the one typed on the E-mail page
+ * (stored encrypted) or, for a mailbox set up earlier, the environment variable it names. '' when neither exists.
+ */
+function secretOf(mb, env) {
+  if (mb && mb.secret_enc) {
+    const plain = require('../../lib/secrets').decrypt(mb.secret_enc);
+    if (plain) return plain;
+  }
+  return (mb && mb.secret_env && env && env[mb.secret_env]) || '';
+}
+const hasStoredSecret = (mb) => !!(mb && mb.secret_enc);
+
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -34,4 +47,4 @@ function form(obj) { return Object.entries(obj).map(([k, v]) => `${encodeURIComp
 function b64url(buf) { return Buffer.from(buf).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); }
 function fromB64url(s) { return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64'); }
 
-module.exports = { FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX, HttpError, request, form, b64url, fromB64url };
+module.exports = { secretOf, hasStoredSecret, FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX, HttpError, request, form, b64url, fromB64url };

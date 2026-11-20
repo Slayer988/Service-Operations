@@ -1,5 +1,8 @@
 <%- include('../partials/header') %>
 <h1>Audit log</h1>
+<% if (integrity && integrity.ok) { %><p class="muted">Integrity check: <b class="ok">the log matches its tamper-evident chain</b> (checked <%= fmt.dt(integrity.at) %>, once a day). Entries cannot be edited or deleted.</p>
+<% } else if (integrity) { %><p class="notice warn"><b>Integrity check failed</b> at <%= fmt.dt(integrity.at) %>: <%= integrity.bad_id === -1 ? 'the newest entries are missing' : 'the first entry that does not match the chain is number ' + integrity.bad_id %>. The log may have been altered or restored from a backup.</p>
+<% } else { %><p class="muted">Entries cannot be edited or deleted. The daily integrity check has not run yet.</p><% } %>
 <form method="get" class="filters wide"><select name="action"><option value="">Any action</option><% actions.forEach(function (a) { %><option <%= f.action === a ? 'selected' : '' %>><%= a %></option><% }) %></select><input name="actor" value="<%= f.actor %>" placeholder="Actor e-mail"><button class="btn ghost" type="submit">Filter</button></form>
 <table class="grid"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Detail</th><th>IP</th></tr></thead><tbody>
 <% rows.forEach(function (r) { %><tr><td><%= fmt.dt(r.at) %></td><td><%= r.actor_email %></td><td><%= r.action %></td><td><%= r.entity %> <%= r.entity_id %></td><td><%= r.detail %></td><td><%= r.ip %></td></tr><% }) %></tbody></table>

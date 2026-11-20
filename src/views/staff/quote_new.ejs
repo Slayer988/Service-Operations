@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<p><a href="/quotes">← Quotes</a></p>
+<h1>New quote</h1>
+<% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><form method="post" action="/quotes"><%- include('../partials/csrf') %>
+<%- include('../partials/quote_fields', { form: form }) %>
+<p class="muted">Linked to an opportunity, the quote takes its customer and appears on the opportunity page. You add the lines on the next page.</p>
+<button class="btn" type="submit">Create quote</button> <a class="btn ghost" href="/quotes">Cancel</a></form></section>
+<%- include('../partials/footer') %>

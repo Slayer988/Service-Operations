@@ -12,11 +12,13 @@ const u = require('../lib/util');
 const tickets = require('../services/tickets');
 const dashboard = require('../services/dashboard');
 const catalogue = require('../services/catalogue');
+const kb = require('../services/kb');
 const config = require('../config');
 const { upload, wrap, saveUploads, ticketTimeline } = require('./util');
 const { requireStaff, requireLogin, requirePerm } = require('../middleware/auth');
 
 const router = express.Router();
+const search = require('../lib/search');
 const { BREACHED, OPEN } = dashboard;
 
 router.get('/', requireStaff, wrap(async (req, res, next) => {
@@ -49,7 +51,7 @@ router.get('/tickets', requireStaff, requirePerm('ticket.view'), wrap(async (req
   const cu = u.id(req.query.customer); if (cu) { params.push(cu); where.push(`t.customer_id = $${params.length}`); }
   const queue = u.oneOf(req.query.queue, ['it_services', 'security']); if (queue) { params.push(queue); where.push(`t.queue = $${params.length}`); }
   const text = u.str(req.query.q, 100);
-  if (text) { params.push(`%${text.replace(/[%_\\]/g, '\\$&')}%`); where.push(`(t.subject ilike $${params.length} or t.ref ilike $${params.length} or t.requester_email ilike $${params.length})`); }
+  if (text) { params.push(search.like(text)); where.push(search.ticketClause(params.length, { internal: true })); }
   const page = Math.max(1, u.intIn(req.query.page, 1, 100000) || 1);
   const total = (await q(`select count(*)::int as n from tickets t where ${where.join(' and ')}`, params)).rows[0].n;
   const rows = (await q(
@@ -101,7 +103,7 @@ router.post('/tickets/new', requireStaff, requirePerm('ticket.create_for_custome
       const queue = b.queue === 'security' && perms.can(req.user, 'security.view') ? 'security' : 'it_services';
       const t = await tickets.createTicket(db, {
         type: b.type === 'request' ? 'request' : 'incident', queue, customerId, csidId: u.id(b.csid_id), serviceId: u.id(b.service_id), siteId: u.id(b.site_id),
-        requester: requester || { email: '', name: '' }, subject: u.str(b.subject, 200), description: u.str(b.description, 20000),
+        requester: requester || { email: '', name: '' }, subject: u.str(b.subject, 200), description: u.str(b.description, 20000), descriptionFormat: b.description_format === 'rich' ? 'rich' : 'text',
         category: categories.includes(b.category) ? b.category : '', impact: u.intIn(b.impact, 1, 3) || 2, urgency: u.intIn(b.urgency, 1, 3) || 2,
         source: 'agent', actor: req.user, enforceActive: false,
       });
@@ -136,8 +138,8 @@ router.get('/tickets/:ref', requireStaff, requirePerm('ticket.view'), wrap(async
   const staff = (await q(`select id, name, role from users where kind = 'staff' and active order by name`)).rows
     .filter((s) => ticket.queue !== 'security' || perms.can(s, 'security.view'));
   const customers = ticket.needs_verification ? (await q(`select id, name from customers where status = 'active' order by name`)).rows : [];
-  res.render('staff/ticket', { title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [],
-    canWork: perms.can(req.user, 'ticket.work'), canVerify: perms.can(req.user, 'ticket.verify'), canSla: perms.can(req.user, 'ticket.sla_note') });
+  res.render('staff/ticket', { title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
+    kbArticles: await kb.forTicket(q, req.user, ticket.id), canKbWrite: perms.can(req.user, 'kb.write'), canWork: perms.can(req.user, 'ticket.work'), canVerify: perms.can(req.user, 'ticket.verify'), canSla: perms.can(req.user, 'ticket.sla_note') });
 }));
 
 async function act(req, res, perm, fn) {
@@ -152,7 +154,7 @@ router.post('/tickets/:ref/comment', requireStaff, upload.array('files', 5), csr
   try {
     const st = await settings.getAll({ query: q }, ['attachment_blocked_ext', 'attachment_max_mb']);
     await act(req, res, 'ticket.work', async (db, ticket) => {
-      const t = await tickets.addComment(db, ticket, { author: req.user, body: req.body.body, internal: req.body.internal === 'on', source: 'agent' });
+      const t = await tickets.addComment(db, ticket, { author: req.user, body: req.body.body, internal: req.body.internal === 'on', source: 'agent', format: req.body.format === 'rich' ? 'rich' : 'text' });
       const rejected = await saveUploads(db, req, t, req.user, st);
       if (rejected.length) req.flash('error', 'Some files were not attached: ' + rejected.join('; '));
       req.flash('success', 'Comment added.');

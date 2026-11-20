@@ -193,7 +193,7 @@ function supportSections(r, labels) {
   ];
 }
 
-function supportPdf(r, labels) {
+function supportPdf(r, labels, palette, brand) {
   const o = r.opportunity; const blocks = [];
   for (const s of supportSections(r, labels)) {
     blocks.push({ type: 'heading', text: s.title });
@@ -201,16 +201,17 @@ function supportPdf(r, labels) {
     if (s.text) blocks.push({ type: 'p', text: s.text });
     if (s.table) blocks.push({ type: 'table', columns: s.table.columns, rows: s.table.rows, empty: 'None.' });
   }
-  return pdf.document({ title: `Opportunity Support Report - ${o.ref}`, subtitle: o.name, appName: config.appName, blocks });
+  return pdf.document({ title: `Opportunity Support Report - ${o.ref}`, subtitle: o.name, appName: config.appName, blocks, palette, brand });
 }
 
-function supportXlsx(r, user, labels) {
+function supportXlsx(r, user, labels, brand) {
+  const co = brand && brand.name ? `${brand.name}: ` : '';
   const secs = supportSections(r, labels);
-  const sheets = secs.filter((s) => s.table).map((s) => ({ name: s.title.slice(0, 28), title: `${r.opportunity.ref} - ${s.title}`, columns: s.table.columns.map((c) => ({ header: c.header, key: c.key, type: c.type, width: Math.round((c.weight || 1) * 10) + 8, wrap: c.key === 'description' || c.key === 'notes' || c.key === 'outcome' })), rows: s.table.rows }));
+  const sheets = secs.filter((s) => s.table).map((s) => ({ name: s.title.slice(0, 28), title: `${co}${r.opportunity.ref} - ${s.title}`, columns: s.table.columns.map((c) => ({ header: c.header, key: c.key, type: c.type, width: Math.round((c.weight || 1) * 10) + 8, wrap: c.key === 'description' || c.key === 'notes' || c.key === 'outcome' })), rows: s.table.rows }));
   const text = secs.filter((s) => s.text).map((s) => ({ section: s.title, text: s.text }));
-  sheets.unshift({ name: 'Overview', title: `Opportunity Support Report - ${r.opportunity.ref}`, columns: [{ header: 'Item', key: 'k', width: 34 }, { header: 'Value', key: 'v', width: 80, wrap: true }],
+  sheets.unshift({ name: 'Overview', title: `${co}Opportunity Support Report - ${r.opportunity.ref}`, columns: [{ header: 'Item', key: 'k', width: 34 }, { header: 'Value', key: 'v', width: 80, wrap: true }],
     rows: [...secs[0].kv.map(([k, v]) => ({ k, v })), ...text.map((t) => ({ k: t.section, v: t.text }))] });
-  return xlsx.workbook(sheets, { title: `Opportunity Support Report ${r.opportunity.ref}`, creator: user ? user.name : undefined });
+  return xlsx.workbook(sheets, { title: `Opportunity Support Report ${r.opportunity.ref}`, creator: user ? user.name : undefined, palette: require('../lib/doc_theme').palette(user) });
 }
 
 module.exports = { dashboard, sdeDashboard, REPORTS, run, supportSections, supportPdf, supportXlsx, rate };

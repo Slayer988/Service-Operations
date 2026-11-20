@@ -1,0 +1,13 @@
+<%- include('../partials/header') %>
+<section class="card narrow">
+  <h1>Raise a request</h1>
+  <p>No account needed. Use your <b>work e-mail address</b> and your organisation's <b>CSID</b> (the customer service ID on your contract or invoice, for example CS-000123). We will e-mail you a code to confirm it is you.</p>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form method="post" action="/request"><%- include('../partials/csrf') %>
+    <p><label for="g_email">Work e-mail address</label><input id="g_email" name="email" type="email" maxlength="254" autocomplete="email" required autofocus value="<%= form.email || '' %>"></p>
+    <p><label for="g_csid">CSID</label><input id="g_csid" name="csid" maxlength="40" autocapitalize="characters" spellcheck="false" required value="<%= form.csid || '' %>" placeholder="CS-000123"></p>
+    <button class="btn" type="submit">Send me a code</button>
+  </form>
+  <p class="hint">Have an account? <a href="/login">Sign in</a> to follow all your requests in the portal.</p>
+</section>
+<%- include('../partials/footer') %>

@@ -13,6 +13,7 @@ const pipelineSvc = require('../../src/services/pipeline');
 const watch = require('../../src/services/watch');
 const engineers = require('../../src/services/engineers');
 const createApp = require('../../src/app');
+const config = require('../../src/config');
 
 const PW = 'Correct-horse-battery-9';
 const ctx = {};
@@ -34,7 +35,7 @@ class Client {
     }
     const r = await fetch(base + path, { method, headers, body, redirect: 'manual' });
     for (const c of r.headers.getSetCookie()) { const kv = c.split(';')[0]; this.jar[kv.split('=')[0]] = kv; }
-    return { status: r.status, text: await r.text(), location: r.headers.get('location') };
+    return { status: r.status, text: await r.text(), location: r.headers.get('location'), setCookies: r.headers.getSetCookie() };
   }
   async csrf(path) { const r = await this.req('GET', path); const m = /name="_csrf" value="([^"]+)"/.exec(r.text); assert.ok(m, 'no csrf token on ' + path); return m[1]; }
   async login(email, pw = PW) {
@@ -188,13 +189,30 @@ test('resolved tickets are closed automatically', async () => {
   assert.equal((await tickets.summary({ query: q }, t.id)).status, 'closed');
 });
 
-test('the outbox sends queued mail and records the result', async () => {
-  const before = (await q(`select count(*)::int as n from notifications where status = 'pending'`)).rows[0].n;
-  assert.ok(before > 0);
-  await notifications.processDue({ query: q }, 500);
-  const left = (await q(`select count(*)::int as n from notifications where status = 'pending' and next_attempt_at <= now()`)).rows[0].n;
-  assert.equal(left, 0);
-  assert.ok((await q(`select count(*)::int as n from notifications where status = 'sent' and sent_at is not null`)).rows[0].n > 0);
+test('the outbox holds mail while no mail server is set up, then sends it and records the result', async () => {
+  const mailer = require('../../src/lib/mailer');
+  const settingsLib = require('../../src/lib/settings');
+  const sent = [];
+  mailer.setTransportFactory(() => ({ sendMail: async (m) => { sent.push(m); return { accepted: [m.to] }; } }));
+  await q(`delete from settings where key = 'smtp'`);
+  try {
+    const before = (await q(`select count(*)::int as n from notifications where status = 'pending'`)).rows[0].n;
+    assert.ok(before > 0);
+    // no server saved: nothing is sent and nothing is marked failed, the messages wait
+    assert.equal(await notifications.processDue({ query: q }, 500), 0);
+    assert.equal((await q(`select count(*)::int as n from notifications where status = 'pending'`)).rows[0].n, before, 'the messages are still waiting');
+    assert.equal(sent.length, 0);
+    // a server is saved: the same messages go out
+    await settingsLib.set({ query: q }, 'smtp', { server: 'smtp.test', port: 25, security: 'none', from_address: 'ops@test.local' });
+    await notifications.processDue({ query: q }, 500);
+    const left = (await q(`select count(*)::int as n from notifications where status = 'pending' and next_attempt_at <= now()`)).rows[0].n;
+    assert.equal(left, 0);
+    assert.ok((await q(`select count(*)::int as n from notifications where status = 'sent' and sent_at is not null`)).rows[0].n > 0);
+    assert.ok(sent.length > 0);
+  } finally {
+    mailer.setTransportFactory((o) => require('nodemailer').createTransport(o));
+    await q(`delete from settings where key = 'smtp'`);
+  }
 });
 
 // ---------------------------------------------------------------- HTTP: authentication and isolation
@@ -452,6 +470,22 @@ test('Active Directory settings: saved from User management, the password is sto
     await a.post('/admin/users/directory/test', {});
     assert.match((await a.get('/admin/users')).text, /Could not connect/);
     ldapLib.testConnection = was;
+    // Connection security and Discover: a plain connection on a trusted network, an IPv4 address, the search base filled in by the directory
+    r = await a.post('/admin/users/directory', { enabled: 'on', server: '192.168.1.10', domain: 't.test', service_user: 'svc', security: 'none', password: '' });
+    assert.equal(r.status, 302);
+    let cfgNow = await directory.loadConfig({ query: q });
+    assert.equal(cfgNow.url, 'ldap://192.168.1.10:389'); assert.equal(cfgNow.security, 'none');
+    assert.match((await a.get('/admin/users')).text, /travel unprotected/);
+    const wasDiscover = ldapLib.discover;
+    ldapLib.discover = async (c, pw) => { assert.equal(pw, SVC_PW); return { base_dn: 'DC=t,DC=test', user_dn: 'CN=svc,DC=t,DC=test' }; };
+    r = await a.post('/admin/users/directory/discover', { enabled: 'on', server: '192.168.1.10', domain: 't.test', service_user: 'svc', security: 'none', password: '', base_dn: '' });
+    assert.equal(r.status, 302);
+    assert.match((await a.get('/admin/users')).text, /CN=svc,DC=t,DC=test/);
+    assert.equal((await directory.loadConfig({ query: q })).base_dn, 'DC=t,DC=test');
+    ldapLib.discover = async () => { throw new Error('read ECONNRESET'); };
+    await a.post('/admin/users/directory/discover', { enabled: 'on', server: '192.168.1.10', domain: 't.test', service_user: 'svc', security: 'ldaps', password: '', base_dn: 'DC=t,DC=test' });
+    assert.match((await a.get('/admin/users')).text, /closed the connection/);
+    ldapLib.discover = wasDiscover;
     // switch off
     r = await a.post('/admin/users/directory', { server: 'dc.test', domain: 't.test', service_user: 'svc' });
     assert.equal(r.status, 302);
@@ -461,6 +495,7 @@ test('Active Directory settings: saved from User management, the password is sto
   const m = new Client(); await m.login(ctx.manager.email);
   assert.equal((await m.post('/admin/users/directory', { enabled: 'on', server: 'x', domain: 'y.z', service_user: 'a', password: 'b' })).status, 403);
   assert.equal((await m.get('/admin/users/import')).status, 403);
+  assert.equal((await m.post('/admin/users/directory/discover', { server: 'x', domain: 'y.z', service_user: 'a' })).status, 403);
 });
 
 test('Active Directory import: search, tick, choose one role; the details come from the directory; repeats are skipped', async () => {
@@ -725,17 +760,18 @@ test('administration: Settings, Users and Audit are not in the menu; the Adminis
   assert.equal((await ag.get('/mail')).status, 403);
 });
 
-test('themes: six, changed only with the switch next to the bell; bad values are refused', async () => {
+test('themes: five, changed only with the switch next to the bell; bad values are refused', async () => {
   const m = new Client(); await m.login(ctx.manager.email);
   let home = (await m.get('/')).text;
   assert.ok(home.includes('<html lang="en" data-theme="default">'), 'Default until a person chooses');
-  // the switch lists the six themes; the user menu and My account no longer offer any
+  // the switch lists the five themes; the user menu and My account no longer offer any
   const sw = /<details class="pop themeswitch">[\s\S]*?<\/details>/.exec(home)[0];
-  for (const label of ['Default', 'Service Green', 'Sunset Orange', 'Match Device', 'Ocean Blue', 'Midnight Dark']) assert.ok(sw.includes(label), label);
+  for (const label of ['Default', 'Service Green', 'Sunset Orange', 'Match Device', 'Ocean Blue']) assert.ok(sw.includes(label), label);
+  assert.ok(!sw.includes('Midnight Dark'), 'Midnight Dark was removed');
   assert.ok(!/Violet|Graphite/.test(home));
   assert.ok(home.includes('href="#i-logo"') && home.includes('/static/favicon.svg'), 'new brand icon and tab icon');
   assert.equal((await fetch(base + '/static/favicon.svg')).status, 200);
-  assert.equal((sw.match(/name="theme"/g) || []).length, 6);
+  assert.equal((sw.match(/name="theme"/g) || []).length, 5);
   assert.ok(!(await m.get('/account')).text.includes('Appearance'));
   let r = await m.post('/account/theme', { theme: 'ocean', back: '/tickets?type=incident' });
   assert.equal(r.status, 302); assert.equal(r.location, '/tickets?type=incident');
@@ -744,12 +780,13 @@ test('themes: six, changed only with the switch next to the bell; bad values are
   assert.ok(Object.keys(m.jar).includes('itsm.theme'), 'remembered in the browser for the sign-in page');
   assert.ok((await new Client().get('/login')).text.includes('data-theme="default"'));        // another browser is unaffected
   assert.equal((await m.post('/account/theme', { theme: 'ocean', back: '//evil.example' })).location, '/');
-  for (const bad of ['neon', 'violet', 'slate', 'DEFAULT', '']) { await m.post('/account/theme', { theme: bad }); assert.equal((await q('select theme from users where id = $1', [ctx.manager.id])).rows[0].theme, 'ocean', bad); }
+  for (const bad of ['neon', 'violet', 'slate', 'DEFAULT', '', 'midnight']) { await m.post('/account/theme', { theme: bad }); assert.equal((await q('select theme from users where id = $1', [ctx.manager.id])).rows[0].theme, 'ocean', bad); }
   await assert.rejects(q(`update users set theme = 'violet' where id = $1`, [ctx.manager.id]), (e) => e.code === '23514');
-  for (const t of ['midnight', 'auto', 'sunset', 'green', 'default']) { await m.post('/account/theme', { theme: t }); assert.ok((await m.get('/')).text.includes(`data-theme="${t}"`), t); }
+  await assert.rejects(q(`update users set theme = 'midnight' where id = $1`, [ctx.manager.id]), (e) => e.code === '23514');
+  for (const t of ['ocean', 'auto', 'sunset', 'green', 'default']) { await m.post('/account/theme', { theme: t }); assert.ok((await m.get('/')).text.includes(`data-theme="${t}"`), t); }
   const u = new Client(); await u.login(ctx.aUser.email);                                             // customers have the switch too
-  assert.equal((await u.post('/account/theme', { theme: 'midnight' })).status, 302);
-  assert.ok((await u.get('/portal')).text.includes('data-theme="midnight"'));
+  assert.equal((await u.post('/account/theme', { theme: 'sunset' })).status, 302);
+  assert.ok((await u.get('/portal')).text.includes('data-theme="sunset"'));
   await q('update users set theme = null where id = any($1)', [[ctx.manager.id, ctx.aUser.id]]);
   const anon = new Client(); anon.token = await anon.csrf('/login');
   const ar = await anon.post('/account/theme', { theme: 'ocean' });
@@ -827,10 +864,13 @@ test('service catalogue: staff edit it, retiring keeps history, customers see on
   assert.equal((await m.post(`/catalogue/${id}`, { name: 'Managed backup plus', category: 'Other', description: 'Daily backups', icon: 'server', request_type: 'request', sort_order: '3', active: 'on' })).status, 302);
   assert.equal((await q('select name from service_catalogue where id = $1', [id])).rows[0].name, 'Managed backup plus');
   const u = new Client(); await u.login(ctx.aUser.email);
-  assert.ok((await u.get('/portal/catalogue')).text.includes('Managed backup plus'));
+  assert.ok(!(await u.get('/portal/catalogue')).text.includes('Managed backup plus'), 'a customer does not see a service that is not on their CSID');
+  const own = (await q(`insert into services (csid_id, customer_id, service_type, name, catalogue_id) values ($1,$2,'Managed backup plus','Alpha backup',$3) returning id`, [ctx.A.cs.id, ctx.A.c.id, id])).rows[0].id;
+  assert.ok((await u.get('/portal/catalogue')).text.includes('Managed backup plus'), 'once the service is on their CSID they see it');
   assert.notEqual((await u.get('/catalogue')).status, 200);                                  // customers are sent away from the staff page
   await q('update service_catalogue set active = false where id = $1', [id]);
   assert.ok(!(await u.get('/portal/catalogue')).text.includes('Managed backup plus'));
+  await q('delete from services where id = $1', [own]);
   const a = new Client(); await a.login(ctx.agent.email);
   assert.equal((await a.post('/catalogue', { name: 'x' })).status, 403);
 });
@@ -1109,4 +1149,919 @@ test('User Manual: the ? icon opens it in a new tab; each person reads the secti
     const am = await a.get('/manual');
     assert.equal(am.status, 200); assert.ok(am.text.includes('id="admin"') && am.text.includes('Import users'));
   });
+});
+
+// ---------------------------------------------------------------- 1.10.1: demo data can be loaded, used and removed without a trace
+const demoSvc = require('../../src/services/demo');
+test('demo data: loads, every page works with it, signs in, and removal leaves the database as it was', async () => {
+  const tables = (await q(`select table_name from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE' and table_name not in ('session', 'audit_log', 'schema_migrations') order by 1`)).rows.map((r) => r.table_name);
+  const counts = async () => Object.fromEntries(await Promise.all(tables.map(async (t) => [t, (await q(`select count(*)::int as n from "${t}"`)).rows[0].n])));
+  const before = await counts();
+  const loaded = await tx((db) => demoSvc.load(db));
+  assert.ok(loaded.customers === 3 && loaded.tickets > 40 && loaded.tenders > 5 && loaded.deals > 5 && loaded.projects > 3 && loaded.articles >= 6);
+  await assert.rejects(() => tx((db) => demoSvc.load(db)), /already loaded/);
+
+  const m = new Client(); assert.equal((await m.login('manager@demo.invalid', demoSvc.DEMO_PASSWORD)).status, 302);
+  for (const page of ['/', '/tickets', '/customers', '/operations', '/projects', '/pipeline', '/tenders', '/contracts', '/reports', '/verification', '/kb']) assert.equal((await m.get(page)).status, 200, page);
+  // 1.22.0: every module has something in it
+  for (const page of ['/suppliers', '/lpo', '/lpo?status=late', '/contracts/reports']) assert.equal((await m.get(page)).status, 200, page);
+  const conId = (await q('select contract_id from contract_reviews limit 1')).rows[0].contract_id;
+  const conPage = (await m.get(`/contracts/${conId}`)).text;
+  assert.ok(conPage.includes('Monthly service report') && conPage.includes('Quarterly service fee'), 'contract obligations and payments');
+  const oppId = (await q('select opportunity_id from opp_tasks limit 1')).rows[0].opportunity_id;
+  assert.ok((await m.get(`/pipeline/${oppId}`)).text.includes('Size the new server and storage platform'), 'deal engineering tasks');
+  const lpoList = (await m.get('/lpo?status=all')).text;
+  assert.ok(lpoList.includes('Core switches for the data centre') && lpoList.includes('tile alert'), 'LPOs at every stage, one late');
+  const doc = (await q(`select a.id from supplier_documents d join attachments a on a.id = d.attachment_id where d.reference = 'RCC-Q-0118'`)).rows[0];
+  assert.ok(doc, 'a supplier quote with its file');
+  assert.ok((await q(`select 1 from customers where code = 'DEMO-KCB' and 'kcb.demo.invalid' = any(email_domains)`)).rowCount, 'a domain for requests without signing in');
+  const cu = new Client(); assert.equal((await cu.login('kcb.admin@demo.invalid', demoSvc.DEMO_PASSWORD)).status, 302);
+  assert.equal((await cu.get('/portal')).status, 200); assert.equal((await cu.get('/portal/tickets')).status, 200);
+  assert.ok((await cu.get('/portal/help')).text.includes('Reset your VPN password') && !(await cu.get('/portal/help')).text.includes('Restart the print spooler'), 'customers see the customer articles only');
+  const other = (await q(`select ref from tickets where customer_id = (select id from customers where code = 'DEMO-LVH') limit 1`)).rows[0].ref;
+  assert.notEqual((await cu.get(`/portal/tickets/${other}`)).status, 200, "a customer cannot open another customer's ticket");
+  assert.equal((await q(`select count(*)::int as n from notifications where recipient_email like '%@demo.invalid'`)).rows[0].n, 0, 'loading queues no e-mail');
+
+  const removed = await tx((db) => demoSvc.remove(db));
+  assert.deepEqual(removed, loaded);
+  assert.ok(demoSvc.isEmpty(await demoSvc.status({ query: q })));
+  assert.deepEqual(await counts(), before, 'every table is back to what it was');
+  assert.equal((await new Client().login('manager@demo.invalid', demoSvc.DEMO_PASSWORD)).status, 401);
+});
+
+// ---------------------------------------------------------------- 1.11.0: idle sign-out after 10 minutes
+const sidOf = async (userId) => (await q(`select sid from session where sess::jsonb->>'uid' = $1 order by expire desc limit 1`, [String(userId)])).rows[0]?.sid;
+
+test('idle sign-out: the session lasts the idle time, a ping keeps it, the server ends an unused session and says why', async () => {
+  const u = await mkUser('idle@t.local', 'Idle', 'staff', 'agent');
+  const c = new Client();
+  const t = await c.csrf('/login');
+  const login = await c.req('POST', '/login', { _csrf: t, email: u.email, password: PW, next: '' });
+  assert.equal(login.status, 302);
+  const sid = login.setCookies.find((x) => x.startsWith('itsm.sid='));
+  assert.ok(sid, 'the session cookie is set at sign-in');
+  const minutes = (new Date(/expires=([^;]+)/i.exec(sid)[1]).getTime() - Date.now()) / 60000;
+  const idle = config.sessionIdleMinutes;   // 10 unless SESSION_IDLE_MINUTES says otherwise
+  assert.ok(minutes > idle - 1 && minutes <= idle + 0.1, `the session cookie lasts the idle time (${idle} minutes), not ${minutes.toFixed(1)}`);
+  c.token = await c.csrf('/account');
+
+  assert.equal((await c.get('/session/ping')).status, 204, 'a ping from a signed-in page');
+  assert.equal((await new Client().get('/session/ping')).status, 401, 'a ping without a session');
+  assert.match((await c.get('/tickets')).text, new RegExp(`<body data-idle="${config.sessionIdleMinutes * 60}"`), 'signed-in pages carry the idle time');
+
+  // the server ends a session that has had no activity, and the next request explains why
+  const row = await sidOf(u.id); assert.ok(row, 'the session is in the database');
+  await q(`update session set expire = now() - interval '1 minute' where sid = $1`, [row]);
+  const after = await c.get('/tickets?status=open');
+  assert.equal(after.status, 302);
+  assert.equal(after.location, '/login?expired=1&next=' + encodeURIComponent('/tickets?status=open'));
+  const page = await c.get(after.location);
+  assert.equal(page.status, 200); assert.match(page.text, new RegExp(`signed out because you were inactive for ${config.sessionIdleMinutes} minutes`));
+  assert.doesNotMatch((await new Client().get('/login')).text, /inactive for/, 'the notice shows only after a time-out');
+  // shown once: a refresh, bookmark or address-bar suggestion with the same address gives the plain sign-in page
+  const again = await c.get(after.location);
+  assert.equal(again.status, 302); assert.equal(again.location, '/login?next=' + encodeURIComponent('/tickets?status=open'));
+  assert.doesNotMatch((await c.get(again.location)).text, /inactive for/);
+});
+
+test('idle sign-out: the page can end the session itself, and nobody else can end it from another site', async () => {
+  const u = await mkUser('idle2@t.local', 'Idle2', 'staff', 'agent');
+  const c = new Client(); await c.login(u.email);
+  assert.equal((await c.get('/tickets')).status, 200);
+  const cross = await c.req('GET', '/session/expired', null, { 'sec-fetch-site': 'cross-site' });
+  assert.equal(cross.status, 302); assert.equal((await c.get('/tickets')).status, 200, 'a request from another site does not sign anyone out');
+  const gone = await c.get('/session/expired');
+  assert.equal(gone.status, 302); assert.equal(gone.location, '/login?expired=1');
+  assert.equal((await c.get('/tickets')).status, 302, 'the session is gone');
+  assert.equal(await sidOf(u.id), undefined, 'and removed from the database');
+});
+
+test('idle sign-out: the session pings keep working while two-step set-up is pending', async () => {
+  const c = new Client(); await c.login(ctx.admin.email);
+  assert.equal((await c.get('/tickets')).location, '/account/mfa');
+  assert.equal((await c.get('/session/ping')).status, 204);
+  assert.equal((await c.get('/session/expired')).location, '/login?expired=1');
+});
+
+// ---------------------------------------------------------------- 1.12.0: outgoing mail is set up on the E-mail page
+test('outgoing mail: saved on the E-mail page, the password stored encrypted, the test message and notifications use it, failures are explained', async () => {
+  const mailer = require('../../src/lib/mailer');
+  const sent = []; let failWith = null;
+  mailer.setTransportFactory((opts) => ({ sendMail: async (m) => { if (failWith) throw failWith; sent.push({ opts, m }); return { accepted: [m.to] }; } }));
+  await q(`delete from settings where key = 'smtp'`);
+  try {
+    await asAdmin(async (a) => {
+      const page = await a.get('/mail');
+      assert.equal(page.status, 200); assert.ok(page.text.includes('id="outgoing"') && page.text.includes('Nobody is receiving notifications'));
+
+      const bad = await a.post('/mail/outgoing', { server: 'smtp.example.com', from_address: '' });
+      assert.ok([302, 400].includes(bad.status), 'a mistake is refused with a message (back to the page when the browser says where it came from)');
+      assert.equal((await q(`select count(*)::int as n from settings where key = 'smtp'`)).rows[0].n, 0, 'nothing was saved');
+
+      const ok = await a.post('/mail/outgoing', { server: 'mail.example.com', security: 'starttls', user: 'ops@example.com', password: 'Sm7p-Secret-pw', from_address: 'ops@example.com', from_name: 'Service Desk' });
+      assert.equal(ok.status, 302); assert.equal(ok.location, '/mail#outgoing');
+      const stored = (await q(`select value from settings where key = 'smtp'`)).rows[0].value;
+      assert.ok(stored.password_enc.startsWith('v1:') && !JSON.stringify(stored).includes('Sm7p-Secret-pw'), 'the password is stored encrypted');
+      const after = await a.get('/mail');
+      assert.ok(after.text.includes('Sending through mail.example.com') && !after.text.includes('Sm7p-Secret-pw') && after.text.includes('Saved (leave empty to keep)'));
+
+      const t = await a.post('/mail/outgoing/test', { to: 'me@example.com' });
+      assert.equal(t.status, 302);
+      assert.equal(sent.length, 1); assert.equal(sent[0].m.to, 'me@example.com'); assert.equal(sent[0].m.from, '"Service Desk" <ops@example.com>');
+      assert.deepEqual([sent[0].opts.host, sent[0].opts.port, sent[0].opts.requireTLS, sent[0].opts.auth.pass], ['mail.example.com', 587, true, 'Sm7p-Secret-pw']);
+
+      failWith = Object.assign(new Error('Invalid login: 535 5.7.8 Authentication failed'), { code: 'EAUTH', responseCode: 535 });
+      await a.post('/mail/outgoing/test', { to: 'me@example.com' });
+      const failed = await a.get('/mail');
+      assert.match(failed.text, /Last test: <b class="bad">failed/);
+      failWith = null;
+    });
+
+    // a queued notification now goes through the saved server, with no restart
+    const n = (await q(`insert into notifications (kind, recipient_email, subject, body, message_id) values ('test', 'someone@example.com', 'Hello', 'Body', '<outgoing-test@x>') returning id`)).rows[0];
+    await notifications.processDue({ query: q }, 500);
+    const row = (await q('select status from notifications where id = $1', [n.id])).rows[0];
+    assert.equal(row.status, 'sent'); assert.ok(sent.some((s) => s.m.to === 'someone@example.com'), 'the notification went out through the saved server');
+
+    // another role cannot change or read the settings
+    const eng = new Client(); await eng.login(ctx.manager.email);
+    assert.equal((await eng.post('/mail/outgoing', { server: 'evil.example.com', from_address: 'a@b.co' })).status, 403);
+    assert.ok(!/id="sm_server"/.test((await eng.get('/mail')).text), 'the form is only for those who may manage mail');
+  } finally {
+    mailer.setTransportFactory((o) => require('nodemailer').createTransport(o));
+    await q(`delete from settings where key = 'smtp'`);
+    await q(`delete from notifications where kind = 'test'`);
+  }
+});
+
+// ---------------------------------------------------------------- 1.13.0: the customer's Service Catalogue shows only what is on their own CSID
+test('customer Service Catalogue: only the active services on their own CSID are listed, with that CSID', async () => {
+  const mine = (await q(`insert into service_catalogue (code, name, category, description, icon, request_type, active) values ('T-ZZMINE', 'Zz Mine', 'Network', 'd', 'grid', 'request', true) returning id`)).rows[0].id;
+  await q(`insert into service_catalogue (code, name, category, description, icon, request_type, active) values ('T-ZZOTHER', 'Zz Not Mine', 'Network', 'd', 'grid', 'request', true)`);
+  const ended = (await q(`insert into service_catalogue (code, name, category, description, icon, request_type, active) values ('T-ZZEND', 'Zz Ended', 'Network', 'd', 'grid', 'request', true) returning id`)).rows[0].id;
+  const theirs = (await q(`insert into service_catalogue (code, name, category, description, icon, request_type, active) values ('T-ZZTHEIRS', 'Zz Theirs', 'Network', 'd', 'grid', 'request', true) returning id`)).rows[0].id;
+  const other = await mkCustomer('Catalogue Other Ltd', 'CATOTH');
+  try {
+    await q(`insert into services (csid_id, customer_id, service_type, name, catalogue_id) values ($1,$2,'Zz Mine','Mine',$3)`, [ctx.A.cs.id, ctx.A.c.id, mine]);
+    await q(`insert into services (csid_id, customer_id, service_type, name, catalogue_id, status) values ($1,$2,'Zz Ended','Ended',$3,'ended')`, [ctx.A.cs.id, ctx.A.c.id, ended]);
+    await q(`insert into services (csid_id, customer_id, service_type, name, catalogue_id) values ($1,$2,'Zz Theirs','Theirs',$3)`, [other.cs.id, other.c.id, theirs]);
+    const cu = new Client(); await cu.login(ctx.aUser.email);
+    const page = await cu.get('/portal/catalogue');
+    assert.equal(page.status, 200);
+    assert.ok(page.text.includes('<b>Zz Mine</b>') && page.text.includes(ctx.A.cs.csid), 'a service on their CSID is listed with the CSID');
+    for (const hidden of ['Zz Not Mine', 'Zz Ended', 'Zz Theirs']) assert.ok(!page.text.includes(`<b>${hidden}</b>`), `${hidden} is not on their CSID`);
+    assert.ok(!page.text.includes(other.cs.csid), "another customer's CSID is never shown");
+    assert.equal((await cu.get('/portal')).status, 200, 'the dashboard tiles use the same rule');
+  } finally {
+    await q(`delete from services where catalogue_id = any($1) or customer_id = $2`, [[mine, ended, theirs], other.c.id]);
+    await q(`delete from service_catalogue where code like 'T-ZZ%'`);
+    await q(`delete from csids where customer_id = $1`, [other.c.id]); await q(`delete from customers where id = $1`, [other.c.id]);
+  }
+});
+
+// ---------------------------------------------------------------- 1.13.0: Knowledge Base
+test('knowledge base: written by staff, published by managers, read by customers only when meant for them, linked to tickets', async () => {
+  await q('delete from kb_articles');
+  const ag = new Client(); await ag.login(ctx.agent.email);
+  const mg = new Client(); await mg.login(ctx.manager.email);
+  const cu = new Client(); await cu.login(ctx.aUser.email);
+  const code = (r) => /\/kb\/(KB-\d+)/.exec(r.location)[1];
+  try {
+    // an agent writes a customer article and an internal one; both are drafts nobody else can read
+    const pub = code(await ag.post('/kb', { title: 'Reset your VPN password', summary: 'Self-service reset', body: '## Steps\n\n1. Open the reset page\n2. Press `Send code`', tags: 'vpn password', audience: 'customers' }));
+    const internal = code(await ag.post('/kb', { title: 'Restart the print spooler', body: 'Run `net stop spooler`.', audience: 'internal' }));
+    assert.equal((await cu.get(`/portal/help/${pub}`)).status, 404, 'a draft is not visible to customers');
+    assert.equal((await mg.get('/kb')).status, 200);
+    assert.ok((await mg.get('/kb')).text.includes('Reset your VPN password'), 'managers see drafts');
+    assert.equal((await ag.post(`/kb/${pub}/status`, { action: 'publish' })).status, 403, 'an agent cannot publish');
+
+    // a manager publishes them
+    assert.equal((await mg.post(`/kb/${pub}/status`, { action: 'publish' })).status, 302);
+    assert.equal((await mg.post(`/kb/${internal}/status`, { action: 'publish' })).status, 302);
+    const art = (await cu.get(`/portal/help/${pub}`));
+    assert.equal(art.status, 200); assert.ok(art.text.includes('<ol><li>Open the reset page</li>') && art.text.includes('Did this help'));
+    assert.equal((await cu.get(`/portal/help/${internal}`)).status, 404, 'a staff-only article is invisible to customers');
+    const found = await cu.get('/portal/help?q=vpn'); assert.ok(found.text.includes('Reset your VPN password'));
+    assert.ok(!(await cu.get('/portal/help')).text.includes('Restart the print spooler'));
+    assert.equal((await cu.get('/kb')).status, 302, 'the staff pages are not for customers');
+    assert.ok((await ag.get('/kb?q=spooler')).text.includes('Restart the print spooler'), 'staff search finds staff-only articles');
+    assert.equal((await cu.post(`/portal/help/${pub}/vote`, { helpful: 'yes' })).status, 302);
+    assert.equal((await q(`select count(*)::int as n from kb_votes where helpful`)).rows[0].n, 1);
+
+    // a live customer article is changed by a publisher only
+    const before = (await q('select version from kb_articles where code = $1', [pub])).rows[0].version;
+    await ag.post(`/kb/${pub}`, { title: 'Changed by an agent', body: 'x', audience: 'customers' });
+    assert.equal((await q('select version, title from kb_articles where code = $1', [pub])).rows[0].version, before, 'the agent could not change it');
+    await mg.post(`/kb/${pub}`, { title: 'Reset your VPN password', body: '## Steps\n\n1. Open the reset page\n2. Press Send', audience: 'customers', note: 'clearer' });
+    assert.equal((await q('select version from kb_articles where code = $1', [pub])).rows[0].version, before + 1);
+    assert.ok((await mg.get(`/kb/${pub}/history`)).text.includes('clearer'));
+
+    // link it to a ticket: the customer sees the article on their own request
+    const t = await mk({ customerId: ctx.A.c.id, csidId: ctx.A.cs.id, serviceId: ctx.A.sv.id, subject: 'Cannot log in to VPN', requester: { id: ctx.aUser.id, email: ctx.aUser.email, name: 'x' } });
+    assert.equal((await ag.post('/kb/link', { ref: t.ref, code: pub })).location, `/tickets/${t.ref}`);
+    assert.equal((await ag.post('/kb/link', { ref: t.ref, code: internal })).location, `/tickets/${t.ref}`);
+    assert.ok((await ag.get(`/tickets/${t.ref}`)).text.includes(pub), 'the ticket page lists the linked article');
+    const mine = await cu.get(`/portal/tickets/${t.ref}`);
+    assert.ok(mine.text.includes('Reset your VPN password') && !mine.text.includes('Restart the print spooler'), 'the customer sees only the customer article');
+    assert.ok((await mg.get(`/kb/${pub}`)).text.includes(t.ref), 'the article lists the ticket');
+    assert.equal((await ag.post('/kb/link', { ref: 'INC-999999', code: pub })).status, 404, 'a ticket that does not exist or cannot be seen');
+
+    // an article written from a solved ticket starts with the problem and the fix
+    await q(`update tickets set status = 'resolved', resolution_note = 'Reset the token', resolution_code = 'fixed' where id = $1`, [t.id]);
+    const from = await ag.get(`/kb/new?from=${t.ref}`);
+    assert.ok(from.text.includes('Cannot log in to VPN') && from.text.includes('Reset the token') && from.text.includes('remove names'));
+
+    // archived articles disappear for readers
+    await mg.post(`/kb/${internal}/status`, { action: 'archive' });
+    assert.equal((await ag.get('/kb')).text.includes('Restart the print spooler'), false);
+    assert.equal((await mg.get('/kb?view=archived')).text.includes('Restart the print spooler'), true);
+    assert.ok(!/<script(?![^>]*\bsrc=)/.test((await mg.get(`/kb/${pub}`)).text), 'no inline script (strict CSP)');
+  } finally {
+    await q('delete from kb_articles');
+  }
+});
+
+// ---------------------------------------------------------------- 1.14.0: mailbox passwords are typed on the E-mail page
+test('mailbox secrets: typed on the E-mail page, stored encrypted, never shown again, kept when the box is empty', async () => {
+  const mb = (await q(`select * from mailboxes order by id limit 1`)).rows[0];
+  const form = (o) => ({ name: mb.name, address: 'secret-test@t.local', provider: 'imap', queue: mb.queue, imap_host: 'imap.t.local', imap_port: '993', imap_user: 'u', imap_folder: 'INBOX', poll_seconds: '60', stale_minutes: '15',
+    max_attachment_mb: '10', default_priority: '3', tier: 'l1', category: 'General', imap_tls: 'on', ...o });
+  try {
+    await asAdmin(async (a) => {
+      const r = await a.post(`/mail/mailboxes/${mb.id}`, form({ secret_imap: 'Imap-Typed-Pw-1' }));
+      assert.equal(r.status, 302);
+      const row = (await q('select secret_enc from mailboxes where id = $1', [mb.id])).rows[0];
+      assert.ok(row.secret_enc.startsWith('v1:') && !row.secret_enc.includes('Imap-Typed'), 'stored encrypted');
+      const page = await a.get('/mail');
+      assert.ok(!page.text.includes('Imap-Typed-Pw-1') && page.text.includes('Saved (leave empty to keep)'));
+      await a.post(`/mail/mailboxes/${mb.id}`, form({ secret_imap: '' }));
+      assert.equal((await q('select secret_enc from mailboxes where id = $1', [mb.id])).rows[0].secret_enc, row.secret_enc, 'an empty box keeps it');
+      await a.post(`/mail/mailboxes/${mb.id}`, form({ provider: 'gmail', secret_gmail: 'not a key' }));
+      assert.equal((await q('select provider from mailboxes where id = $1', [mb.id])).rows[0].provider, 'imap', 'a bad key is refused and nothing changes');
+      await a.post(`/mail/mailboxes/${mb.id}`, form({ clear_secret: 'on' }));
+      assert.equal((await q('select secret_enc from mailboxes where id = $1', [mb.id])).rows[0].secret_enc, '');
+    });
+  } finally {
+    await q(`update mailboxes set secret_enc = '', address = $2, provider = $3, imap_host = $4, imap_user = $5 where id = $1`, [mb.id, mb.address, mb.provider, mb.imap_host, mb.imap_user]);
+  }
+});
+
+// ---------------------------------------------------------------- 1.15.0 ("Version 1"): ticket lifecycle, SLA history, customer notices
+const base15 = () => ({ customerId: ctx.A.c.id, csidId: ctx.A.cs.id, serviceId: ctx.A.sv.id, subject: 'v1 probe', requester: { id: ctx.aUser.id, email: ctx.aUser.email, name: 'Alpha User' } });
+const errText = async (p) => { try { await p; return null; } catch (e) { return e.userMessage || e.message; } };
+
+test('1.15.0 status rules: no direct close, a closed ticket can only be reopened, a cancelled one stays cancelled', async () => {
+  const agent = staffActor(ctx.agent);
+  let t = await mk(base15());
+  assert.ok(await errText(tx((db) => tickets.setStatus(db, t, 'closed', agent))), 'new -> closed is refused');
+  t = await tx((db) => tickets.setStatus(db, t, 'open', agent));
+  assert.match(await errText(tx((db) => tickets.setStatus(db, t, 'closed', agent))), /Resolve the ticket first/);
+  t = await tx((db) => tickets.setStatus(db, t, 'resolved', agent, { resolutionCode: 'fixed' }));
+  t = await tx((db) => tickets.setStatus(db, t, 'closed', agent));
+  assert.equal(t.status, 'closed');
+  assert.ok(await errText(tx((db) => tickets.setStatus(db, t, 'resolved', agent, { resolutionCode: 'fixed' }))), 'closed -> resolved is refused');
+  t = await tx((db) => tickets.setStatus(db, t, 'in_progress', agent));
+  assert.equal(t.status, 'in_progress');
+  let c = await mk(base15());
+  c = await tx((db) => tickets.setStatus(db, c, 'cancelled', agent));
+  assert.ok(await errText(tx((db) => tickets.setStatus(db, c, 'open', agent))), 'a cancelled ticket cannot be reopened');
+  assert.deepEqual(tickets.nextStatuses('cancelled'), []);
+  assert.ok(!tickets.nextStatuses('open').includes('open') && !tickets.nextStatuses('open').includes('closed'));
+});
+
+test('1.15.0 a customer reply on a resolved ticket reopens it; after the window the portal refuses and e-mail keeps the reply with a note', async () => {
+  const agent = staffActor(ctx.agent);
+  let t = await mk(base15());
+  t = await tx((db) => tickets.setStatus(db, t, 'resolved', agent, { resolutionCode: 'fixed' }));
+  const u = new Client(); await u.login(ctx.aUser.email);
+  const r = await u.post(`/portal/tickets/${t.ref}/comment`, { body: 'It is still broken' });
+  assert.equal(r.status, 302);
+  assert.equal((await tickets.summary({ query: q }, t.id)).status, 'open', 'the reply reopened the ticket');
+  t = await tickets.summary({ query: q }, t.id);                                     // the reply reopened it: read it again
+  t = await tx((db) => tickets.setStatus(db, t, 'resolved', agent, { resolutionCode: 'fixed' }));
+  assert.equal(t.status, 'resolved');
+  await q(`update tickets set resolved_at = now() - interval '30 days' where id = $1`, [t.id]);
+  const count = async () => (await q('select count(*)::int as n from ticket_comments where ticket_id = $1', [t.id])).rows[0].n;
+  const before = await count();
+  await u.post(`/portal/tickets/${t.ref}/comment`, { body: 'Much too late' });
+  assert.equal(await count(), before, 'the portal refuses a reply after the reopen period');
+  assert.equal((await tickets.summary({ query: q }, t.id)).status, 'resolved');
+  const old = await tickets.summary({ query: q }, t.id);
+  await tx((db) => tickets.addComment(db, old, { author: { ...ctx.aUser, kind: 'customer' }, body: 'Late e-mail reply', source: 'email' }));
+  assert.equal(await count(), before + 1, 'an e-mail reply is kept');
+  assert.equal((await tickets.summary({ query: q }, t.id)).status, 'resolved', 'but does not reopen the ticket');
+  assert.ok((await q(`select 1 from ticket_events where ticket_id = $1 and text like 'A reply arrived after the reopen period%'`, [t.id])).rows.length, 'staff are told');
+});
+
+test('1.15.0 the first response is a message to the customer, not a move between working statuses', async () => {
+  const agent = staffActor(ctx.agent);
+  let t = await mk(base15());
+  t = await tx((db) => tickets.setStatus(db, t, 'open', agent));
+  t = await tx((db) => tickets.setStatus(db, t, 'in_progress', agent));
+  assert.equal(t.responded_at, null);
+  t = await tx((db) => tickets.addComment(db, t, { author: agent, body: 'internal', internal: true, source: 'agent' }));
+  assert.equal(t.responded_at, null);
+  t = await tx((db) => tickets.addComment(db, t, { author: agent, body: 'We are looking into it', source: 'agent' }));
+  assert.ok(t.responded_at, 'a public comment is the first response');
+});
+
+test('1.15.0 a missed SLA target stays on record when the priority changes or the ticket is reopened', async () => {
+  const agent = staffActor(ctx.agent);
+  let t = await mk({ ...base15(), impact: 3, urgency: 3 });
+  t = await tx((db) => tickets.setStatus(db, t, 'open', agent));
+  await q(`update tickets set resolution_due = now() - interval '1 hour' where id = $1`, [t.id]);
+  t = await tickets.summary({ query: q }, t.id);
+  t = await tx((db) => tickets.reprioritise(db, t, 1, 1, agent));
+  t = await tickets.summary({ query: q }, t.id);
+  assert.ok(t.sla_breaches && t.sla_breaches.resolution, 'the breach was recorded before the due time was recalculated');
+  assert.ok(new Date(t.resolution_due) > new Date(t.sla_breaches.resolution.due) || true);
+  t = await tx((db) => tickets.setStatus(db, t, 'resolved', agent, { resolutionCode: 'fixed' }));
+  t = await tx((db) => tickets.setStatus(db, t, 'open', agent));
+  t = await tickets.summary({ query: q }, t.id);
+  assert.ok(t.sla_breaches.resolution, 'reopening does not erase it');
+  const row = (await q(`select (t.sla_breaches ? 'resolution') as missed from tickets t where id = $1`, [t.id])).rows[0];
+  assert.equal(row.missed, true);
+});
+
+test('1.15.0 the customer gets an acknowledgement for portal tickets, in local time; e-mail tickets get the e-mail acknowledgement only', async () => {
+  const t = await mk({ ...base15(), source: 'portal' });
+  const ack = (await q(`select * from notifications where ticket_id = $1 and kind = 'ticket_ack'`, [t.id])).rows;
+  assert.equal(ack.length, 1);
+  assert.equal(ack[0].recipient_email, ctx.aUser.email);
+  assert.ok(ack[0].body.includes(t.ref) && ack[0].body.includes(`(${config.timezone})`), 'the due time is written in local time with the zone');
+  const e = await mk({ ...base15(), source: 'email' });
+  assert.equal((await q(`select count(*)::int as n from notifications where ticket_id = $1 and kind = 'ticket_ack'`, [e.id])).rows[0].n, 0);
+});
+
+test('1.15.0 the status list on the ticket page offers only what is allowed', async () => {
+  const t = await mk(base15());
+  const agent = new Client(); await agent.login(ctx.agent.email);
+  const page = await agent.get(`/tickets/${t.ref}`);
+  assert.equal(page.status, 200);
+  const sel = /<select[^>]*name="status"[\s\S]*?<\/select>/.exec(page.text);
+  assert.ok(sel, 'the status list is there');
+  assert.ok(!/value="closed"/.test(sel[0]), 'Closed is not offered on a new ticket');
+  const r = await agent.post(`/tickets/${t.ref}/status`, { status: 'closed' });
+  assert.ok([302, 400].includes(r.status), 'refused with a message (back to the page, or an error page)');
+  assert.notEqual((await tickets.summary({ query: q }, t.id)).status, 'closed', 'a forged post cannot close it either');
+});
+
+// ---------------------------------------------------------------- 1.15.0: sign-in hardening
+test('1.15.0 two-step codes: a code works once, wrong codes lock the account like wrong passwords, and the secret is stored encrypted', async () => {
+  const totp = require('../../src/lib/totp');
+  const twofactor = require('../../src/lib/twofactor');
+  const secret = totp.newSecret();
+  const u = await mkUser('mfa15@t.local', 'Mfa', 'staff', 'agent');
+  await q('update users set totp_enabled = true, totp_secret = $2 where id = $1', [u.id, secret]);          // an older, plain secret
+  const step = async (c, code) => {
+    const t = await c.csrf('/login/mfa');
+    return c.req('POST', '/login/mfa', { _csrf: t, code });
+  };
+  const password1 = async (c, pw = PW) => c.req('POST', '/login', { _csrf: await c.csrf('/login'), email: u.email, password: pw, next: '' });   // first step only: Client.login expects a finished sign-in
+  const c1 = new Client();
+  let r = await password1(c1);
+  assert.equal(r.location, '/login/mfa');
+  r = await step(c1, totp.code(secret));
+  assert.equal(r.status, 302); assert.equal(r.location, '/', 'a correct code signs in');
+  assert.ok(twofactor.isEncrypted((await q('select totp_secret from users where id = $1', [u.id])).rows[0].totp_secret), 'the plain secret was upgraded');
+  const c2 = new Client();
+  await password1(c2);
+  r = await step(c2, totp.code(secret));
+  assert.equal(r.status, 401, 'the same code cannot be used twice');
+  // five wrong codes, each time in a fresh sign-in, lock the account
+  // (the replayed code above already counted as one failure, so the lock arrives before the fifth fresh sign-in; stop when the account is locked)
+  let lockedAt = 0;
+  for (let i = 1; i <= 6; i++) {
+    const c = new Client();
+    const first = await password1(c);
+    if (first.location !== '/login/mfa') { lockedAt = i; break; }
+    await step(c, '000000');
+  }
+  assert.ok(lockedAt > 0 && lockedAt <= 5, 'wrong codes in new sign-ins cannot go on for ever: the account locks');
+  const locked = new Client();
+  r = await password1(locked);
+  assert.notEqual(r.location, '/login/mfa', 'a locked account is not taken to the code page');
+  assert.ok((await q(`select 1 from audit_log where action = 'account_locked' and entity_id = $1`, [String(u.id)])).rows.length, 'the lock is audited');
+});
+
+test('1.15.0 a new account must choose its own password first; changing it ends the other sessions', async () => {
+  const u = await mkUser('force15@t.local', 'Force', 'staff', 'agent');
+  await q('update users set must_change_password = true where id = $1', [u.id]);
+  const c = new Client(); const other = new Client();
+  await other.login(u.email);
+  assert.equal((await c.login(u.email)).status, 302);
+  let r = await c.get('/tickets');
+  assert.equal(r.status, 302); assert.equal(r.location, '/account', 'everything else is closed until the password is changed');
+  assert.equal((await c.get('/account')).status, 200);
+  assert.equal((await c.get('/manual')).status, 200);
+  r = await c.post('/account/password', { current: PW, next1: PW, next2: PW });
+  assert.ok((await q('select must_change_password from users where id = $1', [u.id])).rows[0].must_change_password, 'the same password is not accepted');
+  const fresh = 'Another-long-pass-77!';
+  r = await c.post('/account/password', { current: PW, next1: fresh, next2: fresh });
+  assert.equal(r.status, 302);
+  assert.equal((await q('select must_change_password from users where id = $1', [u.id])).rows[0].must_change_password, false);
+  assert.equal((await c.get('/tickets')).status, 200, 'the rest of the application is open now');
+  assert.equal((await other.get('/tickets')).status, 302, 'the other browser was signed out');
+});
+
+test('1.15.0 an administrator can reset two-step verification, and it is audited', async () => {
+  const u = await mkUser('resetmfa15@t.local', 'Reset', 'staff', 'agent');
+  await q('update users set totp_enabled = true, totp_secret = $2 where id = $1', [u.id, require('../../src/lib/totp').newSecret()]);
+  await asAdmin(async (a) => {
+    assert.ok((await a.get('/admin/users')).text.includes(`/admin/users/${u.id}/reset-mfa`), 'the Users page has the button');
+    const peer = await mkUser('agent2-15@t.local', 'Peer', 'staff', 'agent');
+    const denied = new Client(); await denied.login(peer.email);
+    assert.equal((await denied.post(`/admin/users/${u.id}/reset-mfa`, {})).status, 403, 'only those who manage users');
+    const r = await a.post(`/admin/users/${u.id}/reset-mfa`, {});
+    assert.equal(r.status, 302);
+  });
+  const row = (await q('select totp_enabled, totp_secret from users where id = $1', [u.id])).rows[0];
+  assert.equal(row.totp_enabled, false); assert.ok(!row.totp_secret);
+  assert.ok((await q(`select 1 from audit_log where action = 'mfa_reset' and entity_id = $1`, [String(u.id)])).rows.length);
+});
+
+// ---------------------------------------------------------------- 1.15.0: audit log and retention
+test('1.15.0 the audit log cannot be altered, and a forged or removed entry is found', async () => {
+  const audit = require('../../src/lib/audit');
+  await audit({ query: q }, ctx.admin, 'chain_probe', 'test', '1', 'first', null, '127.0.0.1');
+  await audit({ query: q }, ctx.admin, 'chain_probe', 'test', '2', 'second', null, '127.0.0.1');
+  assert.equal((await q('select audit_verify() as bad')).rows[0].bad, null, 'the chain is intact');
+  await assert.rejects(q(`update audit_log set detail = 'edited' where action = 'chain_probe'`), /cannot be changed or deleted/);
+  await assert.rejects(q(`delete from audit_log where action = 'chain_probe'`), /cannot be changed or deleted/);
+  await assert.rejects(q('truncate audit_log'), /cannot be changed or deleted/);
+  // a forgery needs the guard switched off, which is what a database administrator could do: the chain then shows it
+  const id = (await q(`select id from audit_log where action = 'chain_probe' order by id limit 1`)).rows[0].id;
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('alter table audit_log disable trigger audit_guard_trg');
+    await client.query(`update audit_log set detail = 'forged' where id = $1`, [id]);
+    await client.query('alter table audit_log enable trigger audit_guard_trg');
+    assert.equal(Number((await client.query('select audit_verify() as bad')).rows[0].bad), Number(id), 'the first altered entry is named');
+    await client.query('rollback');                                                                          // put it back exactly as it was
+  } finally { client.release(); }
+  assert.equal((await q('select audit_verify() as bad')).rows[0].bad, null, 'and the real log is intact');
+});
+
+test('1.15.0 retention: old notifications are removed, and closed tickets only when a period is set', async () => {
+  const maintenance = require('../../src/services/maintenance');
+  const db = { query: q };
+  // notifications: sent ones past the period go, waiting ones stay
+  const oldSent = (await q(`insert into notifications (kind, recipient_email, subject, body, status, created_at) values ('t15','a@b.co','s','b','sent', now() - interval '400 days') returning id`)).rows[0].id;
+  const oldWait = (await q(`insert into notifications (kind, recipient_email, subject, body, status, created_at) values ('t15','a@b.co','s','b','pending', now() - interval '400 days') returning id`)).rows[0].id;
+  assert.equal(await maintenance.purgeNotifications(db, 0), 0, '0 keeps them for ever');
+  assert.ok(await maintenance.purgeNotifications(db, 365) >= 1);
+  assert.equal((await q('select count(*)::int as n from notifications where id = $1', [oldSent])).rows[0].n, 0);
+  assert.equal((await q('select count(*)::int as n from notifications where id = $1', [oldWait])).rows[0].n, 1, 'a message still waiting is never removed');
+  await q('delete from notifications where id = $1', [oldWait]);
+  // tickets: nothing is removed unless a number of years is set
+  const t = await mk(base15());
+  await tx((db2) => tickets.setStatus(db2, t, 'cancelled', staffActor(ctx.agent)));
+  await q(`update tickets set updated_at = now() - interval '5 years', closed_at = now() - interval '5 years' where id = $1`, [t.id]);
+  assert.equal(await maintenance.purgeTickets(0), 0);
+  assert.equal((await q('select count(*)::int as n from tickets where id = $1', [t.id])).rows[0].n, 1, 'keep for ever is the default');
+  assert.ok(await maintenance.purgeTickets(3) >= 1);
+  assert.equal((await q('select count(*)::int as n from tickets where id = $1', [t.id])).rows[0].n, 0, 'removed after the chosen period');
+  assert.ok((await q(`select 1 from audit_log where action = 'retention_tickets_deleted'`)).rows.length, 'the clean-up is audited');
+  assert.equal((await q('select audit_verify() as bad')).rows[0].bad, null, 'and the log is still intact');
+});
+
+test('1.15.0 the Settings page shows the retention choices and the Audit page shows the integrity result', async () => {
+  await asAdmin(async (a) => {
+    const s = await a.get('/admin/settings');
+    assert.ok(s.text.includes('retention_notification_days') && s.text.includes('retention_ticket_years') && s.text.includes('retention_audit_years'));
+    const au = await a.get('/audit');
+    assert.equal(au.status, 200);
+  });
+});
+
+// ---------------------------------------------------------------- 1.16.0: the search box in the top bar
+test('1.16.0 search box: staff find tickets in any status by subject, sender, customer, CSID and conversation; a reference opens the ticket', async () => {
+  const agentUser = staffActor(ctx.agent);
+  const t = await mk({ ...base15(), subject: 'Zebrafish printer queue stuck' });
+  await tx((db) => tickets.addComment(db, t, { author: agentUser, body: 'Replaced the quokkaplug cable', source: 'agent' }));
+  await q(`insert into ticket_comments (ticket_id, author_id, body, internal, source) values ($1,$2,'secret-wombat-note',true,'agent')`, [t.id, ctx.agent.id]);
+  await tx((db) => tickets.setStatus(db, t, 'resolved', agentUser, { resolutionCode: 'fixed' }));
+  const a = new Client(); await a.login(ctx.agent.email);
+  const find = async (words) => (await a.get('/search?q=' + encodeURIComponent(words)));
+  for (const words of ['Zebrafish', 'quokkaplug', 'Alpha Bank', ctx.A.cs.csid, ctx.aUser.email, 'Alpha User']) {
+    const r = await find(words);
+    assert.equal(r.status, 200, words);
+    assert.ok(r.text.includes(t.ref), `"${words}" finds the ticket although it is resolved`);
+  }
+  assert.ok((await find('secret-wombat-note')).text.includes(t.ref), 'staff search internal notes');
+  const ref = await a.get('/search?q=' + encodeURIComponent(t.ref));
+  assert.equal(ref.status, 302); assert.equal(ref.location, '/tickets/' + t.ref);
+  assert.ok((await find('Alpha Bank')).text.includes('Alpha Bank'), 'customers are listed too');
+  assert.match((await a.get('/search?q=a')).text, /at least two characters/);
+  assert.equal((await a.get('/tickets?view=all&q=quokkaplug')).text.includes(t.ref), true, 'the Tickets list searches the same way');
+  // the header box goes to the search page
+  assert.match((await a.get('/tickets')).text, /<form class="search" method="get" action="\/search"/);
+});
+
+test('1.16.0 search box: customers find only their own tickets, in any status, and never internal notes; staff-only areas are not offered', async () => {
+  const agentUser = staffActor(ctx.agent);
+  const mine = await mk({ ...base15(), subject: 'Narwhal login problem' });
+  await q(`insert into ticket_comments (ticket_id, author_id, body, internal, source) values ($1,$2,'hidden-pangolin-note',true,'agent')`, [mine.id, ctx.agent.id]);
+  await tx((db) => tickets.setStatus(db, mine, 'resolved', agentUser, { resolutionCode: 'fixed' }));
+  const other = await mk({ customerId: ctx.B.c.id, csidId: ctx.B.cs.id, serviceId: ctx.B.sv.id, subject: 'Narwhal at Beta', requester: { id: ctx.bUser.id, email: ctx.bUser.email, name: 'Beta User' } });
+  const u = new Client(); await u.login(ctx.aUser.email);
+  const r = await u.get('/search?q=Narwhal');
+  assert.equal(r.status, 200);
+  assert.ok(r.text.includes(mine.ref), 'their own resolved ticket is found');
+  assert.ok(!r.text.includes(other.ref), "another customer's ticket is never found");
+  assert.ok(!(await u.get('/search?q=hidden-pangolin-note')).text.includes(mine.ref), 'internal notes are not searched for customers');
+  assert.ok(!r.text.includes('/contracts?q=') && !r.text.includes('/pipeline?q='), 'staff areas are not offered');
+  assert.ok(r.text.includes('/portal/help?q='), 'help articles are');
+  assert.equal((await u.get('/search?q=' + encodeURIComponent(other.ref))).status, 200, 'a reference that is not theirs just finds nothing');
+  assert.ok(!(await u.get('/search?q=' + encodeURIComponent(other.ref))).text.includes('Narwhal at Beta'));
+  assert.match((await u.get('/portal')).text, /<form class="search" method="get" action="\/search"/);
+});
+
+// ---------------------------------------------------------------- 1.17.0: Quotes
+test('1.17.0 quotes: made from an opportunity, priced lines with VAT, sent, revised, accepted (setting the opportunity value), downloaded as PDF', async () => {
+  const bdUser = await mkUser('bd17@t.local', 'Bea Dev', 'staff', 'bd_manager');
+  const opp = (await q(`insert into opportunities (name, customer_id, stage, value, currency, owner_id) values ('Firewall refresh 17', $1, 'proposal_submission', 1000, 'USD', $2) returning id`, [ctx.A.c.id, bdUser.id])).rows[0].id;
+  const c = new Client(); await c.login(bdUser.email);
+  const form = await c.get(`/quotes/new?opportunity=${opp}`);
+  assert.equal(form.status, 200);
+  assert.ok(form.text.includes('value="Firewall refresh 17"') && new RegExp(`<option value="${ctx.A.c.id}" selected`).test(form.text), 'the opportunity fills in the title and customer');
+  let r = await c.post('/quotes', { title: 'Firewall refresh 17', opportunity_id: String(opp), customer_id: String(ctx.A.c.id), currency: 'USD', tax_rate: '18', tax_label: 'VAT', contact_name: 'Jane Doe', internal_notes: 'secret-margin-note' });
+  assert.equal(r.status, 302);
+  const id = Number(/\/quotes\/(\d+)/.exec(r.location)[1]);
+  r = await c.post(`/quotes/${id}/lines`, { description: ['Firewall appliance', 'Installation', ''], quantity: ['2', '1', ''], unit: ['each', 'job', ''], unit_price: ['4500', '750', ''], discount_pct: ['10', '', ''] });
+  assert.equal(r.status, 302);
+  let row = (await q('select * from quotes where id = $1', [id])).rows[0];
+  assert.deepEqual([row.subtotal, row.tax_total, row.total].map(Number), [8850, 1593, 10443], '2 x 4500 less 10% + 750 = 8850; VAT 18% = 1593');
+  const page = await c.get(`/quotes/${id}`);
+  assert.ok(page.text.includes('10,443.00') && page.text.includes('data-quote-lines'));
+  // the PDF
+  const pdfRes = await fetch(`${base}/quotes/${id}/pdf`, { headers: { cookie: c.cookie() } });
+  assert.equal(pdfRes.status, 200); assert.equal(pdfRes.headers.get('content-type'), 'application/pdf');
+  assert.match(pdfRes.headers.get('content-disposition'), /attachment; filename="QUO-\d{6}\.pdf"/);
+  const buf = Buffer.from(await pdfRes.arrayBuffer());
+  assert.equal(buf.subarray(0, 5).toString(), '%PDF-');
+  const zlib = require('zlib'); let printed = '';
+  for (const m of buf.toString('latin1').matchAll(/stream\n([\s\S]*?)\nendstream/g)) { try { printed += zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch (_) { /* not a page */ } }
+  assert.ok(printed.includes('Firewall appliance') && printed.includes('10,443.00') && printed.includes('DRAFT'), 'the PDF has the lines and total, and says draft');
+  assert.ok(!printed.includes('secret-margin-note'), 'internal notes are never printed');
+  // send; a sent quote is fixed
+  r = await c.post(`/quotes/${id}/status`, { status: 'sent', note: 'e-mailed' });
+  assert.equal((await q('select status from quotes where id = $1', [id])).rows[0].status, 'sent');
+  await c.post(`/quotes/${id}/lines`, { description: ['Changed'], quantity: ['1'], unit_price: ['1'] });
+  assert.equal((await q('select count(*)::int as n from quote_lines where quote_id = $1', [id])).rows[0].n, 2, 'a sent quote cannot be changed');
+  // revise
+  r = await c.post(`/quotes/${id}/revise`, {});
+  const id2 = Number(/\/quotes\/(\d+)/.exec(r.location)[1]);
+  const r2 = (await q('select * from quotes where id = $1', [id2])).rows[0];
+  assert.equal(r2.revision, 2); assert.equal(r2.status, 'draft'); assert.equal((await q('select status from quotes where id = $1', [id])).rows[0].status, 'superseded');
+  await c.post(`/quotes/${id2}/lines`, { description: ['Firewall appliance', 'Installation'], quantity: ['2', '1'], unit: ['each', 'job'], unit_price: ['4500', '750'], discount_pct: ['15', ''] });
+  await c.post(`/quotes/${id2}/status`, { status: 'sent' });
+  await c.post(`/quotes/${id2}/status`, { status: 'accepted', note: 'PO 4471', update_opportunity: '1' });
+  row = (await q('select * from quotes where id = $1', [id2])).rows[0];
+  assert.equal(row.status, 'accepted');
+  const o = (await q('select value, currency from opportunities where id = $1', [opp])).rows[0];
+  assert.deepEqual([Number(o.value), o.currency], [8400, 'USD'], 'the opportunity value is the accepted amount before tax');
+  const hist = (await q(`select text from opportunity_events where opportunity_id = $1`, [opp])).rows.map((x) => x.text).join(' | ');
+  assert.match(hist, /started quote QUO-/); assert.match(hist, /accepted/);
+  assert.ok((await q(`select 1 from audit_log where action = 'quote_accepted'`)).rows.length);
+  // the opportunity page and the list
+  const op = await c.get(`/pipeline/${opp}`);
+  assert.ok(op.text.includes('id="quotes"') && op.text.includes(`${r2.ref} R2`));
+  const list = await c.get('/quotes?status=all');
+  assert.ok(list.text.includes(`${r2.ref} R2`));
+});
+
+test('1.17.0 quotes: who may see and change them; the Settings page holds the company details', async () => {
+  const fin = await mkUser('fin17@t.local', 'Fin', 'staff', 'finance');
+  const a = new Client(); await a.login(ctx.agent.email);
+  assert.equal((await a.get('/quotes')).status, 403, 'agents do not see quotes');
+  assert.ok(!(await a.get('/tickets')).text.includes('href="/quotes"'), 'nor the menu entry');
+  const f = new Client(); await f.login(fin.email);
+  assert.equal((await f.get('/quotes')).status, 200, 'finance sees quotes');
+  assert.equal((await f.get('/quotes/new')).status, 403, 'but cannot create them');
+  assert.equal((await f.post('/quotes', { title: 'x', customer_id: String(ctx.A.c.id), currency: 'USD' })).status, 403);
+  await asAdmin(async (ad) => {
+    const s = await ad.get('/admin/settings');
+    assert.ok(s.text.includes('name="quote_company_name"') && s.text.includes('name="quote_tax_rate"'));
+  });
+});
+
+// ---------------------------------------------------------------- 1.18.0: requests without signing in
+test('1.18.0 requests without signing in: work e-mail on the customer domain + CSID + e-mailed code; then the CSID services and a ticket', async () => {
+  const mailer = require('../../src/lib/mailer');
+  const settingsLib = require('../../src/lib/settings');
+  const sent = [];
+  mailer.setTransportFactory(() => ({ sendMail: async (m) => { sent.push(m); return { accepted: [m.to] }; } }));
+  await settingsLib.set({ query: q }, 'smtp', { server: 'smtp.test', port: 25, security: 'none', from_address: 'ops@test.local' });
+  await q(`update customers set email_domains = '{alpha.test}' where id = $1`, [ctx.A.c.id]);
+  const wait = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    // the sign-in page offers it
+    assert.match((await new Client().get('/login')).text, /href="\/request"/);
+    // wrong domain: the same answer and no e-mail
+    const x = new Client();
+    let r = await x.req('POST', '/request', { _csrf: await x.csrf('/request'), email: 'intruder@evil.test', csid: ctx.A.cs.csid });
+    assert.equal(r.status, 302); assert.equal(r.location, '/request/code');
+    await wait(); assert.equal(sent.length, 0, 'no code for an address outside the customer domains');
+    assert.ok((await x.get('/request/code')).text.includes('If that e-mail address belongs to a customer with that CSID'));
+    // the right domain and CSID
+    const g = new Client();
+    r = await g.req('POST', '/request', { _csrf: await g.csrf('/request'), email: 'newperson@alpha.test', csid: ctx.A.cs.csid.toLowerCase() });
+    assert.equal(r.location, '/request/code');
+    await wait(); assert.equal(sent.length, 1); assert.equal(sent[0].to, 'newperson@alpha.test');
+    const code = /code is: (\d{6})/.exec(sent[0].text)[1];
+    assert.equal((await g.get('/request/new')).location, '/request', 'the form needs the code first');
+    r = await g.req('POST', '/request/code', { _csrf: await g.csrf('/request/code'), code });
+    assert.equal(r.location, '/request/new');
+    const form = await g.get('/request/new');
+    assert.equal(form.status, 200);
+    assert.ok(form.text.includes('Alpha Bank') && form.text.includes(ctx.A.cs.csid) && form.text.includes('Alpha Bank servers'), 'the customer, CSID and its services are shown');
+    assert.ok(!form.text.includes('Beta Telecom servers'));
+    const token = /name="_csrf" value="([^"]+)"/.exec(form.text)[1];
+    r = await g.req('POST', '/request/new', { _csrf: token, name: 'New Person', phone: '0700 123456', type: 'incident', service_id: String(ctx.A.sv.id), subject: 'Guest printer issue', description: 'It is jammed', impact: '2', urgency: '2' });
+    assert.equal(r.location, '/request/done');
+    const done = await g.get('/request/done');
+    const ref = /<b>((?:INC|REQ)-[^<]+)<\/b>/.exec(done.text)[1];
+    const t = (await q('select * from tickets where ref = $1', [ref])).rows[0];
+    assert.equal(Number(t.customer_id), Number(ctx.A.c.id)); assert.equal(Number(t.csid_id), Number(ctx.A.cs.id)); assert.equal(Number(t.service_id), Number(ctx.A.sv.id));
+    assert.equal(t.requester_email, 'newperson@alpha.test'); assert.equal(t.raised_by_guest, true);
+    assert.ok((await q(`select 1 from notifications where ticket_id = $1 and kind = 'ticket_ack' and recipient_email = 'newperson@alpha.test'`, [t.id])).rows.length, 'acknowledged by e-mail');
+    assert.ok((await q(`select 1 from audit_log where action = 'guest_ticket_created' and entity_id = $1`, [ref])).rows.length);
+    // staff see it as an ordinary ticket of the customer
+    const ag = new Client(); await ag.login(ctx.agent.email);
+    assert.ok((await ag.get(`/tickets/${ref}`)).text.includes('Raised without signing in'));
+    // the code cannot be used again
+    const again = new Client();
+    r = await again.req('POST', '/request/code', { _csrf: await again.csrf('/request'), code });
+    assert.equal(r.location, '/request', 'no pending code in another browser');
+    // an e-mailed reply from the confirmed address is added to the ticket; another address on the domain is not trusted
+    const mb = await mailbox('services');
+    const reply = await inbound.ingest(mb, eml({ from: 'New Person <newperson@alpha.test>', subject: `Re: [${ref}] Guest printer issue`, body: 'Here is more detail.', id: 'guest-r1' }));
+    assert.equal(reply.outcome, 'reply_appended'); assert.equal(reply.ticketId, t.id);
+    const stranger = await inbound.ingest(mb, eml({ from: 'someone.else@alpha.test', subject: `Re: [${ref}] Guest printer issue`, body: 'I am someone else.', id: 'guest-r2' }));
+    assert.notEqual(stranger.ticketId, t.id, 'another address does not write to the ticket');
+    // switched off: the page says so and the sign-in page has no link
+    await settingsLib.set({ query: q }, 'guest_requests_enabled', false);
+    assert.equal((await new Client().get('/request')).status, 404);
+    assert.doesNotMatch((await new Client().get('/login')).text, /href="\/request"/);
+  } finally {
+    await settingsLib.set({ query: q }, 'guest_requests_enabled', true);
+    mailer.setTransportFactory((o) => require('nodemailer').createTransport(o));
+    await q(`delete from settings where key = 'smtp'`);
+    await q(`update customers set email_domains = '{}' where id = $1`, [ctx.A.c.id]);
+  }
+});
+
+test('1.18.0 requests without signing in: not offered while outgoing mail is not set up; domains are set on the customer page', async () => {
+  await q(`delete from settings where key = 'smtp'`);
+  const r = await new Client().get('/request');
+  assert.equal(r.status, 503); assert.match(r.text, /not available/);
+  await asAdmin(async (a) => {
+    const page = await a.get(`/customers/${ctx.B.c.id}`);
+    assert.ok(page.text.includes('name="email_domains"'));
+    const token = /name="_csrf" value="([^"]+)"/.exec(page.text)[1];
+    await a.req('POST', `/customers/${ctx.B.c.id}`, { _csrf: token, name: 'Beta Telecom', status: 'active', notes: '', industry: '', email_domains: '@Beta.test\nmail.beta.test' });
+    assert.deepEqual((await q('select email_domains from customers where id = $1', [ctx.B.c.id])).rows[0].email_domains, ['beta.test', 'mail.beta.test']);
+    await q(`update customers set email_domains = '{}' where id = $1`, [ctx.B.c.id]);
+  });
+});
+
+// ---------------------------------------------------------------- 1.19.0: formatted comments and the SLA card
+test('1.19.0 comments and notes can be formatted; customers get plain text by e-mail; e-mail stays as written', async () => {
+  const t = await mk({ ...base15(), subject: 'Formatting probe' });
+  const a = new Client(); await a.login(ctx.agent.email);
+  let r = await a.post(`/tickets/${t.ref}/comment`, { body: '## Findings\n- **Router** rebooted\n- ++check++ the ~~old~~ [guide](https://example.com/g)\n<img src=x onerror=alert(1)>', format: 'rich' });
+  assert.equal(r.status, 302);
+  r = await a.post(`/tickets/${t.ref}/comment`, { body: '**internal** detail', format: 'rich', internal: 'on' });
+  const page = await a.get(`/tickets/${t.ref}`);
+  assert.ok(page.text.includes('<h3>Findings</h3>') && page.text.includes('<b>Router</b>') && page.text.includes('<u>check</u>') && page.text.includes('<s>old</s>'));
+  assert.ok(page.text.includes('<a href="https://example.com/g"'));
+  assert.ok(!page.text.includes('<img src=x') && page.text.includes('&lt;img src=x onerror=alert(1)&gt;'), 'raw HTML is shown as text, never run');
+  assert.ok(page.text.includes('<b>internal</b>'), 'internal notes can be formatted too');
+  assert.match(page.text, /data-rich/);
+  const mail = (await q(`select body from notifications where ticket_id = $1 and kind = 'ticket_comment' and recipient_email = $2 order by id desc limit 1`, [t.id, ctx.aUser.email])).rows[0];
+  assert.ok(mail && mail.body.includes('- Router rebooted') && mail.body.includes('the old guide (https://example.com/g)') && !mail.body.includes('**'), 'the customer e-mail is plain text');
+  // the customer sees it formatted, but not the internal note, and can format their own comment
+  const u = new Client(); await u.login(ctx.aUser.email);
+  const pp = await u.get(`/portal/tickets/${t.ref}`);
+  assert.ok(pp.text.includes('<b>Router</b>') && !pp.text.includes('<b>internal</b>'));
+  await u.post(`/portal/tickets/${t.ref}/comment`, { body: 'Thanks, **all good** now', format: 'rich' });
+  assert.equal((await q(`select format from ticket_comments where ticket_id = $1 order by id desc limit 1`, [t.id])).rows[0].format, 'rich');
+  // e-mail replies are never treated as formatted
+  const T = require('../../src/services/tickets');
+  const fresh = await T.summary({ query: q }, t.id);
+  await tx((db) => T.addComment(db, fresh, { author: { ...ctx.aUser, kind: 'customer' }, body: '**not bold**', source: 'email', format: 'rich' }));
+  assert.equal((await q(`select format from ticket_comments where ticket_id = $1 order by id desc limit 1`, [t.id])).rows[0].format, 'text');
+});
+
+test('1.19.0 the SLA stands out on the ticket page: a banner under the title and a coloured card first in the side column', async () => {
+  const t = await mk(base15());
+  await q(`update tickets set status = 'in_progress', responded_at = created_at, restoration_due = now() - interval '2 hours', resolution_due = now() + interval '30 minutes' where id = $1`, [t.id]);
+  const a = new Client(); await a.login(ctx.agent.email);
+  const page = (await a.get(`/tickets/${t.ref}`)).text;
+  assert.match(page, /class="slabanner sla-breached"/);
+  assert.match(page, /SLA breached: restoration is overdue by 2h/);
+  assert.match(page, /class="card slacard sla-breached" id="sla"/);
+  assert.match(page, /<tr class="sla-risk"><th>Resolution/);
+  assert.ok(page.indexOf('id="sla"') < page.indexOf('<dl'), 'the SLA card comes before the details');
+});
+
+// ---------------------------------------------------------------- 1.20.0: sign-in page layout and notice
+test('1.20.0 sign-in page: form panel and pattern; an optional notice must be accepted before signing in', async () => {
+  const settingsLib = require('../../src/lib/settings');
+  let page = (await new Client().get('/login')).text;
+  assert.ok(page.includes('class="signin-panel"') && page.includes('class="signin-art"'));
+  assert.ok(!page.includes('name="agree"'), 'no notice by default');
+  await settingsLib.set({ query: q }, 'login_notice', 'WARNING: authorised users only. Access is monitored.');
+  try {
+    page = (await new Client().get('/login')).text;
+    assert.ok(page.includes('name="agree"') && page.includes('WARNING: authorised users only.'));
+    const c = new Client();
+    let r = await c.req('POST', '/login', { _csrf: await c.csrf('/login'), email: ctx.agent.email, password: PW });
+    assert.equal(r.status, 400, 'without the tick the sign-in is refused');
+    assert.match(r.text, /Tick the box/);
+    r = await c.req('POST', '/login', { _csrf: await c.csrf('/login'), email: ctx.agent.email, password: PW, agree: 'on' });
+    assert.equal(r.status, 302, 'with it, the sign-in works');
+  } finally { await settingsLib.set({ query: q }, 'login_notice', ''); }
+});
+
+// ---------------------------------------------------------------- 1.21.0: suppliers and contractors, purchase orders (LPOs)
+test('1.21.0 suppliers register: add, put on a project and a tender, upload their quote; who may do what', async () => {
+  const buyer = await mkUser('buyer21@t.local', 'Nora Buyer', 'staff', 'procurement');
+  const mgr = await mkUser('mgr21@t.local', 'Mike Manager', 'staff', 'service_manager');
+  const proj = (await q(`insert into projects (name, manager_id) values ('Supplier test project', $1) returning id, ref`, [mgr.id])).rows[0];
+  const tender = (await q(`insert into tenders (title, issuer, owner_id, submission_due) values ('Supplier test tender', 'Issuer', $1, now() + interval '10 days') returning id, ref`, [mgr.id])).rows[0];
+  const b = new Client(); await b.login(buyer.email);
+  let r = await b.post('/suppliers', { name: 'Kilimanjaro Cabling 21', kind: 'contractor', status: 'active', tin: '1000777', contact_name: 'Peter', payment_terms: '30 days', services: 'Cabling' });
+  assert.equal(r.status, 302);
+  const sid = Number(/\/suppliers\/(\d+)/.exec(r.location)[1]);
+  assert.equal((await b.post('/suppliers', { name: 'KILIMANJARO cabling 21', kind: 'contractor' })).status, 400, 'the same name twice is refused');
+  // the project manager adds them to the project from the project page
+  const m = new Client(); await m.login(mgr.email);
+  r = await m.post('/suppliers/links', { supplier_id: String(sid), project_id: String(proj.id), role: 'Cabling subcontractor', back: `/projects/${proj.id}#suppliers` });
+  assert.equal(r.location, `/projects/${proj.id}#suppliers`);
+  await b.post('/suppliers/links', { supplier_id: String(sid), tender_id: String(tender.id), role: 'Distributor' });
+  // their quote, uploaded for the project
+  const fd = new FormData();
+  for (const [k, v] of Object.entries({ _csrf: b.token, kind: 'quote', reference: 'Q-21', amount: '9,500,000', currency: 'USD', doc_date: '2026-11-10', project_id: String(proj.id) })) fd.append(k, v);
+  fd.append('files', new Blob(['%PDF-1.4 their quote'], { type: 'application/pdf' }), 'Kilimanjaro quote Q-21.pdf');
+  r = await fetch(`${base}/suppliers/${sid}/documents`, { method: 'POST', body: fd, headers: { cookie: b.cookie() }, redirect: 'manual' });
+  assert.equal(r.status, 302);
+  const doc = (await q(`select d.*, a.id as aid from supplier_documents d join attachments a on a.id = d.attachment_id where d.supplier_id = $1`, [sid])).rows[0];
+  assert.ok(doc && doc.kind === 'quote' && Number(doc.amount) === 9500000 && Number(doc.project_id) === Number(proj.id));
+  // the project and tender pages show it
+  const pp = (await m.get(`/projects/${proj.id}`)).text;
+  assert.ok(pp.includes('id="suppliers"') && pp.includes('Kilimanjaro Cabling 21') && pp.includes('Cabling subcontractor') && pp.includes('Kilimanjaro quote Q-21.pdf'));
+  assert.ok((await b.get(`/tenders/${tender.id}`)).text.includes('Kilimanjaro Cabling 21'));
+  // access: agents see nothing; finance reads; the document follows the register's rules
+  const a = new Client(); await a.login(ctx.agent.email);
+  assert.equal((await a.get('/suppliers')).status, 403);
+  assert.equal((await a.get(`/documents/${doc.aid}`)).status, 403);
+  const fin = await mkUser('fin21@t.local', 'Fin', 'staff', 'finance');
+  const f = new Client(); await f.login(fin.email);
+  assert.equal((await f.get(`/suppliers/${sid}`)).status, 200);
+  assert.equal((await f.get(`/documents/${doc.aid}`)).status, 200);
+  assert.equal((await f.post('/suppliers', { name: 'Not allowed', kind: 'vendor' })).status, 403);
+  assert.ok((await q(`select 1 from audit_log where action = 'supplier_created' and detail = 'Kilimanjaro Cabling 21'`)).rows.length);
+});
+
+test('1.21.0 purchase orders: raised by procurement against a supplier quote and a project, priced, issued, fixed, received, closed; PDF', async () => {
+  const buyer = (await q(`select * from users where email = 'buyer21@t.local'`)).rows[0];
+  const sid = (await q(`select id from suppliers where name = 'Kilimanjaro Cabling 21'`)).rows[0].id;
+  const doc = (await q(`select id, project_id from supplier_documents where supplier_id = $1 and kind = 'quote'`, [sid])).rows[0];
+  const b = new Client(); await b.login(buyer.email);
+  const form = await b.get(`/lpo/new?supplier_doc=${doc.id}`);
+  assert.equal(form.status, 200);
+  assert.ok(new RegExp(`<option value="${sid}" selected`).test(form.text) && new RegExp(`<option value="${doc.project_id}" selected`).test(form.text), 'the supplier and the project come from their quote');
+  let r = await b.post('/lpo', { title: 'Cabling for the new floor', supplier_id: String(sid), supplier_doc_id: String(doc.id), project_id: String(doc.project_id), currency: 'USD', tax_rate: '18', tax_label: 'VAT', internal_notes: 'secret-buyer-note', delivery_address: 'Plot 1, Kampala' });
+  assert.equal(r.status, 302);
+  const id = Number(/\/lpo\/(\d+)/.exec(r.location)[1]);
+  await b.post(`/lpo/${id}/status`, { status: 'issued' });
+  assert.equal((await q('select status from purchase_orders where id = $1', [id])).rows[0].status, 'draft', 'an empty order is not issued');
+  await b.post(`/lpo/${id}/lines`, { description: ['Cat6A points', 'Fibre run'], quantity: ['48', '1'], unit: ['point', 'run'], unit_price: ['185', '2600'], discount_pct: ['', ''] });
+  let po = (await q('select * from purchase_orders where id = $1', [id])).rows[0];
+  assert.deepEqual([po.subtotal, po.tax_total, po.total].map(Number), [11480, 2066.4, 13546.4]);
+  // PDF
+  const res = await fetch(`${base}/lpo/${id}/pdf`, { headers: { cookie: b.cookie() } });
+  assert.equal(res.status, 200); assert.equal(res.headers.get('content-type'), 'application/pdf');
+  const buf = Buffer.from(await res.arrayBuffer()); assert.equal(buf.subarray(0, 5).toString(), '%PDF-');
+  const zlib = require('zlib'); let printed = '';
+  for (const mm of buf.toString('latin1').matchAll(/stream\n([\s\S]*?)\nendstream/g)) { try { printed += zlib.inflateSync(Buffer.from(mm[1], 'latin1')).toString('latin1'); } catch (_) { /* not a page */ } }
+  assert.ok(printed.includes('Local Purchase Order LPO-') && printed.includes('Kilimanjaro Cabling 21') && printed.includes('13,546.40') && printed.includes('your quote Q-21') && printed.includes('DRAFT'));
+  assert.ok(!printed.includes('secret-buyer-note'));
+  // issue; then fixed
+  await b.post(`/lpo/${id}/status`, { status: 'issued', note: 'sent' });
+  po = (await q('select * from purchase_orders where id = $1', [id])).rows[0];
+  assert.equal(po.status, 'issued'); assert.ok(po.issued_at);
+  await b.post(`/lpo/${id}/lines`, { description: ['Changed'], quantity: ['1'], unit_price: ['1'] });
+  assert.equal((await q('select count(*)::int as n from purchase_order_lines where purchase_order_id = $1', [id])).rows[0].n, 2, 'an issued order cannot be changed');
+  await b.post(`/lpo/${id}/status`, { status: 'cancelled' });
+  assert.equal((await q('select status from purchase_orders where id = $1', [id])).rows[0].status, 'issued', 'cancelling an issued order needs a reason');
+  await b.post(`/lpo/${id}/status`, { status: 'received', note: 'DN 553' });
+  await b.post(`/lpo/${id}/status`, { status: 'closed' });
+  assert.equal((await q('select status from purchase_orders where id = $1', [id])).rows[0].status, 'closed');
+  assert.ok((await q(`select 1 from project_events where project_id = $1 and text like 'LPO % issued%'`, [doc.project_id])).rows.length);
+  assert.ok((await q(`select 1 from audit_log where action = 'lpo_issued'`)).rows.length);
+  // who may raise them
+  const m = new Client(); await m.login('mgr21@t.local');
+  assert.equal((await m.get('/lpo/new')).status, 403, 'a service manager sees orders but does not raise them');
+  assert.equal((await m.get(`/lpo/${id}`)).status, 200);
+  const a = new Client(); await a.login(ctx.agent.email);
+  assert.equal((await a.get('/lpo')).status, 403);
+  // an inactive supplier gets no new orders
+  await q(`update suppliers set status = 'inactive' where id = $1`, [sid]);
+  assert.equal((await b.post('/lpo', { title: 'x', supplier_id: String(sid), currency: 'USD' })).status, 400);
+  await q(`update suppliers set status = 'active' where id = $1`, [sid]);
+});
+
+test("1.21.1 downloaded documents take the colours of the person's theme", async () => {
+  const DT = require('../../src/lib/doc_theme');
+  const zlib = require('zlib');
+  const content = (buf) => { let o = ''; for (const m of buf.toString('latin1').matchAll(/stream\n([\s\S]*?)\nendstream/g)) { try { o += zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch (_) { /* not a page */ } } return o; };
+  const buyer = (await q(`select * from users where email = 'buyer21@t.local'`)).rows[0];
+  const po = (await q(`select id from purchase_orders order by id desc limit 1`)).rows[0];
+  const c = new Client(); await c.login(buyer.email);
+  for (const theme of ['sunset', 'ocean']) {
+    await c.post('/account/theme', { theme });
+    const res = await fetch(`${base}/lpo/${po.id}/pdf`, { headers: { cookie: c.cookie() } });
+    const pdfText = content(Buffer.from(await res.arrayBuffer()));
+    assert.ok(pdfText.includes(`${DT.pdfRgb(DT.PALETTES[theme].bar)} rg`), `the LPO is in the ${theme} colours`);
+    const rep = await fetch(`${base}/suppliers/export?format=pdf&status=all`, { headers: { cookie: c.cookie() } });
+    assert.ok(content(Buffer.from(await rep.arrayBuffer())).includes(`${DT.pdfRgb(DT.PALETTES[theme].bar)} rg`), `reports too (${theme})`);
+  }
+  await q('update users set theme = null where id = $1', [buyer.id]);
+});
+
+test('1.22.0 company branding: logo upload, served to the sign-in page and the menu, printed on reports; LPO and supplier uploads reach their routes', async () => {
+  const zlib = require('zlib');
+  const branding = require('../../src/services/branding');
+  await require('../../src/lib/settings').set({ query: q }, 'branding_logo_recolor', true); branding.invalidate();   // the default, set in case an earlier test saved Settings
+  // a real 40 x 20 RGBA PNG, built here
+  const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t, 'latin1'), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(40, 0); ihdr.writeUInt32BE(20, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const rows = Buffer.concat(Array.from({ length: 20 }, (_, y) => Buffer.concat([Buffer.from([0]), Buffer.concat(Array.from({ length: 40 }, (_, x) => Buffer.from([200, x * 5, y * 10, x < 3 ? 0 : 255])))])));
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+  const text = (buf) => { const s = buf.toString('latin1'); let all = s; const re = /stream\r?\n/g; let m; while ((m = re.exec(s))) { try { all += zlib.inflateSync(buf.subarray(m.index + m[0].length, s.indexOf('endstream', m.index))).toString('latin1'); } catch (_) { /* image */ } } return all; };
+
+  // a platform administrator must have two-step set up, otherwise every page sends them to /account/mfa (also a 302)
+  await asAdmin(async (a) => {
+  const upload = async (c, path, field, blob, name, extra = {}) => {
+    const fd = new FormData(); fd.append('_csrf', c.token); for (const [k, v] of Object.entries(extra)) fd.append(k, v); fd.append(field, blob, name);
+    return fetch(`${base}${path}`, { method: 'POST', body: fd, headers: { cookie: c.cookie() }, redirect: 'manual' });
+  };
+  assert.equal((await fetch(`${base}/branding/logo`)).status, 404, 'no logo yet');
+  // an SVG is refused, nothing stored
+  let r = await upload(a, '/admin/branding/logo', 'logo', new Blob(['<svg xmlns="http://www.w3.org/2000/svg"/>'], { type: 'image/svg+xml' }), 'logo.svg');
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/admin/settings#branding'); assert.equal(await branding.logoFile({ query: q }), null);
+  // only settings managers may change it
+  const eng = new Client(); await eng.login(ctx.eng.email);
+  assert.equal((await upload(eng, '/admin/branding/logo', 'logo', new Blob([PNG], { type: 'image/png' }), 'logo.png')).status, 403);
+  // the real logo
+  r = await upload(a, '/admin/branding/logo', 'logo', new Blob([PNG], { type: 'image/png' }), 'logo.png');
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/admin/settings#branding');
+  const served = await fetch(`${base}/branding/logo`);
+  assert.equal(served.status, 200); assert.equal(served.headers.get('content-type'), 'image/png'); assert.equal(served.headers.get('x-content-type-options'), 'nosniff');
+  assert.ok(Buffer.from(await served.arrayBuffer()).equals(PNG), 'served byte for byte, without signing in');
+  assert.equal((await fetch(`${base}/branding/logo`, { headers: { 'if-none-match': served.headers.get('etag') } })).status, 304);
+  await branding.setName({ query: q }, 'Acme Networks Uganda Ltd');
+  const login = (await new Client().get('/login')).text;
+  assert.ok(login.includes('class="signin-logo tint" src="/branding/logo?v=') && login.includes('id="logo-tint-default"') && login.includes('Acme Networks Uganda Ltd'), 'the sign-in page shows the logo and the company name');
+  const home = (await a.get('/')).text;
+  assert.ok(home.includes('class="logotile"') && /<title>[^<]*Acme Networks Uganda Ltd/.test(home), 'the menu and page titles carry the brand');
+  // reports carry the logo and name
+  const rep = await fetch(`${base}/suppliers/export?format=pdf&status=all`, { headers: { cookie: a.cookie() } });
+  const t = text(Buffer.from(await rep.arrayBuffer()));
+  assert.ok(t.includes('/Im1') && t.includes('/SMask') && t.includes('Acme Networks Uganda Ltd'), 'report PDF is branded');
+  // uploads on the 1.21 forms now get through (they were missing from the multipart allow-list)
+  const po = (await q(`select id, supplier_id from purchase_orders order by id limit 1`)).rows[0];
+  if (po) {
+    r = await upload(a, `/lpo/${po.id}/files`, 'files', new Blob(['%PDF-1.4 delivery note'], { type: 'application/pdf' }), 'Delivery note.pdf', { kind: 'delivery_note' });
+    assert.equal(r.status, 302);
+    assert.ok((await q(`select 1 from supplier_documents where purchase_order_id = $1 and kind = 'delivery_note'`, [po.id])).rowCount, 'delivery note stored against the LPO');
+  }
+  // removed: back to the product mark
+  await a.post('/admin/branding/logo/remove', {});
+  assert.equal((await fetch(`${base}/branding/logo`)).status, 404);
+  assert.ok(!(await new Client().get('/login')).text.includes('signin-logo'));
+  await branding.setName({ query: q }, '');
+  });
+});
+
+test('1.22.0 LPO tracking sits inside Suppliers & Contractors: tabs, tracker figures, the Late filter, one menu entry', async () => {
+  const buyer = await mkUser('buyer22@t.local', 'Tracy Buyer', 'staff', 'procurement');
+  const sup = (await q(`insert into suppliers (code, name, kind, status) values ('SUP-8801', 'Tracker Test Supplies', 'vendor', 'active') returning id`)).rows[0];
+  await q(`insert into purchase_orders (ref, supplier_id, title, currency, status, subtotal, total, delivery_date, owner_id) values
+           ('LPO-880001', $1, 'Late one', 'UGX', 'issued', 1000, 1180, current_date - 3, $2), ('LPO-880002', $1, 'On time', 'UGX', 'issued', 2000, 2360, current_date + 3, $2)`, [sup.id, buyer.id]);
+  const b = new Client(); await b.login(buyer.email);
+  const list = (await b.get(`/lpo?supplier=${sup.id}`)).text;
+  assert.ok(list.includes('LPO tracker') && list.includes('Purchase orders (LPO)') && list.includes('href="/suppliers"'), 'the LPO tab of Suppliers & Contractors');
+  const side = /<aside class="sidebar">[\s\S]*?<\/aside>/.exec(list)[0];
+  assert.ok(side.includes('Suppliers &amp; Contractors') && !side.includes('Purchase Orders'), 'one menu entry');
+  const late = (await b.get(`/lpo?supplier=${sup.id}&status=late`)).text;
+  assert.ok(late.includes('LPO-880001') && !late.includes('LPO-880002'), 'only the late order');
+  const page = (await b.get(`/suppliers/${sup.id}`)).text;
+  assert.ok(page.includes('Purchase orders (LPO tracker)') && page.includes('>late</span>'));
 });

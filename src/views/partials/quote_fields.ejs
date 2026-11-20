@@ -1,0 +1,19 @@
+<%# The quote header form, used on New quote and on a draft quote. form: the values; customers, opportunities, currencies. %>
+<div class="grid2">
+<p><label for="qf_title">Title (what the quote is for)</label><input id="qf_title" name="title" maxlength="200" required value="<%= form.title || '' %>"></p>
+<p><label for="qf_opp">Opportunity <small class="muted">(optional)</small></label><select id="qf_opp" name="opportunity_id"><option value="">Not linked</option>
+<% opportunities.forEach(function (o) { %><option value="<%= o.id %>" <%= String(form.opportunity_id) === String(o.id) ? 'selected' : '' %>><%= o.ref %> · <%= o.name %> (<%= o.org || '—' %>)</option><% }) %>
+<% if (form.opportunity_id && !opportunities.some(function (o) { return String(o.id) === String(form.opportunity_id); })) { %><option value="<%= form.opportunity_id %>" selected>Linked opportunity (closed)</option><% } %></select></p>
+<p><label for="qf_customer">Customer</label><select id="qf_customer" name="customer_id"><option value="">Not a customer yet (enter the name)</option>
+<% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(form.customer_id) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select></p>
+<p><label for="qf_prospect">Or the organisation's name</label><input id="qf_prospect" name="prospect" maxlength="200" value="<%= form.prospect || '' %>"></p>
+<p><label for="qf_cname">Contact name</label><input id="qf_cname" name="contact_name" maxlength="120" value="<%= form.contact_name || '' %>"></p>
+<p><label for="qf_cemail">Contact e-mail</label><input id="qf_cemail" name="contact_email" type="email" maxlength="320" value="<%= form.contact_email || '' %>"></p>
+<p><label for="qf_cur">Currency</label><select id="qf_cur" name="currency"><% currencies.forEach(function (c) { %><option <%= form.currency === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+<p><label for="qf_tax">Tax</label><span class="rowform"><input id="qf_tax_label" name="tax_label" maxlength="20" value="<%= form.tax_label || 'VAT' %>" aria-label="Tax name" class="num"> <input id="qf_tax" name="tax_rate" inputmode="decimal" value="<%= form.tax_rate %>" aria-label="Tax rate in percent" class="num"> %</span></p>
+<p><label for="qf_date">Quote date</label><input id="qf_date" name="issue_date" type="date" value="<%= form.issue_date ? String(form.issue_date).slice(0, 10) : '' %>"></p>
+<p><label for="qf_valid">Valid until</label><input id="qf_valid" name="valid_until" type="date" value="<%= form.valid_until ? String(form.valid_until).slice(0, 10) : '' %>"></p>
+</div>
+<p><label for="qf_intro">Introduction <small class="muted">(printed above the lines; optional)</small></label><textarea id="qf_intro" name="intro" rows="3" maxlength="4000"><%= form.intro || '' %></textarea></p>
+<p><label for="qf_terms">Terms <small class="muted">(printed below the totals)</small></label><textarea id="qf_terms" name="terms" rows="3" maxlength="4000"><%= form.terms || '' %></textarea></p>
+<p><label for="qf_notes">Internal notes <small class="muted">(never printed)</small></label><textarea id="qf_notes" name="internal_notes" rows="2" maxlength="4000"><%= form.internal_notes || '' %></textarea></p>

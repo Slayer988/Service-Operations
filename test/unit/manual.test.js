@@ -15,7 +15,7 @@ test('manual: text is escaped; only **bold** is allowed through', () => {
 
 test('manual: customers get the portal sections and nothing about staff modules', () => {
   const u = ids({ kind: 'customer', role: 'customer_user' });
-  assert.deepEqual(u.filter((i) => i.startsWith('c-')), ['c-request', 'c-track', 'c-services']);
+  assert.deepEqual(u.filter((i) => i.startsWith('c-')), ['c-request', 'c-track', 'c-services', 'c-help']);
   for (const x of ['tickets', 'admin', 'roles', 'contracts', 'tenders', 'pipeline', 'projects', 'operations', 'reports']) assert.ok(!u.includes(x), x);
   assert.ok(ids({ kind: 'customer', role: 'customer_admin' }).includes('c-users'));
   assert.ok(!u.includes('c-users'));

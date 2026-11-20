@@ -1,10 +1,10 @@
 <%- include('../partials/header') %>
 <h1>Service Catalogue</h1>
-<p class="muted">What we can do for you. Choose a service to raise a request.</p>
+<p class="muted">The services on your account. Choose one to raise a request.</p>
 <div class="svc admin-tiles">
 <% rows.forEach(function (c) { %>
-  <a class="tile" href="/portal/tickets/new?type=<%= c.request_type %><%= c.category ? '&category=' + encodeURIComponent(c.category) : '' %>"><svg class="ic"><use href="#i-<%= c.icon %>"/></svg><b><%= c.name %></b><span><%= c.description %></span></a>
+  <a class="tile" href="/portal/tickets/new?type=<%= c.request_type %><%= c.category ? '&category=' + encodeURIComponent(c.category) : '' %>"><svg class="ic"><use href="#i-<%= c.icon %>"/></svg><b><%= c.name %></b><span><%= c.description %></span><small class="muted"><%= c.csids.length > 1 ? 'CSIDs' : 'CSID' %> <%= c.csids.join(', ') %></small></a>
 <% }) %>
 </div>
-<% if (!rows.length) { %><p class="empty">No services are listed yet.</p><% } %>
+<% if (!rows.length) { %><p class="empty">No services are on your account yet. If you expect some, ask your service provider to add them to your CSID.</p><% } %>
 <%- include('../partials/footer') %>

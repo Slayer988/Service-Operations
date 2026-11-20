@@ -1,0 +1,7 @@
+<%- include('../partials/header') %>
+<section class="card narrow">
+  <h1>Not available</h1>
+  <% if (reason === 'mail') { %><p>Requests without signing in are not available right now. Please e-mail the service desk, or <a href="/login">sign in</a>.</p>
+  <% } else { %><p>Requests without signing in are not offered. Please <a href="/login">sign in</a>, or e-mail the service desk.</p><% } %>
+</section>
+<%- include('../partials/footer') %>

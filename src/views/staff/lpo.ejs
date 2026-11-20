@@ -1,0 +1,84 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'cancelled' ? 'grey' : (s === 'draft' ? 'warn' : (s === 'issued' ? 'blue' : '')); }; %>
+<p><a href="/lpo">← Suppliers & Contractors: purchase orders</a> · <a href="/suppliers/<%= po.supplier_id %>">← <%= po.supplier_name %></a><% if (po.project_id) { %> · <a href="/projects/<%= po.project_id %>#suppliers">← Project <%= po.project_ref %></a><% } %></p>
+<div class="head"><h1><%= po.ref %> <span class="tag <%= tone(po.status) %>"><%= PO.STATUS_LABELS[po.status] %></span></h1>
+<a class="btn" href="/lpo/<%= po.id %>/pdf"><%= po.status === 'draft' ? 'Download draft PDF' : 'Download PDF' %></a></div>
+<p class="muted"><%= po.title %> · to <a href="/suppliers/<%= po.supplier_id %>"><%= po.supplier_name %></a> · raised by <%= po.owner_name %><%= po.issued_at ? ' · issued ' + fmt.date(po.issued_at) + ' by ' + (po.issued_by_name || '') : '' %></p>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#lines', icon: 'dollar', label: 'Total (with ' + po.tax_label + ')', value: po.currency + ' ' + money(po.total), small: true }) %>
+  <%- include('../partials/kpi', { href: '#lines', icon: 'chart', label: 'Before ' + po.tax_label, value: po.currency + ' ' + money(po.subtotal), small: true }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: 'Deliver by', value: po.delivery_date ? fmt.date(po.delivery_date) : 'As agreed', small: true }) %>
+  <%- include('../partials/kpi', { href: '#lines', icon: 'list', label: 'Lines', value: String(lines.length) }) %>
+</div>
+<% if (po.supplier_doc_id || po.contract_id || po.project_id || po.tender_id || po.customer_quote_id) { %><p class="against">Against:
+<% if (po.supplier_doc_id) { %><span>their quote <a href="/suppliers/<%= po.supplier_id %>#documents"><%= po.supplier_doc_ref || po.supplier_doc_file || 'quote' %></a></span><% } %>
+<% if (po.contract_id) { %><span>contract <a href="/contracts/<%= po.contract_id %>"><%= po.contract_ref %></a></span><% } %>
+<% if (po.project_id) { %><span>project <a href="/projects/<%= po.project_id %>"><%= po.project_ref %></a> <%= po.project_name %></span><% } %>
+<% if (po.tender_id) { %><span>tender <a href="/tenders/<%= po.tender_id %>"><%= po.tender_ref %></a></span><% } %>
+<% if (po.customer_quote_id) { %><span>our quote <a href="/quotes/<%= po.customer_quote_id %>"><%= po.customer_quote_ref %><%= po.customer_quote_revision > 1 ? ' R' + po.customer_quote_revision : '' %></a></span><% } %></p><% } %>
+<% if (po.decision_note && ['cancelled','closed'].includes(po.status)) { %><p class="banner"><%= PO.STATUS_LABELS[po.status] %>: <%= po.decision_note %></p><% } %>
+
+<% if (moves.length) { %>
+<section class="card" id="status"><h2>Next step</h2>
+<form method="post" action="/lpo/<%= po.id %>/status" class="rowform"><%- include('../partials/csrf') %>
+<select name="status" aria-label="Next step"><% moves.forEach(function (m) { %><option value="<%= m %>"><%= PO.MOVE_LABELS[m] %></option><% }) %></select>
+<input name="note" maxlength="1000" placeholder="Note (required when cancelling an issued order)"><button class="btn" type="submit">Save</button></form>
+<% if (po.status === 'draft') { %><p class="muted">Check the PDF, then issue it: the order is then fixed, dated today, and its PDF is what you send to the supplier. To change an issued order, cancel it and raise a new one.</p><% } %>
+</section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (editable) { %>
+<form method="post" action="/lpo/<%= po.id %>"><%- include('../partials/csrf') %><%- include('../partials/lpo_fields', { form: po }) %><button class="btn ghost" type="submit">Save details</button></form>
+<% } else { %>
+<table class="kv"><tbody>
+<tr><th>Order date</th><td><%= fmt.date(po.issue_date) %></td></tr><tr><th>Deliver by</th><td><%= po.delivery_date ? fmt.date(po.delivery_date) : 'As agreed' %></td></tr>
+<tr><th>Deliver to</th><td class="desc"><%= po.delivery_address || '—' %></td></tr><tr><th>Payment terms</th><td><%= po.payment_terms || '—' %></td></tr>
+<tr><th>Currency and tax</th><td><%= po.currency %> · <%= po.tax_label %> <%= Number(po.tax_rate) %>%</td></tr>
+<% if (po.terms) { %><tr><th>Terms</th><td class="desc"><%= po.terms %></td></tr><% } %>
+<% if (po.internal_notes) { %><tr><th>Internal notes</th><td class="desc"><%= po.internal_notes %></td></tr><% } %>
+<% if (po.received_at) { %><tr><th>Received</th><td><%= fmt.dt(po.received_at) %></td></tr><% } %>
+</tbody></table>
+<% } %>
+</section>
+
+<section class="card" id="lines"><h2>Lines</h2>
+<% if (editable) { %>
+<form method="post" action="/lpo/<%= po.id %>/lines" data-quote-lines data-tax-rate="<%= Number(po.tax_rate) %>"><%- include('../partials/csrf') %>
+<datalist id="catalogue-names"><% catalogue.forEach(function (n) { %><option value="<%= n %>"><% }) %></datalist>
+<table class="grid lines"><thead><tr><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price (<%= po.currency %>)</th><th class="num">Disc. %</th><th class="num">Amount</th></tr></thead><tbody>
+<% lines.concat(Array.apply(null, Array(blankRows)).map(function () { return null; })).forEach(function (l) { %>
+<tr><td><input name="description" maxlength="1000" list="catalogue-names" value="<%= l ? l.description : '' %>" aria-label="Description"></td>
+<td><input class="num" name="quantity" inputmode="decimal" value="<%= l ? Number(l.quantity) : '' %>" aria-label="Quantity" placeholder="1"></td>
+<td><input class="num" name="unit" maxlength="40" value="<%= l ? l.unit : '' %>" aria-label="Unit" placeholder="each"></td>
+<td><input class="num" name="unit_price" inputmode="decimal" value="<%= l ? Number(l.unit_price) : '' %>" aria-label="Unit price"></td>
+<td><input class="num" name="discount_pct" inputmode="decimal" value="<%= l && Number(l.discount_pct) ? Number(l.discount_pct) : '' %>" aria-label="Discount percent"></td>
+<td class="num" data-amount><%= l ? money(l.line_total) : '' %></td></tr><% }) %></tbody></table>
+<p class="muted">Empty rows are ignored; clear a description to remove that line. Save to get more empty rows.</p>
+<table class="totals"><tbody><tr><th>Subtotal</th><td class="num" data-subtotal><%= money(po.subtotal) %></td></tr>
+<tr><th><%= po.tax_label %> <%= Number(po.tax_rate) %>%</th><td class="num" data-tax><%= money(po.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= po.currency %>)</th><td class="num" data-total><%= money(po.total) %></td></tr></tbody></table>
+<button class="btn" type="submit">Save lines</button></form>
+<% } else { %>
+<% if (lines.length) { %><table class="grid"><thead><tr><th>#</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price</th><th class="num">Disc. %</th><th class="num">Amount (<%= po.currency %>)</th></tr></thead><tbody>
+<% lines.forEach(function (l, i) { %><tr><td><%= i + 1 %></td><td><%= l.description %></td><td class="num"><%= Number(l.quantity) %></td><td><%= l.unit %></td><td class="num"><%= money(l.unit_price) %></td><td class="num"><%= Number(l.discount_pct) ? Number(l.discount_pct) : '' %></td><td class="num"><%= money(l.line_total) %></td></tr><% }) %>
+</tbody></table><% } else { %><p class="empty">No lines.</p><% } %>
+<table class="totals"><tbody><% if (Number(po.discount_total) > 0) { %><tr><th>Discounts</th><td class="num">- <%= money(po.discount_total) %></td></tr><% } %>
+<tr><th>Subtotal</th><td class="num"><%= money(po.subtotal) %></td></tr><tr><th><%= po.tax_label %> <%= Number(po.tax_rate) %>%</th><td class="num"><%= money(po.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= po.currency %>)</th><td class="num"><%= money(po.total) %></td></tr></tbody></table>
+<% } %>
+</section>
+
+<section class="card" id="documents"><h2>Signed copy, delivery notes and invoices</h2>
+<%- include('../partials/supplier_docs', { docs: docs, showSupplier: false, canLpo: false }) %>
+<% if (canManage && po.status !== 'draft') { %>
+<form method="post" action="/lpo/<%= po.id %>/files" enctype="multipart/form-data" class="rowform"><%- include('../partials/csrf') %>
+<select name="kind" aria-label="Kind"><option value="lpo">Signed LPO</option><option value="delivery_note">Delivery note</option><option value="invoice">Invoice</option><option value="other">Other</option></select>
+<input name="reference" maxlength="120" placeholder="Their reference" aria-label="Their reference"><input type="file" name="files" multiple required aria-label="Files"><button class="btn ghost" type="submit">Upload</button></form>
+<p class="muted">Files are kept with the supplier's documents and linked to this order.</p>
+<% } %>
+</section>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.at) %></time> <%= e.text %></li><% }) %></ul></section>
+<%- include('../partials/footer') %>

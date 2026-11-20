@@ -1,7 +1,7 @@
 'use strict';
 // Generic IMAP (password) provider. Follows messages by UID, not by the "unread" flag, so a person opening a message in
 // Outlook cannot hide it from us. Microsoft 365 no longer allows password IMAP for most tenants: use the Graph provider there.
-const { FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX } = require('./common');
+const { FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX, secretOf } = require('./common');
 
 function client(mb, password) {
   const { ImapFlow } = require('imapflow');
@@ -17,13 +17,13 @@ module.exports = {
   label: 'IMAP (password)',
   configError(mb, env) {
     if (!mb.imap_host || !mb.imap_user) return 'IMAP server and user must be set.';
-    if (!mb.secret_env || !env[mb.secret_env]) return `The password variable ${mb.secret_env || '(none named)'} is not set in the server environment file.`;
+    if (!secretOf(mb, env)) return mb.secret_env ? `The password variable ${mb.secret_env} is not set in the server environment file. Type the password on this page instead, or set the variable.` : 'The mailbox password has not been entered. Type it in the box below.';
     return '';
   },
-  secrets(mb, env) { return [env[mb.secret_env]]; },
+  secrets(mb, env) { return [secretOf(mb, env)]; },
 
   async poll(mb, ctx) {
-    const c = client(mb, ctx.env[mb.secret_env]);
+    const c = client(mb, secretOf(mb, ctx.env));
     let count = 0;
     try {
       await c.connect();
@@ -60,7 +60,7 @@ module.exports = {
   },
 
   async test(mb, ctx) {
-    const c = client(mb, ctx.env[mb.secret_env]);
+    const c = client(mb, secretOf(mb, ctx.env));
     try {
       await c.connect();
       const lock = await c.getMailboxLock(mb.imap_folder || 'INBOX');

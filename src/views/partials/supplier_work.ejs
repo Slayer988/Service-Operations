@@ -1,0 +1,23 @@
+<%# The "Contractors and suppliers" card on a project or tender page. sw: { links, docs, lpos }, swType, swId, swCanLink, swCanUpload, swCanLpo, swSuppliers %>
+<section class="card" id="suppliers"><h2>Contractors and suppliers</h2>
+<% if (sw.links.length) { %>
+<table class="grid"><thead><tr><th>Supplier / contractor</th><th>Type</th><th>Role here</th><th>Contact</th><th></th></tr></thead><tbody>
+<% sw.links.forEach(function (l) { %><tr><td><a href="/suppliers/<%= l.supplier_id %>"><%= l.name %></a><% if (l.status !== 'active') { %> <span class="tag grey"><%= l.status.replace('_', ' ') %></span><% } %></td><td><%= l.kind_label %></td><td><%= l.role || '—' %></td>
+<td><%= [l.contact_name, l.contact_phone].filter(Boolean).join(' · ') || '—' %></td>
+<td class="actions"><% if (swCanUpload) { %><a class="btn ghost small" href="/suppliers/<%= l.supplier_id %>?<%= swType %>=<%= swId %>&doc=quote#documents">Upload their quote</a><% } %>
+<% if (swCanLpo && l.status === 'active') { %><a class="btn ghost small" href="/lpo/new?supplier=<%= l.supplier_id %>&<%= swType %>=<%= swId %>">Raise LPO</a><% } %>
+<% if (swCanLink) { %><form method="post" action="/suppliers/links/<%= l.id %>/delete" class="inline" data-confirm="Remove <%= l.name %>?"><%- include('csrf') %><input type="hidden" name="back" value="/<%= swType %>s/<%= swId %>#suppliers"><button class="btn ghost small" type="submit">Remove</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No contractor or supplier on this <%= swType %> yet.</p><% } %>
+<% if (swCanLink) { %>
+<form method="post" action="/suppliers/links" class="rowform"><%- include('csrf') %><input type="hidden" name="<%= swType %>_id" value="<%= swId %>"><input type="hidden" name="back" value="/<%= swType %>s/<%= swId %>#suppliers">
+<select name="supplier_id" aria-label="Supplier or contractor" required><option value="">Add from the register…</option><% swSuppliers.forEach(function (s) { %><option value="<%= s.id %>"><%= s.name %> (<%= s.kind_label %>)</option><% }) %></select>
+<input name="role" maxlength="200" placeholder="Role, e.g. cabling subcontractor" aria-label="Role"><button class="btn ghost" type="submit">Add</button>
+<a class="muted" href="/suppliers/new">Not in the register?</a></form>
+<% } %>
+<% if (sw.docs.length) { %><h3>Their documents for this <%= swType %></h3><%- include('supplier_docs', { docs: sw.docs, showSupplier: true, canLpo: swCanLpo }) %><% } %>
+<% if (sw.lpos.length) { %><h3>Purchase orders</h3>
+<table class="grid"><thead><tr><th>LPO</th><th>To</th><th>For</th><th>Status</th><th class="num">Total</th></tr></thead><tbody>
+<% sw.lpos.forEach(function (x) { %><tr><td><a href="/lpo/<%= x.id %>"><%= x.ref %></a></td><td><%= x.supplier_name %></td><td><%= x.title %></td><td><%= x.status %></td><td class="num"><%= x.currency %> <%= Number(x.total).toLocaleString('en-US', { minimumFractionDigits: 2 }) %></td></tr><% }) %>
+</tbody></table><% } %>
+</section>

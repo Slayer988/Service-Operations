@@ -80,6 +80,8 @@ async function daily(db) {
   await step('tickets', () => purgeTickets(Number(st.retention_ticket_years || 0)));
   await step('audit_trimmed', () => purgeAudit(db, Number(st.retention_audit_years || 0)));
   await step('audit_check', () => verifyAudit(db));
+  await step('quotes_expired', () => require('./quotes').expireDue(db));
+  await step('guest_codes', () => require('./guest').purge(db));
   return out;
 }
 

@@ -13,6 +13,7 @@ const reporting = require('../lib/reporting');
 const tickets = require('../services/tickets');
 const P = require('../services/pipeline');
 const PR = require('../services/pipeline_reports');
+const Quotes = require('../services/quotes');
 const docs = require('../services/documents');
 const { upload, wrap } = require('./util');
 const { requireStaff } = require('../middleware/auth');
@@ -22,7 +23,7 @@ const db0 = { query: q };
 const UserError = tickets.UserError;
 const forbidden = (res) => res.status(403).render('error', { title: 'Not allowed', message: 'Your role does not allow this action.' });
 const notFound = (res) => res.status(404).render('error', { title: 'Not found', message: 'That opportunity does not exist.' });
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => u.localDay(require('../config').timezone);
 const qsOf = (query, skip = ['format']) => new URLSearchParams(Object.entries(query).filter(([k, v]) => !skip.includes(k) && typeof v === 'string' && v)).toString();
 
 // anyone with pipeline.view or pipeline.support gets in; what they see is decided per request
@@ -181,8 +182,10 @@ router.get('/pipeline/:id', ...guarded(null, async (req, res, a) => {
   const resources = await one(`select r.*, u.name as person from opportunity_resources r left join users u on u.id = r.user_id where r.opportunity_id = $1 order by r.id`);
   const linkedTenders = perms.can(req.user, 'tender.view') ? await one(`select id, ref, title, status, submission_due from tenders where opportunity_id = $1 order by id desc`) : [];
   const contracts = perms.can(req.user, 'contract.view') ? await one('select id, reference, title, status from contracts where opportunity_id = $1 order by id desc') : [];
+  const quotes = perms.can(req.user, 'quote.view') ? await Quotes.forOpportunity(db0, id) : null;
   const staffAll = fd.staff;
   res.render('staff/opportunity', {
+    quotes, canQuote: perms.can(req.user, 'quote.manage'), Quotes,
     title: o.ref, o, a, bar: (n) => charts.bar(n), events, contacts, activities, proposals, engineers, tasks, history, solution, resources, linkedTenders, contracts,
     files: await docs.list(db0, 'opportunity', id), docKinds: docs.KINDS.opportunity, progress: P.overallProgress(tasks), ...fd, labels: fd.labels, P, today: today(),
     isOpen: P.ACTIVE.includes(o.stage), stageIdx: P.OPEN.indexOf(o.stage), assignable: staffAll.filter((s) => !engineers.some((e) => e.id === s.id)),
@@ -275,9 +278,9 @@ router.get('/pipeline/:id/support-report', ...guarded(null, async (req, res, a) 
   if (format !== 'html') {
     await audit(db0, req.user, 'report_exported', 'report', `support:${a.o.ref}`, format, a.o.customer_id, req.ip);
     const base = `opportunity-support-report-${a.o.ref}-${today()}`;
-    if (format === 'pdf') { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${base}.pdf"` }); return res.send(PR.supportPdf(r, labels)); }
+    if (format === 'pdf') { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${base}.pdf"` }); return res.send(PR.supportPdf(r, labels, require('../lib/doc_theme').palette(req.user), res.locals.docBrand)); }
     res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${base}.xlsx"` });
-    return res.send(PR.supportXlsx(r, req.user, labels));
+    return res.send(PR.supportXlsx(r, req.user, labels, res.locals.docBrand));
   }
   return res.render('staff/support_report', { title: `Support report ${a.o.ref}`, r, sections: PR.supportSections(r, labels), from: from || '', to: to || '', o: a.o, qs: qsOf(req.query) });
 }));

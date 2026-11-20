@@ -11,7 +11,7 @@ const { requireLogin } = require('../middleware/auth');
 const router = express.Router();
 
 // areas with their own search; the link hands the words over to that area, which applies its own access rules
-const AREAS = [['/contracts', 'contract.view', 'Contracts'], ['/tenders', 'tender.view', 'Tenders'], ['/pipeline', 'pipeline.view', 'Pipeline (deals)'], ['/projects', 'project.view', 'Projects'], ['/kb', 'kb.view', 'Knowledge Base']];
+const AREAS = [['/contracts', 'contract.view', 'Contracts'], ['/tenders', 'tender.view', 'Tenders'], ['/pipeline', 'pipeline.view', 'Pipeline (deals)'], ['/quotes', 'quote.view', 'Quotes'], ['/suppliers', 'supplier.view', 'Suppliers & Contractors'], ['/lpo', 'lpo.view', 'Purchase orders'], ['/projects', 'project.view', 'Projects'], ['/kb', 'kb.view', 'Knowledge Base']];
 
 router.get('/search', requireLogin, wrap(async (req, res) => {
   const text = search.term(req.query.q);

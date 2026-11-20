@@ -1,0 +1,26 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'accepted' ? '' : (s === 'rejected' || s === 'expired' ? 'bad' : (s === 'sent' ? 'blue' : (s === 'draft' ? 'warn' : 'grey'))); }; %>
+<div class="head"><h1>Quotes</h1><% if (canManage) { %><a class="btn" href="/quotes/new">New quote</a><% } %></div>
+<nav class="tabs">
+<% [['open','Open (draft and sent)'],['draft','Draft'],['sent','Sent'],['accepted','Accepted'],['rejected','Rejected'],['expired','Expired'],['all','All']].forEach(function (v) { %>
+<a href="?status=<%= v[0] %>" class="<%= f.status === v[0] ? 'on' : '' %>"><%= v[1] %></a><% }) %></nav>
+<form method="get" class="filters wide">
+  <input type="hidden" name="status" value="<%= f.status %>">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Quote, title, customer or opportunity" aria-label="Search quotes">
+  <select name="customer" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <select name="owner" aria-label="Owner"><option value="">Anyone's</option><option value="me" <%= f.owner === 'me' ? 'selected' : '' %>>Mine</option></select>
+  <select name="latest" aria-label="Revisions"><option value="1">Newest revision only</option><option value="0" <%= f.latest === '0' ? 'selected' : '' %>>Every revision</option></select>
+  <button class="btn ghost" type="submit">Filter</button>
+</form>
+<% var cur = Object.keys(sums); if (cur.length) { %><p class="muted">Open quotes in this list: <%= cur.map(function (c) { return sums[c].n + ' worth ' + c + ' ' + Q.fmtMoney(sums[c].total) + ' before tax'; }).join(' · ') %></p><% } %>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Quote</th><th>Title</th><th>Customer / prospect</th><th>Opportunity</th><th>Status</th><th class="num">Total</th><th>Date</th><th>Valid until</th><th>Owner</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %>
+<tr><td><a href="/quotes/<%= r.id %>"><%= Q.label(r) %></a></td><td><%= r.title %></td><td><%= r.org || '—' %></td>
+<td><%- r.opportunity_ref ? '<a href="/pipeline/' + r.opportunity_id + '">' + r.opportunity_ref + '</a>' : '—' %></td>
+<td><span class="tag <%= tone(r.status) %>"><%= Q.STATUS_LABELS[r.status] %></span></td><td class="num"><%= r.currency %> <%= Q.fmtMoney(r.total) %></td>
+<td><%= fmt.date(r.issue_date) %></td><td><%= fmt.date(r.valid_until) %></td><td><%= r.owner_name %></td></tr>
+<% }) %></tbody></table>
+<% } else { %><p class="empty">No quotes match.</p><% } %>
+<p class="muted">Download this list: <a href="/quotes/export?format=xlsx&status=<%= f.status %>&q=<%= encodeURIComponent(f.q) %>&customer=<%= f.customer %>&latest=<%= f.latest %>">Excel</a> · <a href="/quotes/export?format=pdf&status=<%= f.status %>&q=<%= encodeURIComponent(f.q) %>&customer=<%= f.customer %>&latest=<%= f.latest %>">PDF</a> · <a href="/quotes/export?format=csv&status=<%= f.status %>&q=<%= encodeURIComponent(f.q) %>&customer=<%= f.customer %>&latest=<%= f.latest %>">CSV</a></p>
+<%- include('../partials/footer') %>

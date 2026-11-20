@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<section class="card narrow">
+  <h1>Request received</h1>
+  <p class="notice">Your reference is <b><%= ref %></b>.</p>
+  <p>We have e-mailed a confirmation to <b><%= email || 'your address' %></b>. Reply to that e-mail to add information or files, and keep <%= ref %> in the subject line. We will e-mail you as it progresses.</p>
+  <% if (more) { %><p><a class="btn ghost" href="/request/new">Raise another request</a></p><% } %>
+  <form method="post" action="/request/finish"><%- include('../partials/csrf') %><button class="btn" type="submit">Finish</button></form>
+</section>
+<%- include('../partials/footer') %>

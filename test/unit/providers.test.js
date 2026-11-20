@@ -197,3 +197,19 @@ test('gmail test() and mark-as-read scope', async () => {
   const claims = JSON.parse(fromB64url(h.calls[0].body.match(/assertion=([^&]+)/)[1].split('.')[1]));
   assert.match(claims.scope, /gmail\.modify/);
 });
+
+test('mailbox secrets: a secret typed on the page is stored encrypted and used first; a variable still works', () => {
+  const config = require('../../src/config'); config.sessionSecret = 'x'.repeat(40);
+  const secrets = require('../../src/lib/secrets'); const common = require('../../src/services/providers/common');
+  const enc = secrets.encrypt('Typed-Secret-1');
+  assert.equal(common.secretOf({ secret_enc: enc, secret_env: 'V' }, { V: 'from-env' }), 'Typed-Secret-1');
+  assert.equal(common.secretOf({ secret_enc: '', secret_env: 'V' }, { V: 'from-env' }), 'from-env');
+  assert.equal(common.secretOf({ secret_enc: '', secret_env: '' }, {}), '');
+  assert.equal(common.secretOf({ secret_enc: 'v1:garbage', secret_env: 'V' }, { V: 'from-env' }), 'from-env', 'an unreadable stored secret falls back instead of failing');
+  const graph = require('../../src/services/providers/graph'); const imap = require('../../src/services/providers/imap'); const gmail = require('../../src/services/providers/gmail');
+  const g = { provider: 'graph', address: 'a@b.co', tenant_id: GUID, client_id: GUID, secret_enc: enc, secret_env: '' };
+  assert.equal(graph.configError(g, {}), ''); assert.deepEqual(graph.secrets(g, {}), ['Typed-Secret-1']);
+  assert.equal(imap.configError({ imap_host: 'h', imap_user: 'u', secret_enc: enc, secret_env: '' }, {}), '');
+  assert.match(imap.configError({ imap_host: 'h', imap_user: 'u', secret_enc: '', secret_env: '' }, {}), /has not been entered/);
+  assert.equal(gmail.configError({ address: 'a@b.co', secret_enc: secrets.encrypt('{"client_email":"x","private_key":"y"}'), secret_env: '' }, {}), '');
+});

@@ -13,7 +13,11 @@ const contracts = require('../services/contracts');
 const tenders = require('../services/tenders');
 const pipeline = require('../services/pipeline');
 const ldap = require('../lib/ldap');
-const { wrap } = require('./util');
+const { wrap, upload } = require('./util');
+const csrf = require('../lib/csrf');
+const storage = require('../lib/storage');
+const fs = require('fs');
+const branding = require('../services/branding');
 const { requireStaff, requirePerm } = require('../middleware/auth');
 
 const router = express.Router();
@@ -40,7 +44,7 @@ router.post('/admin/users', requireStaff, requirePerm('user.manage'), wrap(async
   if (!email || !name || !role) throw new tickets.UserError('Enter a name, a valid email address and a role.');
   if ((await q('select 1 from users where lower(email) = $1', [email])).rows.length) throw new tickets.UserError('That email address is already registered.');
   const temp = password.randomPassword();
-  const r = await q(`insert into users (email, name, kind, role, password_hash, password_changed_at) values ($1,$2,'staff',$3,$4,now()) returning id`, [email, name, role, await password.hash(temp)]);
+  const r = await q(`insert into users (email, name, kind, role, password_hash, password_changed_at, must_change_password) values ($1,$2,'staff',$3,$4,now(),true) returning id`, [email, name, role, await password.hash(temp)]);
   await audit({ query: q }, req.user, 'user_created', 'user', r.rows[0].id, `${email} as ${role}`, null, req.ip);
   await usersPage(req, res, { newPassword: { email, password: temp } });
 }));
@@ -68,15 +72,26 @@ router.post('/admin/users/:id(\\d+)', requireStaff, requirePerm('user.manage'), 
 router.post('/admin/users/:id(\\d+)/reset-password', requireStaff, requirePerm('user.manage'), wrap(async (req, res) => {
   const id = u.id(req.params.id);
   const temp = password.randomPassword();
-  const r = await q(`update users set password_hash = $2, password_changed_at = now(), failed_logins = 0, locked_until = null where id = $1 and auth_source = 'local' returning email, customer_id`, [id, await password.hash(temp)]);
+  const r = await q(`update users set password_hash = $2, password_changed_at = now(), must_change_password = true, failed_logins = 0, locked_until = null where id = $1 and auth_source = 'local' returning email, customer_id`, [id, await password.hash(temp)]);
   if (!r.rows[0]) throw new tickets.UserError('User not found, or the password is managed in Active Directory.', 404);
   await q(`delete from session where sess::jsonb ->> 'uid' = $1`, [String(id)]);
   await audit({ query: q }, req.user, 'password_reset', 'user', id, r.rows[0].email, r.rows[0].customer_id, req.ip);
   await usersPage(req, res, { newPassword: { email: r.rows[0].email, password: temp } });
 }));
 
+// Two-step verification lost (phone lost, or the secret can no longer be read): the person enrols again at the next sign-in.
+router.post('/admin/users/:id(\\d+)/reset-mfa', requireStaff, requirePerm('user.manage'), wrap(async (req, res) => {
+  const id = u.id(req.params.id);
+  const r = await q(`update users set totp_secret = null, totp_enabled = false, totp_last_step = null, failed_logins = 0, locked_until = null where id = $1 and totp_enabled returning email, customer_id`, [id]);
+  if (!r.rows[0]) throw new tickets.UserError('That person does not have two-step verification switched on.', 404);
+  await q(`delete from session where sess::jsonb ->> 'uid' = $1`, [String(id)]);
+  await audit({ query: q }, req.user, 'mfa_reset', 'user', id, r.rows[0].email, r.rows[0].customer_id, req.ip);
+  req.flash('success', `Two-step verification was switched off for ${r.rows[0].email}. If their role requires it, they are asked to set it up again at their next sign-in.`);
+  res.redirect('/admin/users');
+}));
+
 // ---------------------------------------------------------------- settings
-const SETTING_KEYS = ['priority_matrix', 'categories', 'resolution_codes', 'sla_pause_statuses', 'reopen_window_days', 'auto_close_days', 'mfa_required_roles', 'attachment_blocked_ext', 'attachment_max_mb', 'sla_warn_percent', 'email_ack_per_sender_per_hour', 'default_sla_policy', 'default_currency', 'tender_reminder_days', 'contract_types', 'contract_reminder_days', 'contract_expiring_days', 'tender_types', 'tender_require_reviews', 'tender_status_labels', 'pipeline_probabilities', 'pipeline_stage_labels', 'opportunity_categories', 'currencies', 'departments'];
+const SETTING_KEYS = ['priority_matrix', 'categories', 'resolution_codes', 'sla_pause_statuses', 'reopen_window_days', 'auto_close_days', 'mfa_required_roles', 'attachment_blocked_ext', 'attachment_max_mb', 'sla_warn_percent', 'email_ack_per_sender_per_hour', 'default_sla_policy', 'default_currency', 'retention_notification_days', 'retention_audit_years', 'retention_ticket_years', 'quote_company', 'quote_tax_rate', 'quote_tax_label', 'quote_validity_days', 'quote_terms', 'guest_requests_enabled', 'login_notice', 'lpo_terms', 'lpo_delivery_address', 'tender_reminder_days', 'contract_types', 'contract_reminder_days', 'contract_expiring_days', 'tender_types', 'tender_require_reviews', 'tender_status_labels', 'pipeline_probabilities', 'pipeline_stage_labels', 'opportunity_categories', 'currencies', 'departments', 'branding_logo_recolor'];
 
 router.get('/admin/settings', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
   const s = await settings.getAll({ query: q }, SETTING_KEYS);
@@ -105,7 +120,25 @@ router.post('/admin/settings', requireStaff, requirePerm('settings.manage'), wra
     await set('attachment_blocked_ext', String(b.attachment_blocked_ext || '').split(/[,\s]+/).map((x) => x.toLowerCase().replace(/[^a-z0-9]/g, '')).filter(Boolean));
     await set('sla_warn_percent', u.intIn(b.sla_warn_percent, 1, 90) ?? 20);
     await set('email_ack_per_sender_per_hour', u.intIn(b.email_ack_per_sender_per_hour, 1, 50) ?? 3);
+    await set('retention_notification_days', u.intIn(b.retention_notification_days, 0, 3650) ?? 365);
+    await set('retention_audit_years', u.intIn(b.retention_audit_years, 0, 50) ?? 0);
+    await set('retention_ticket_years', u.intIn(b.retention_ticket_years, 0, 50) ?? 0);
     await set('default_sla_policy', u.id(b.default_sla_policy));
+    if (b.login_notice !== undefined) await set('login_notice', u.str(b.login_notice, 1000));
+    if (b.guest_requests_enabled !== undefined) await set('guest_requests_enabled', b.guest_requests_enabled !== 'off');
+    if (b.quote_company_name !== undefined) await set('branding_logo_recolor', b.branding_logo_recolor === '1');   // the box sits beside the company name
+    if (b.quote_company_name !== undefined) {                       // the Quotes card (absent from older forms: then nothing changes)
+      await set('quote_company', { name: u.str(b.quote_company_name, 120), address: u.str(b.quote_company_address, 500), phone: u.str(b.quote_company_phone, 60),
+        email: u.str(b.quote_company_email, 120), website: u.str(b.quote_company_website, 120), tax_id: u.str(b.quote_company_tax_id, 60) });
+      const rate = u.money(b.quote_tax_rate, 100);
+      if (rate === null || Number.isNaN(rate)) throw new tickets.UserError('The quote tax rate is a percentage from 0 to 100.');
+      await set('quote_tax_rate', rate);
+      await set('quote_tax_label', u.str(b.quote_tax_label, 20) || 'VAT');
+      await set('quote_validity_days', u.intIn(b.quote_validity_days, 0, 365) ?? 30);
+      await set('quote_terms', u.str(b.quote_terms, 4000));
+      if (b.lpo_terms !== undefined) await set('lpo_terms', u.str(b.lpo_terms, 4000));
+      if (b.lpo_delivery_address !== undefined) await set('lpo_delivery_address', u.str(b.lpo_delivery_address, 500));
+    }
     const currencies = [...new Set(String(b.currencies || '').split(/[,\s]+/).map((x) => x.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8)).filter(Boolean))];
     const defCur = (u.str(b.default_currency, 8) || 'UGX').toUpperCase();
     if (!currencies.includes(defCur)) currencies.unshift(defCur);
@@ -128,8 +161,33 @@ router.post('/admin/settings', requireStaff, requirePerm('settings.manage'), wra
     await set('pipeline_probabilities', probs); await set('pipeline_stage_labels', plabels); await set('tender_status_labels', tlabels);
     await audit(db, req.user, 'settings_changed', 'settings', '', 'Settings were saved.', null, req.ip);
   });
+  branding.invalidate();
   req.flash('success', 'Settings saved.');
   res.redirect('/admin/settings');
+}));
+
+// ---------------------------------------------------------------- company logo
+router.post('/admin/branding/logo', requireStaff, requirePerm('settings.manage'), upload.single('logo'), csrf.protect, wrap(async (req, res) => {
+  try {
+    if (!req.file) { req.flash('error', 'Choose an image file to upload.'); return res.redirect('/admin/settings#branding'); }
+    const buf = await fs.promises.readFile(req.file.path);
+    try {
+      const r = await branding.setLogo({ query: q }, buf, req.user);
+      await audit({ query: q }, req.user, 'branding_logo_changed', 'settings', 'logo', `${u.str(req.file.originalname, 200)} (${r.width} x ${r.height})`, null, req.ip);
+      req.flash('success', 'Logo saved. It now shows on the sign-in page, in the menu and on every document.');
+    } catch (err) {
+      if (!(err instanceof tickets.UserError)) throw err;
+      req.flash('error', err.userMessage);
+    }
+    return res.redirect('/admin/settings#branding');
+  } finally { await storage.removeTmp(req.file ? [req.file] : []); }
+}));
+
+router.post('/admin/branding/logo/remove', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
+  await branding.removeLogo({ query: q });
+  await audit({ query: q }, req.user, 'branding_logo_removed', 'settings', 'logo', 'Logo removed.', null, req.ip);
+  req.flash('success', 'Logo removed.');
+  res.redirect('/admin/settings#branding');
 }));
 
 // ---------------------------------------------------------------- audit log
@@ -140,7 +198,7 @@ router.get('/audit', requireStaff, requirePerm('audit.view'), wrap(async (req, r
   const page = Math.max(1, u.intIn(req.query.page, 1, 100000) || 1);
   const rows = (await q(`select * from audit_log where ${where.join(' and ')} order by id desc limit 100 offset ${(page - 1) * 100}`, params)).rows;
   const actions = (await q('select distinct action from audit_log order by action')).rows.map((r) => r.action);
-  res.render('admin/audit', { title: 'Audit log', rows, actions, f: { action, actor: who }, page });
+  res.render('admin/audit', { title: 'Audit log', rows, actions, f: { action, actor: who }, page, integrity: await settings.get({ query: q }, 'audit_verify', null) });
 }));
 
 // ---------------------------------------------------------------- Active Directory (part of User management)
@@ -156,9 +214,9 @@ async function usersPage(req, res, extra = {}) {
 
 router.post('/admin/users/directory', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
   const b = req.body;
-  const saved = await directory.saveConfig({ query: q }, { enabled: b.enabled, server: b.server, port: b.port, domain: b.domain, service_user: b.service_user, password: b.password, base_dn: b.base_dn, ca_file: b.ca_file, default_role: b.default_role });
+  const saved = await directory.saveConfig({ query: q }, { enabled: b.enabled, server: b.server, port: b.port, domain: b.domain, service_user: b.service_user, password: b.password, base_dn: b.base_dn, ca_file: b.ca_file, default_role: b.default_role, security: b.security });
   if (saved.error) throw new tickets.UserError(saved.error);
-  await audit({ query: q }, req.user, 'directory_settings_saved', 'settings', 'ldap', `enabled=${saved.config.enabled}${b.password ? ', password changed' : ''}`, null, req.ip);
+  await audit({ query: q }, req.user, 'directory_settings_saved', 'settings', 'ldap', `enabled=${saved.config.enabled}, security=${saved.config.security}${b.password ? ', password changed' : ''}`, null, req.ip);
   req.flash('success', saved.config.enabled ? 'Saved. Use "Test connection" to check it, then import people.' : 'Saved. Active Directory sign-in is switched off.');
   res.redirect('/admin/users#directory');
 }));
@@ -171,6 +229,24 @@ async function connectable(req, res) {
   return cfg;
 }
 
+router.post('/admin/users/directory/discover', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
+  const b = req.body;
+  const have = !!(b.password || directory.bindPassword(await directory.loadConfig({ query: q })));
+  const input = { enabled: have ? b.enabled : undefined, server: b.server, port: b.port, security: b.security, domain: b.domain, service_user: b.service_user, password: b.password, base_dn: b.base_dn, ca_file: b.ca_file, default_role: b.default_role };
+  const saved = await directory.saveConfig({ query: q }, input);                     // what was typed is kept, so nothing has to be typed again
+  if (saved.error) throw new tickets.UserError(saved.error);
+  const cfg = await connectable(req, res); if (!cfg) return;
+  try {
+    const found = await ldap.discover(cfg, directory.bindPassword(cfg));
+    await directory.saveConfig({ query: q }, { ...saved.config, enabled: saved.config.enabled ? 'on' : undefined, base_dn: found.base_dn, password: '' });
+    await audit({ query: q }, req.user, 'directory_discovered', 'settings', 'ldap', found.base_dn, null, req.ip);
+    req.flash('success', `Connected. ${found.user_dn ? `Your service account is ${found.user_dn}. ` : ''}The search base is now ${found.base_dn}. ${saved.config.enabled ? '' : 'Tick the sign-in box and press Save when you are ready.'}`.trim());
+  } catch (err) {
+    req.flash('error', `Could not connect: ${ldap.explain(err, cfg, directory.bindPassword(cfg))}`);
+  }
+  res.redirect('/admin/users#directory');
+}));
+
 router.post('/admin/users/directory/test', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
   const cfg = await connectable(req, res); if (!cfg) return;
   try {
@@ -179,7 +255,7 @@ router.post('/admin/users/directory/test', requireStaff, requirePerm('settings.m
     req.flash('success', `Connected to ${cfg.server}. ${r.more ? 'Over 1000' : r.people} people found. You can now import users.`);
   } catch (err) {
     await audit({ query: q }, req.user, 'directory_tested', 'settings', 'ldap', 'failed', null, req.ip);
-    req.flash('error', `Could not connect: ${ldap.scrub(err, directory.bindPassword(cfg))}`);
+    req.flash('error', `Could not connect: ${ldap.explain(err, cfg, directory.bindPassword(cfg))}`);
   }
   res.redirect('/admin/users#directory');
 }));
@@ -189,7 +265,7 @@ router.get('/admin/users/import', requireStaff, requirePerm('user.manage'), wrap
   const term = u.str(req.query.q, 100);
   let found = { users: [], tooMany: false }; let error = '';
   if (req.query.go !== undefined || term) {
-    try { found = await ldap.searchUsers(cfg, directory.bindPassword(cfg), term); } catch (err) { error = `Could not search the directory: ${ldap.scrub(err, directory.bindPassword(cfg))}`; }
+    try { found = await ldap.searchUsers(cfg, directory.bindPassword(cfg), term); } catch (err) { error = `Could not search the directory: ${ldap.explain(err, cfg, directory.bindPassword(cfg))}`; }
   }
   const known = new Map((await q('select lower(email) as email, lower(ldap_dn) as dn, auth_source from users')).rows.flatMap((r) => [[r.email, r.auth_source], [r.dn, r.auth_source]]));
   const users = found.users.map((x) => ({ ...x, status: x.disabled ? 'disabled' : (known.get(x.dn.toLowerCase()) || known.get(x.email)) ? ((known.get(x.dn.toLowerCase()) || known.get(x.email)) === 'ldap' ? 'imported' : 'local') : 'new' }));

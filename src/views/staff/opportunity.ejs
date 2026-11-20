@@ -3,7 +3,7 @@
 <h1><%= o.name %> <span class="pill st-<%= o.stage %>"><%= labels[o.stage] %></span></h1>
 <p class="muted"><%= o.ref %> · <%= o.customer_name || o.prospect || '—' %><%= o.industry ? ' · ' + o.industry : '' %> · Owner <%= o.owner_name %></p>
 <div class="stagebar" aria-label="Pipeline stage"><% P.OPEN.forEach(function (k, i) { %><span class="<%= o.stage === k ? 'on' : (stageIdx > i || o.stage === 'won' ? 'done' : '') %>"><%= labels[k] %></span><% }) %><% if (o.stage === 'won' || o.stage === 'lost' || o.stage === 'on_hold') { %><span class="on"><%= labels[o.stage] %></span><% } %></div>
-<p class="jump"><a href="#details">Details</a> · <a href="#contacts">Contacts</a> · <a href="#activities">Activities</a> · <a href="#proposals">Proposals</a> · <a href="#support">Engineering support</a> · <a href="#tasks">Tasks</a> · <a href="#solution">Solution</a> · <a href="#documents">Documents</a> · <a href="#history">History</a></p>
+<p class="jump"><a href="#details">Details</a> · <a href="#contacts">Contacts</a> · <a href="#activities">Activities</a> · <% if (quotes) { %><a href="#quotes">Quotes</a> · <% } %><a href="#proposals">Proposals</a> · <a href="#support">Engineering support</a> · <a href="#tasks">Tasks</a> · <a href="#solution">Solution</a> · <a href="#documents">Documents</a> · <a href="#history">History</a></p>
 
 <div class="kpis">
   <%- include('../partials/kpi', { href: '#details', icon: 'chart', label: 'Value', value: money(o.value, o.currency), small: true }) %>
@@ -73,7 +73,18 @@
 <p><label>What happened</label><textarea name="description" rows="2" required maxlength="2000"></textarea></p><p><label>Outcome</label><input name="outcome" maxlength="1000"></p>
 <button class="btn" type="submit">Record</button></form></details><% } %></section>
 
-<section class="card" id="proposals"><h2>Proposals and quotations</h2>
+<% if (quotes) { %>
+<section class="card" id="quotes"><h2>Quotes</h2>
+<% if (quotes.length) { %>
+<table class="grid"><thead><tr><th>Quote</th><th>Title</th><th>Status</th><th class="num">Before tax</th><th class="num">Total</th><th>Valid until</th><th></th></tr></thead><tbody>
+<% quotes.forEach(function (x) { %><tr><td><a href="/quotes/<%= x.id %>"><%= Quotes.label(x) %></a></td><td><%= x.title %></td><td><span class="tag <%= x.status === 'accepted' ? '' : (['rejected','expired'].includes(x.status) ? 'bad' : (x.status === 'sent' ? 'blue' : (x.status === 'draft' ? 'warn' : 'grey'))) %>"><%= Quotes.STATUS_LABELS[x.status] %></span></td>
+<td class="num"><%= x.currency %> <%= Quotes.fmtMoney(x.subtotal) %></td><td class="num"><%= x.currency %> <%= Quotes.fmtMoney(x.total) %></td><td><%= fmt.date(x.valid_until) %></td><td><a href="/quotes/<%= x.id %>/pdf">PDF</a></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No quotes yet.</p><% } %>
+<% if (canQuote && isOpen) { %><p><a class="btn ghost" href="/quotes/new?opportunity=<%= o.id %>">New quote for this opportunity</a></p><% } %>
+<p class="muted">When a quote is accepted, the opportunity value can be set to the quote's amount before tax.</p></section>
+<% } %>
+<section class="card" id="proposals"><h2>Proposal tracking</h2>
 <table class="grid"><thead><tr><th>Kind</th><th>Reference</th><th>Due</th><th>Prepared by</th><th>Status</th><th></th></tr></thead><tbody>
 <% proposals.forEach(function (p) { %><tr><td><%= P.PROPOSAL_KINDS[p.kind] %></td><td><%= p.reference || '—' %><% if (p.notes) { %><br><small class="muted"><%= p.notes %></small><% } %></td><td><%= fmt.date(p.due_date) %></td><td><%= p.prepared_by_name || '—' %></td><td><%= P.PROPOSAL_STATUSES[p.status] %><%= p.submitted_on ? ' (' + fmt.date(p.submitted_on) + ')' : '' %></td>
 <td><% if (a.manage) { %><form method="post" action="/pipeline/<%= o.id %>/proposals/<%= p.id %>" class="inline"><%- include('../partials/csrf') %><select name="status" aria-label="Status"><% Object.keys(P.PROPOSAL_STATUSES).forEach(function (s) { %><option value="<%= s %>" <%= p.status === s ? 'selected' : '' %>><%= P.PROPOSAL_STATUSES[s] %></option><% }) %></select> <button class="btn ghost small" type="submit">Set</button></form><% } %></td></tr><% }) %></tbody></table>

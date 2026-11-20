@@ -5,6 +5,8 @@ const perms = require('../lib/perms');
 const settings = require('../lib/settings');
 const priorityLib = require('../lib/priority');
 const sla = require('../lib/sla');
+const config = require('../config');
+const util = require('../lib/util');
 const notifications = require('./notifications');
 
 class UserError extends Error {
@@ -17,6 +19,23 @@ const STATUS_LABELS = {
   new: 'New', open: 'Open', in_progress: 'In progress', pending_customer: 'Waiting for customer', pending_vendor: 'Waiting for vendor',
   restored: 'Service restored', resolved: 'Resolved', closed: 'Closed', cancelled: 'Cancelled',
 };
+
+// The ticket life cycle (ITIL): work happens in the working statuses; a ticket is Resolved when the fix is offered, and Closed only
+// after that (the customer confirms, or it closes by itself). A Closed or Resolved ticket can be reopened; a Cancelled one cannot.
+const WORKING = ['open', 'in_progress', 'pending_customer', 'pending_vendor', 'restored'];
+const TRANSITIONS = {
+  new: [...WORKING, 'resolved', 'cancelled'],
+  open: [...WORKING, 'resolved', 'cancelled'],
+  in_progress: [...WORKING, 'resolved', 'cancelled'],
+  pending_customer: [...WORKING, 'resolved', 'cancelled'],
+  pending_vendor: [...WORKING, 'resolved', 'cancelled'],
+  restored: [...WORKING, 'resolved', 'cancelled'],
+  resolved: [...WORKING, 'closed'],
+  closed: [...WORKING],
+  cancelled: [],
+};
+/** The statuses a ticket in `from` may move to (not including itself). */
+const nextStatuses = (from) => (TRANSITIONS[from] || []).filter((s) => s !== from);
 
 // ---------------------------------------------------------------- SLA policy loading
 async function loadPolicy(db, policyId) {
@@ -76,7 +95,8 @@ async function summary(db, id) {
   return r.rows[0] || null;
 }
 
-function fmtDue(d) { return d ? new Date(d).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'n/a'; }
+/** A due time as people here read it: the application's time zone, with its name (never UTC unless that is the zone). */
+function fmtDue(d) { return util.localStamp(d, config.timezone); }
 
 // ---------------------------------------------------------------- creation
 /**
@@ -157,14 +177,14 @@ async function createTicket(db, input) {
   const r = await db.query(
     `insert into tickets (ref, type, queue, tier, customer_id, csid_id, service_id, contract_id, site_id,
         requester_id, requester_email, requester_name, subject, description, category, impact, urgency, priority,
-        source, mailbox_id, sla_policy_id, response_due, restoration_due, resolution_due, needs_verification)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+        source, mailbox_id, sla_policy_id, response_due, restoration_due, resolution_due, needs_verification, description_format)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
      returning id`,
     [ref, type, input.queue || 'it_services', input.tier || 'l1', input.customerId || null, input.csidId || null,
       input.serviceId || null, contractId, input.siteId || null, req.id || null, req.email || '', req.name || '',
       subject.slice(0, 200), String(input.description || '').slice(0, 20000), input.category || '', impact, urgency, priority,
       input.source, input.mailboxId || null, policy ? policy.id : null, dues.response_due, dues.restoration_due, dues.resolution_due,
-      !!input.needsVerification],
+      !!input.needsVerification, input.descriptionFormat === 'rich' && input.source !== 'email' ? 'rich' : 'text'],
   );
   const id = r.rows[0].id;
   await event(db, id, input.actor || null, 'created',
@@ -174,6 +194,7 @@ async function createTicket(db, input) {
   }
   let ticket = await summary(db, id);
   if (!input.needsVerification) ticket = (await routeEngineer(db, ticket)).ticket;
+  await acknowledge(db, ticket);
   return ticket;
 }
 
@@ -271,6 +292,12 @@ async function setStatus(db, ticket, newStatus, actor, opts = {}) {
   const old = ticket.status;
   if (old === newStatus) return ticket;
   const isStaff = actor && actor.kind === 'staff';
+  if (old === 'cancelled') throw new UserError('A cancelled ticket cannot be reopened. Create a new one.');
+  if (!TRANSITIONS[old].includes(newStatus)) {
+    if (newStatus === 'closed') throw new UserError('Resolve the ticket first. A ticket is closed after the customer confirms the fix, or automatically a few days after it is resolved.');
+    if (old === 'closed') throw new UserError('A closed ticket can only be reopened. Choose Open or In progress.');
+    throw new UserError(`A ticket that is ${STATUS_LABELS[old].toLowerCase()} cannot go straight to ${STATUS_LABELS[newStatus].toLowerCase()}.`);
+  }
   const st = await settings.getAll(db, ['sla_pause_statuses', 'reopen_window_days', 'resolution_codes']);
   const pauseSet = new Set(st.sla_pause_statuses || []);
   const now = new Date();
@@ -291,7 +318,9 @@ async function setStatus(db, ticket, newStatus, actor, opts = {}) {
       resolved_at: null, closed_at: null, restored_at: null, sla_flags: JSON.stringify({}), paused_at: null, pause_reason: null, sla_remaining: null,
     });
   }
-  if (!wasDone && isStaff && !ticket.responded_at && newStatus !== 'new') f.responded_at = now;
+  // The first response is the first time the customer is told something: a public comment (addComment), a request for information,
+  // the service being restored, or the resolution. Moving a ticket between working statuses is not a response.
+  if (!wasDone && isStaff && !ticket.responded_at && ['pending_customer', 'restored'].includes(newStatus)) f.responded_at = now;
   if (newStatus === 'restored' && !ticket.restored_at) f.restored_at = now;
   if (newStatus === 'resolved') {
     if (isStaff && ticket.type === 'incident' && !(st.resolution_codes || []).includes(opts.resolutionCode)) {
@@ -338,6 +367,12 @@ async function setStatus(db, ticket, newStatus, actor, opts = {}) {
   }
   if (nowDone && wasPaused) { f.paused_at = null; f.pause_reason = null; f.sla_remaining = null; }
 
+  // Keep the record of missed targets: what is overdue right now, and anything met late by this very change.
+  const metBy = {};
+  for (const k of ['responded_at', 'restored_at', 'resolved_at']) if (f[k] instanceof Date) metBy[k] = f[k];
+  const breaches = sla.breachRecord({ ...ticket, ...metBy, sla_breaches: sla.breachRecord(ticket, now) }, now);
+  if (Object.keys(breaches).length !== Object.keys(ticket.sla_breaches || {}).length) f.sla_breaches = JSON.stringify(breaches);   // the record only grows
+
   const updated = await patch(db, ticket.id, f);
   const who = actor ? actor.name : 'The system';
   await event(db, ticket.id, actor, 'status', `${who} changed the status from ${STATUS_LABELS[old]} to ${STATUS_LABELS[newStatus]}.`);
@@ -350,12 +385,26 @@ async function setStatus(db, ticket, newStatus, actor, opts = {}) {
 }
 
 async function notifyStatus(db, t, newStatus, actor) {
-  const customerFacing = t.requester_email && ['resolved', 'pending_customer'].includes(newStatus) && actor && actor.kind === 'staff';
-  if (customerFacing) {
+  const byStaff = actor && actor.kind === 'staff';
+  const bySystem = !actor;
+  const toCustomer = t.requester_email && ((byStaff && ['resolved', 'pending_customer', 'restored'].includes(newStatus)) || (bySystem && newStatus === 'closed'));
+  if (toCustomer) {
     const to = { id: t.requester_id, email: t.requester_email, name: t.requester_name, kind: 'customer' };
-    const text = newStatus === 'resolved'
-      ? `Your ticket has been marked as resolved. If it is fixed, please confirm. If not, you can reopen it within the allowed period.\n\nResolution: ${t.resolution_note || t.resolution_code || ''}`
-      : 'We need more information from you before we can continue. Please reply to this message or add a comment in the portal.';
+    let text;
+    if (newStatus === 'resolved') {
+      text = `Your ticket has been marked as resolved. If it is fixed, please confirm. If not, you can reopen it within the allowed period.\n\nResolution: ${t.resolution_note || t.resolution_code || ''}`;
+    } else if (newStatus === 'restored') {
+      text = 'The service affected by your ticket has been restored. We will keep the ticket open while we make sure everything works for you. If anything is still wrong, please reply to this message.';
+    } else if (newStatus === 'closed') {
+      const days = Number(await settings.get(db, 'reopen_window_days', 5)) || 0;
+      const until = t.resolved_at ? new Date(new Date(t.resolved_at).getTime() + days * 86400000) : null;
+      text = 'Your ticket has been closed because we did not hear back after it was resolved. '
+        + (until && until > new Date()
+          ? `If it is not fixed, reply to this message or reopen it in the portal before ${util.localStamp(until, config.timezone)}.`
+          : `If it is not fixed, please create a new ticket and mention ${t.ref}.`);
+    } else {
+      text = 'We need more information from you before we can continue. Please reply to this message or add a comment in the portal.';
+    }
     await notifications.enqueue(db, {
       kind: 'ticket_update', ticketId: t.id, to, replyTo: await notifications.replyAddress(db, t.queue, t.mailbox_id), subject: `[${t.ref}] ${STATUS_LABELS[newStatus]}: ${t.subject}`.slice(0, 200),
       body: `${text}\n\n${t.ref}: ${t.subject}\n${notifications.link(to, t.ref)}\n`,
@@ -372,22 +421,57 @@ async function notifyStatus(db, t, newStatus, actor) {
   }
 }
 
-/** Add a comment, applying SLA and status side effects. */
-async function addComment(db, ticket, { author, authorLabel = '', body, internal = false, source = 'portal', messageId = null }) {
-  const text = String(body || '').trim();
-  if (!text) throw new UserError('A comment cannot be empty.');
+/** Tells the person who raised a ticket in the portal, or had it raised for them, that it was received (ITIL: acknowledge every ticket).
+ *  E-mailed tickets get their own acknowledgement from the mailbox handler. */
+async function acknowledge(db, t) {
+  if (!t.requester_email || t.source === 'email' || t.needs_verification) return;
+  const to = { id: t.requester_id, email: t.requester_email, name: t.requester_name, kind: 'customer' };
+  const lines = [
+    `We received your ${t.type === 'request' ? 'request' : 'incident report'} and logged it as ${t.ref}.`, '',
+    `Summary:  ${t.subject}`,
+    `Priority: ${priorityLib.LABELS[t.priority]}`,
+  ];
+  if (t.response_due) lines.push(`We aim to respond by: ${fmtDue(t.response_due)}`);
+  if (t.requester_id) lines.push('', `Follow progress or add information here: ${notifications.link(to, t.ref)}`, `You can also reply to this message; please keep ${t.ref} in the subject line.`);
+  else lines.push('', `To add information or files, reply to this message and keep ${t.ref} in the subject line. We will e-mail you as the ticket progresses.`);
+  await notifications.enqueue(db, {
+    kind: 'ticket_ack', ticketId: t.id, to, replyTo: await notifications.replyAddress(db, t.queue, t.mailbox_id),
+    subject: `[${t.ref}] We received your ticket: ${t.subject}`.slice(0, 200), body: lines.join('\n') + '\n', dedupeKey: `ack:${t.id}`,
+  });
+}
+
+/**
+ * Add a comment, applying SLA and status side effects. A customer's reply on a Resolved or Closed ticket reopens it, whichever
+ * channel it came by. Outside the reopen period the reply is still kept and noted for staff; with `strict` the reply is refused instead
+ * (the portal does this, so the customer is told to open a new ticket).
+ */
+async function addComment(db, ticket, { author, authorLabel = '', body, internal = false, source = 'portal', messageId = null, strict = false, format = 'text' }) {
+  const rich = format === 'rich' && source !== 'email';
+  const raw = String(body || '').trim();
+  if (!raw || (rich && !require('../lib/markdown').toText(raw).trim())) throw new UserError('A comment cannot be empty.');
+  const text = rich ? require('../lib/markdown').toText(raw) : raw;                        // what goes into e-mail
   const isStaff = author && author.kind === 'staff';
   const isInternal = !!internal && isStaff;
   await db.query(
-    `insert into ticket_comments (ticket_id, author_id, author_label, body, internal, source, message_id) values ($1,$2,$3,$4,$5,$6,$7)`,
-    [ticket.id, author ? author.id : null, authorLabel || (author ? author.name : ''), text.slice(0, 20000), isInternal, source, messageId]);
+    `insert into ticket_comments (ticket_id, author_id, author_label, body, internal, source, message_id, format) values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [ticket.id, author ? author.id : null, authorLabel || (author ? author.name : ''), raw.slice(0, 20000), isInternal, source, messageId, rich ? 'rich' : 'text']);
   let t = ticket;
   const f = {};
-  if (isStaff && !isInternal && !ticket.responded_at) f.responded_at = new Date();
+  if (isStaff && !isInternal && !ticket.responded_at) {
+    const now = new Date();
+    f.responded_at = now;
+    const b = sla.breachRecord({ ...ticket, responded_at: now }, now);
+    if (Object.keys(b).length !== Object.keys(ticket.sla_breaches || {}).length) f.sla_breaches = JSON.stringify(b);
+  }
   if (Object.keys(f).length) t = await patch(db, ticket.id, f); else await db.query('update tickets set updated_at = now() where id = $1', [ticket.id]);
   t = await summary(db, ticket.id);
   if (!isStaff && t.status === 'pending_customer') t = await setStatus(db, t, 'open', author);
-  else if (isStaff && !isInternal && t.status === 'new') t = await setStatus(db, t, 'open', author);
+  else if (!isStaff && ['resolved', 'closed'].includes(t.status)) {
+    try { t = await setStatus(db, t, 'open', author); } catch (e) {
+      if (strict || !(e instanceof UserError)) throw e;
+      await event(db, t.id, null, 'email', `A reply arrived after the reopen period: ${e.userMessage}`, true);
+    }
+  } else if (isStaff && !isInternal && t.status === 'new') t = await setStatus(db, t, 'open', author);
 
   if (!isInternal) {
     if (isStaff && t.requester_email) {
@@ -441,6 +525,8 @@ async function reprioritise(db, ticket, impact, urgency, actor) {
   const st = await settings.getAll(db, ['priority_matrix']);
   const priority = priorityLib.compute(st.priority_matrix, impact, urgency);
   const f = { impact, urgency, priority };
+  const rec = sla.breachRecord(ticket, new Date());                     // what has been missed so far stays on record
+  if (Object.keys(rec).length !== Object.keys(ticket.sla_breaches || {}).length) f.sla_breaches = JSON.stringify(rec);
   const done = ['resolved', 'closed', 'cancelled'].includes(ticket.status);
   if (!done && priority !== ticket.priority) {
     const policy = await loadPolicy(db, ticket.sla_policy_id);
@@ -494,6 +580,6 @@ async function verifyTicket(db, ticket, { customerId, csidId, serviceId, siteId,
 }
 
 module.exports = {
-  verifyTicket, UserError, OPEN_STATUSES, ALL_STATUSES, STATUS_LABELS, loadPolicy, computeDues, createTicket, routeEngineer, currentAssignment,
+  verifyTicket, UserError, OPEN_STATUSES, ALL_STATUSES, STATUS_LABELS, TRANSITIONS, nextStatuses, acknowledge, loadPolicy, computeDues, createTicket, routeEngineer, currentAssignment,
   getVisible, summary, setStatus, addComment, assign, escalate, reprioritise, event, patch, validateRelations, governingContract,
 };

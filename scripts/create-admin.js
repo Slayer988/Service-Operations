@@ -18,10 +18,10 @@ function arg(name) { const i = process.argv.indexOf(`--${name}`); return i > -1 
   const hash = await password.hash(pw);
   const existing = await q('select id from users where lower(email) = $1', [email]);
   if (existing.rows.length) {
-    await q(`update users set password_hash = $2, role = $3, active = true, failed_logins = 0, locked_until = null, password_changed_at = now() where id = $1 and kind = 'staff'`, [existing.rows[0].id, hash, role]);
+    await q(`update users set password_hash = $2, role = $3, active = true, failed_logins = 0, locked_until = null, password_changed_at = now(), must_change_password = $4 where id = $1 and kind = 'staff'`, [existing.rows[0].id, hash, role, !arg('password')]);
     console.log(`Updated staff user ${email} (${role}).`);
   } else {
-    await q(`insert into users (email, name, kind, role, password_hash, password_changed_at) values ($1,$2,'staff',$3,$4,now())`, [email, name, role, hash]);
+    await q(`insert into users (email, name, kind, role, password_hash, password_changed_at, must_change_password) values ($1,$2,'staff',$3,$4,now(),$5)`, [email, name, role, hash, !arg('password')]);   // a generated password is for the first sign-in only
     console.log(`Created staff user ${email} (${role}).`);
   }
   if (!arg('password')) console.log(`Password (shown only now): ${pw}`);

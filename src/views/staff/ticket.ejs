@@ -9,6 +9,9 @@
     <% if (ticket.queue === 'security') { %> · <span class="pill p1">Security – restricted</span><% } %>
   </p>
 
+  <% var sv = slaView(ticket); %>
+  <% if (sv.state !== 'none') { %><a class="slabanner sla-<%= sv.state %>" href="#sla"><svg class="ic"><use href="#i-clock"/></svg> <span><%= sv.headline %></span></a><% } %>
+
   <% if (ticket.needs_verification && ticket.status === 'new') { %>
   <section class="notice">
     <h2>Verify the sender</h2>
@@ -27,20 +30,20 @@
   </section>
   <% } %>
 
-  <% if (ticket.description) { %><div class="desc"><%= ticket.description %></div><% } %>
+  <% if (ticket.description) { %><% if (ticket.description_format === 'rich') { %><div class="desc rich"><%- fmt.rich(ticket.description) %></div><% } else { %><div class="desc"><%= ticket.description %></div><% } %><% } %>
   <% if (attachments.length) { %><h2>Files</h2><ul class="plain"><% attachments.forEach(function (a) { %><li><a href="/attachments/<%= a.id %>"><%= a.filename %></a> <small><%= fmt.size(a.size_bytes) %> · scan: <%= a.scan_status.replace('_', ' ') %></small></li><% }) %></ul><% } %>
 
   <h2>History</h2>
   <ol class="timeline">
   <% timeline.forEach(function (i) { %>
-    <% if (i.type === 'comment') { %><li class="comment <%= i.c.internal ? 'internal' : '' %>"><header><b><%= i.c.author_label || i.c.author_name %></b><% if (i.c.internal) { %> <span class="pill">Internal note</span><% } %><% if (i.c.source === 'email') { %> <span class="pill">e-mail</span><% } %> <time><%= fmt.dt(i.at) %></time></header><div class="body"><%= i.c.body %></div></li>
+    <% if (i.type === 'comment') { %><li class="comment <%= i.c.internal ? 'internal' : '' %>"><header><b><%= i.c.author_label || i.c.author_name %></b><% if (i.c.internal) { %> <span class="pill">Internal note</span><% } %><% if (i.c.source === 'email') { %> <span class="pill">e-mail</span><% } %> <time><%= fmt.dt(i.at) %></time></header><% if (i.c.format === 'rich') { %><div class="body rich"><%- fmt.rich(i.c.body) %></div><% } else { %><div class="body"><%= i.c.body %></div><% } %></li>
     <% } else { %><li class="activity <%= i.e.internal ? 'internal' : '' %>"><%= i.e.text %> <time><%= fmt.dt(i.at) %></time></li><% } %>
   <% }) %>
   </ol>
 
   <% if (canWork) { %>
   <form method="post" action="/tickets/<%= ticket.ref %>/comment" enctype="multipart/form-data"><%- include('../partials/csrf') %>
-    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="4" required></textarea></p>
+    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="5" required data-rich></textarea></p>
     <p><label class="inline"><input type="checkbox" name="internal"> Internal note (staff only, not shown to the customer)</label></p>
     <p><input name="files" type="file" multiple></p>
     <button class="btn" type="submit">Add</button>
@@ -49,6 +52,24 @@
 </section>
 
 <aside class="side">
+  <section class="card slacard sla-<%= sv.state %>" id="sla">
+    <h2>SLA <span class="slastate"><%= { breached: 'Breached', missed: 'Missed', risk: 'At risk', paused: 'Paused', running: 'On track', met: 'Met', none: 'None' }[sv.state] %></span></h2>
+    <p class="slahead"><%= sv.headline %></p>
+    <% if (ticket.paused_at) { %><p class="warn">Clock paused: <%= statusLabels[ticket.pause_reason] || ticket.pause_reason %></p><% } %>
+    <% if (sv.rows.length) { %>
+    <table class="grid compact slatable"><tbody>
+    <% sv.rows.forEach(function (r) { %>
+      <tr class="sla-<%= r.state %>"><th><%= r.name %></th><td><%= fmt.dt(r.due) %><% if (r.earlierDue) { %><br><small>was due <%= fmt.dt(r.earlierDue) %></small><% } %></td>
+      <td><span class="slapill"><%= r.label %></span><% if (r.state === 'running' || r.state === 'risk' || r.state === 'breached') { %><br><small data-sla-due="<%= new Date(r.due).toISOString() %>"><%= r.detail %></small><% } else if (r.detail && r.state !== 'missed') { %><br><small><%= r.detail %></small><% } else if (r.state === 'missed' && !r.earlierDue) { %><br><small><%= r.detail %></small><% } %></td></tr>
+    <% }) %></tbody></table>
+    <% } %>
+    <% if (canSla) { %>
+    <form method="post" action="/tickets/<%= ticket.ref %>/sla-note"><%- include('../partials/csrf') %>
+      <p><label for="breach_cause">Cause of any breach</label><input id="breach_cause" name="breach_cause" maxlength="1000" value="<%= ticket.breach_cause %>"></p>
+      <p><label for="breach_action">Corrective action</label><input id="breach_action" name="breach_action" maxlength="1000" value="<%= ticket.breach_action %>"></p>
+      <button class="btn ghost" type="submit">Save SLA note</button></form>
+    <% } else if (ticket.breach_cause || ticket.breach_action) { %><p><small>Cause: <%= ticket.breach_cause %><br>Action: <%= ticket.breach_action %></small></p><% } %>
+  </section>
   <section class="card">
     <h2>Details</h2>
     <dl>
@@ -63,26 +84,13 @@
       <% if (ticket.satisfaction) { %><dt>Customer rating</dt><dd><%= ticket.satisfaction %>/5 <small><%= ticket.satisfaction_comment %></small></dd><% } %>
     </dl>
   </section>
-  <section class="card">
-    <h2>SLA</h2>
-    <% if (ticket.paused_at) { %><p class="warn">Clock paused: <%= statusLabels[ticket.pause_reason] || ticket.pause_reason %></p><% } %>
-    <table class="grid compact"><tbody>
-    <% [['Response', ticket.response_due, ticket.responded_at], ['Restoration', ticket.restoration_due, ticket.restored_at], ['Resolution', ticket.resolution_due, ticket.resolved_at]].forEach(function (r) { var s = slaState(r[1], r[2], ticket.paused_at); %>
-      <% if (r[1]) { %><tr><th><%= r[0] %></th><td><%= fmt.dt(r[1]) %></td><td class="<%= s.cls %>"><%= s.text %></td></tr><% } %>
-    <% }) %></tbody></table>
-    <% if (canSla) { %>
-    <form method="post" action="/tickets/<%= ticket.ref %>/sla-note"><%- include('../partials/csrf') %>
-      <p><label for="breach_cause">Cause of any breach</label><input id="breach_cause" name="breach_cause" maxlength="1000" value="<%= ticket.breach_cause %>"></p>
-      <p><label for="breach_action">Corrective action</label><input id="breach_action" name="breach_action" maxlength="1000" value="<%= ticket.breach_action %>"></p>
-      <button class="btn ghost" type="submit">Save SLA note</button></form>
-    <% } else if (ticket.breach_cause || ticket.breach_action) { %><p><small>Cause: <%= ticket.breach_cause %><br>Action: <%= ticket.breach_action %></small></p><% } %>
-  </section>
 
-  <% if (canWork && !ticket.needs_verification) { %>
+
+  <% if (canWork && !ticket.needs_verification && nextStatuses.length) { %>
   <section class="card">
     <h2>Change status</h2>
     <form method="post" action="/tickets/<%= ticket.ref %>/status"><%- include('../partials/csrf') %>
-      <p><select name="status" id="status_select"><% ['open','in_progress','pending_customer','pending_vendor','restored','resolved','closed','cancelled'].forEach(function (s) { %><option value="<%= s %>" <%= ticket.status === s ? 'selected' : '' %>><%= statusLabels[s] %></option><% }) %></select></p>
+      <p><select name="status" id="status_select"><option value="" disabled selected>Now: <%= statusLabels[ticket.status] %>. Change to…</option><% nextStatuses.forEach(function (s) { %><option value="<%= s %>"><%= statusLabels[s] %></option><% }) %></select></p>
       <div class="js-resolution" hidden>
         <p><label for="resolution_code">Resolution code</label><select id="resolution_code" name="resolution_code"><option value="">Choose…</option><% resolutionCodes.forEach(function (c) { %><option value="<%= c %>"><%= c.replace(/_/g, ' ') %></option><% }) %></select></p>
         <p><label for="resolution_note">What fixed it?</label><textarea id="resolution_note" name="resolution_note" rows="3"></textarea></p>
@@ -114,6 +122,15 @@
       <button class="btn ghost" type="submit">Recalculate priority</button></form>
   </section>
   <% } %>
+  <section class="card">
+    <h2>Knowledge Base</h2>
+    <% if (kbArticles.length) { %><ul class="plain"><% kbArticles.forEach(function (k) { %><li><a href="/kb/<%= k.code %>"><%= k.code %></a> <%= k.title %><% if (k.status !== 'published') { %> <span class="tag grey">draft</span><% } %>
+      <% if (canWork) { %><form method="post" action="/kb/<%= k.code %>/unlink" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="ref" value="<%= ticket.ref %>"><input type="hidden" name="back" value="ticket"><button class="btn ghost small" type="submit">Unlink</button></form><% } %></li><% }) %></ul>
+    <% } else { %><p class="muted">No article is linked to this ticket.</p><% } %>
+    <% if (canWork) { %><form method="post" action="/kb/link"><%- include('../partials/csrf') %><input type="hidden" name="ref" value="<%= ticket.ref %>">
+      <p><label for="kb_code">Link an article</label><input id="kb_code" name="code" placeholder="KB-0012" maxlength="20" required></p><button class="btn ghost" type="submit">Link</button></form><% } %>
+    <p><a href="/kb?q=<%= encodeURIComponent(String(ticket.subject).split(/\s+/).slice(0, 4).join(' ')) %>" target="_blank" rel="noopener">Search the Knowledge Base</a><% if (canKbWrite && ['resolved', 'closed'].includes(ticket.status)) { %> · <a href="/kb/new?from=<%= ticket.ref %>">Write an article from this ticket</a><% } %></p>
+  </section>
 </aside>
 </div>
 <%- include('../partials/footer') %>

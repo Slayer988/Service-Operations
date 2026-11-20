@@ -1,0 +1,16 @@
+<%- include('../partials/header') %>
+<section class="card narrow">
+  <h1>Enter your code</h1>
+  <p><%= sent %> Check <b><%= email %></b> (and its junk folder). The code is valid for <%= minutes %> minutes.</p>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <% if (typeof restart !== 'undefined' && restart) { %>
+    <p><a class="btn" href="/request">Ask for a new code</a></p>
+  <% } else { %>
+  <form method="post" action="/request/code"><%- include('../partials/csrf') %>
+    <p><label for="g_code">6-digit code</label><input id="g_code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]{6,7}" required autofocus></p>
+    <button class="btn" type="submit">Continue</button>
+  </form>
+  <p class="hint">No e-mail after a few minutes? Check the address and the CSID, then <a href="/request">start again</a>.</p>
+  <% } %>
+</section>
+<%- include('../partials/footer') %>

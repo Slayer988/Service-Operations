@@ -1,7 +1,8 @@
 <%- include('../partials/header') %>
 <p><a href="/contracts">← Contracts</a></p>
 <% var tone = c.status === 'active' ? '' : (c.status === 'expired' || c.status === 'terminated' ? 'bad' : (c.status === 'closed' || c.status === 'suspended' ? 'grey' : 'warn')); %>
-<h1><%= c.title %> <span class="tag <%= tone %>"><%= statusLabels[c.status] %></span></h1>
+<div class="head"><h1><%= c.title %> <span class="tag <%= tone %>"><%= statusLabels[c.status] %></span></h1>
+<% if (can('lpo.manage') && !['closed','terminated','expired'].includes(c.status)) { %><a class="btn ghost" href="/lpo/new?contract=<%= c.id %>">Raise an LPO against this contract</a><% } %></div>
 <p class="muted"><%= c.reference %> · <%= c.type %> · <%= c.customer_id ? c.customer_name : (counterparties[c.counterparty_kind] + ': ' + c.supplier) %><% if (c.csid_code) { %> · CSID <%= c.csid_code %><% } %>
 <% if (c.tender_ref) { %> · from tender <a href="/tenders/<%= c.tender_id %>"><%= c.tender_ref %></a><% } %><% if (c.opportunity_ref) { %> · from opportunity <a href="/pipeline/<%= c.opportunity_id %>"><%= c.opportunity_ref %></a><% } %></p>
 <p class="jump"><a href="#details">Details</a> · <a href="#services">Services</a> · <a href="#documents">Documents</a> · <a href="#financials">Financials</a> · <a href="#obligations">Obligations</a> · <a href="#sla">SLA</a> · <a href="#amendments">Amendments</a> · <a href="#reviews">Review</a> · <a href="#history">History</a></p>

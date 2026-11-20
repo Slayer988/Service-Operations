@@ -11,13 +11,14 @@ const { wrap } = require('./util');
 const router = express.Router();
 
 const view = [requireStaff, requirePerm('report.view')];
-const today = () => new Date().toISOString().slice(0, 10);
+const config = require('../config');
+const today = () => u.localDay(config.timezone);   // the date where the people are, not in UTC
 
 function params(req) {
-  let from = u.dateStr(req.query.from) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  let from = u.dateStr(req.query.from) || u.localDay(config.timezone, -30);
   let to = u.dateStr(req.query.to) || today();
   if (from > to) [from, to] = [to, from];
-  if (Date.parse(to) - Date.parse(from) > 800 * 86400000) from = new Date(Date.parse(to) - 800 * 86400000).toISOString().slice(0, 10);
+  if (Date.parse(to) - Date.parse(from) > 800 * 86400000) from = new Date(Date.parse(to) - 800 * 86400000).toISOString().slice(0, 10);   // plain calendar arithmetic on dates
   return { from, to, customer: u.id(req.query.customer) || null };
 }
 const qsOf = (p) => new URLSearchParams({ from: p.from, to: p.to, ...(p.customer ? { customer: String(p.customer) } : {}) }).toString();

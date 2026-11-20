@@ -7,9 +7,11 @@ const themes = require('../../src/lib/themes');
 
 const css = fs.readFileSync(path.join(__dirname, '../../src/public/app.css'), 'utf8');
 
-test('there are exactly six themes, Default first, then the five agreed ones', () => {
-  assert.deepEqual(themes.THEMES.map((t) => t.label), ['Default', 'Service Green', 'Sunset Orange', 'Match Device', 'Ocean Blue', 'Midnight Dark']);
-  assert.deepEqual(themes.IDS, ['default', 'green', 'sunset', 'auto', 'ocean', 'midnight']);
+test('there are exactly five themes, Default first; Midnight Dark was removed', () => {
+  assert.deepEqual(themes.THEMES.map((t) => t.label), ['Default', 'Service Green', 'Sunset Orange', 'Match Device', 'Ocean Blue']);
+  assert.deepEqual(themes.IDS, ['default', 'green', 'sunset', 'auto', 'ocean']);
+  assert.equal(themes.valid('midnight'), null);
+  assert.ok(!css.includes('data-theme="midnight"') && !css.includes('.t-midnight'), 'its colours are gone from the stylesheet');
 });
 
 test('theme ids are validated and anything else falls back to Default', () => {
@@ -35,7 +37,7 @@ test('every theme has a label, a description, a swatch and a CSS block (green is
 test('every theme block only sets variables that exist in :root, and the stylesheet has no fixed colours outside the variable blocks', () => {
   const vars = (sel) => { const m = css.indexOf(sel); const body = css.slice(css.indexOf('{', m) + 1, css.indexOf('}', m)); return new Set([...body.matchAll(/--([a-z0-9-]+):/g)].map((x) => x[1])); };
   const base = vars(':root{');
-  for (const id of ['default', 'ocean', 'sunset', 'midnight']) for (const v of vars(`html[data-theme="${id}"]`)) assert.ok(base.has(v), `--${v} in ${id}`);
+  for (const id of ['default', 'ocean', 'sunset']) for (const v of vars(`html[data-theme="${id}"]`)) assert.ok(base.has(v), `--${v} in ${id}`);
   const rules = css.slice(css.indexOf('*{box-sizing')).split('/* ---------------------------------------------------------------- themes')[0];
   assert.deepEqual([...rules.matchAll(/#[0-9a-fA-F]{3,6}\b/g)].map((x) => x[0]), []);
 });

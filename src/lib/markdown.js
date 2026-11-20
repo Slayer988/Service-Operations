@@ -2,7 +2,7 @@
 // A small, safe formatter for Knowledge Base articles. Everything is escaped first; only the marks below become HTML, so an article can
 // never carry a script, a style or a raw tag (the page also runs under a strict Content-Security-Policy).
 //   # Heading   ## Subheading   ### Small heading     - bullet     1. numbered     > note     --- line     ``` code ```
-//   **bold**  *italic*  `code`  [text](https://link)  [[KB-0012]] (another article)
+//   **bold**  *italic*  ++underline++  ~~struck through~~  `code`  [text](https://link)  [[KB-0012]] (another article)
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const SAFE_URL = /^(https?:\/\/[^\s<>"']+|mailto:[^\s<>"']+)$/i;
@@ -21,6 +21,7 @@ function inline(text, base) {
   });
   s = esc(s);
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>');
+  s = s.replace(/\+\+([^+\n]+)\+\+/g, '<u>$1</u>').replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[Number(i)]);
 }
 
@@ -68,4 +69,14 @@ function plain(body, n = 220) {
   return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t;
 }
 
-module.exports = { render, plain, inline };
+/** Formatted text as plain text for e-mail: the marks are removed, lists and line breaks are kept, a link shows its address. */
+function toText(body) {
+  return String(body || '').replace(/\r\n?/g, '\n').split('\n').map((line) => {
+    if (/^```/.test(line)) return '';
+    return line.replace(/^#{1,3}\s+/, '').replace(/^>\s?/, '  ')
+      .replace(/\[\[(KB-\d{4,6})\]\]/g, '$1').replace(/\[([^\]\n]{1,200})\]\(([^)\s]{1,500})\)/g, (m, t, url) => (t === url ? url : `${t} (${url})`))
+      .replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2').replace(/\+\+([^+\n]+)\+\+/g, '$1').replace(/~~([^~\n]+)~~/g, '$1').replace(/`([^`\n]+)`/g, '$1');
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+module.exports = { render, plain, inline, toText };

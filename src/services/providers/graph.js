@@ -3,7 +3,7 @@
 // password IMAP). The app needs the application permission Mail.Read (Mail.ReadWrite only if "mark processed mail as read" is on),
 // and should be limited to the shared mailboxes with an Exchange Application Access Policy or RBAC for Applications.
 // Raw MIME is downloaded and given to the same ingestion code as IMAP, so threading, SPF/DKIM checks and attachments behave the same.
-const { FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX, request, form } = require('./common');
+const { FIRST_RUN_DAYS, BATCH, FIRST_RUN_MAX, request, form, secretOf } = require('./common');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const tokens = new Map();   // mailbox id -> { token, exp }
@@ -21,7 +21,7 @@ async function accessToken(mb, ctx) {
   if (hit && hit.exp > Date.now() + 60000 && hit.key === `${mb.tenant_id}|${mb.client_id}`) return hit.token;
   const j = await request(ctx.fetch, `https://login.microsoftonline.com/${encodeURIComponent(mb.tenant_id)}/oauth2/v2.0/token`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form({ client_id: mb.client_id, client_secret: ctx.env[mb.secret_env], scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' }),
+    body: form({ client_id: mb.client_id, client_secret: secretOf(mb, ctx.env), scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' }),
   });
   if (!j.access_token) throw new Error('Microsoft did not return an access token.');
   tokens.set(mb.id, { token: j.access_token, exp: Date.now() + (j.expires_in || 3000) * 1000, key: `${mb.tenant_id}|${mb.client_id}` });
@@ -49,10 +49,10 @@ module.exports = {
     if (!mb.address) return 'The mailbox address must be set.';
     if (!/^[A-Za-z0-9.-]{3,100}$/.test(mb.tenant_id || '')) return 'The Microsoft tenant ID (a GUID or your .onmicrosoft.com domain) must be set.';
     if (!/^[0-9a-fA-F-]{36}$/.test(mb.client_id || '')) return 'The application (client) ID must be a GUID.';
-    if (!mb.secret_env || !env[mb.secret_env]) return `The client-secret variable ${mb.secret_env || '(none named)'} is not set in the server environment file.`;
+    if (!secretOf(mb, env)) return mb.secret_env ? `The client-secret variable ${mb.secret_env} is not set in the server environment file. Type the client secret on this page instead, or set the variable.` : 'The client secret has not been entered. Type it in the box below (the "Value" of the secret, not its ID).';
     return '';
   },
-  secrets(mb, env) { return [env[mb.secret_env]]; },
+  secrets(mb, env) { return [secretOf(mb, env)]; },
 
   async poll(mb, ctx) {
     let auth; let items = [];

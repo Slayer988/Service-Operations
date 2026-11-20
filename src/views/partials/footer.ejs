@@ -4,12 +4,12 @@
 </html>
 <% } else if (!user) { %>
 </main>
-<footer class="foot"><%= appName %> <%= appVersion %></footer>
+<footer class="foot"><% if (typeof brand !== 'undefined' && brand && brand.name) { %><%= brand.name %> · <% } %><%= appName %> <%= appVersion %></footer>
 </body>
 </html>
 <% } else { %>
     </main>
-    <footer class="foot"><% if (typeof timezone !== 'undefined') { %>Times are shown in <%= timezone %>. <% } %><%= appName %> <%= appVersion %></footer>
+    <footer class="foot"><% if (typeof timezone !== 'undefined') { %>Times are shown in <%= timezone %>. <% } %><% if (typeof brand !== 'undefined' && brand && brand.name) { %><%= brand.name %> · <% } %><%= appName %> <%= appVersion %></footer>
   </div>
 </div>
 </body>

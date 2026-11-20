@@ -15,17 +15,26 @@
   <% } else { %><p class="notice">Not connected yet. Fill in the connection below, save, then use <b>Test connection</b>.</p><% } %>
   <% if (ad.canConfigure) { %>
   <details class="adsetup" <%= ad.configured && ad.cfg.password_saved ? '' : 'open' %>><summary>Connection settings</summary>
+    <% var sec = ad.cfg.security || 'ldaps'; var defPort = sec === 'ldaps' ? 636 : 389; %>
     <form method="post" action="/admin/users/directory"><%- include('../partials/csrf') %>
-      <div class="grid2">
-        <p><label for="ad_server">Server</label><input id="ad_server" name="server" value="<%= ad.cfg.server || '' %>" placeholder="dc1.corp.local" autocomplete="off"><small>Your domain controller, by name or address.</small></p>
-        <p><label for="ad_domain">Domain</label><input id="ad_domain" name="domain" value="<%= ad.cfg.domain || '' %>" placeholder="corp.local" autocomplete="off"><small>What people see after the @ in their sign-in name.</small></p>
-        <p><label for="ad_user">Service account</label><input id="ad_user" name="service_user" value="<%= ad.cfg.service_user || '' %>" placeholder="svc-itsm" autocomplete="off"><small>A normal read-only AD account used to look people up. Just the name; the domain is added for you.</small></p>
-        <p><label for="ad_pw">Service account password</label><input id="ad_pw" name="password" type="password" autocomplete="new-password" placeholder="<%= ad.cfg.password_saved ? 'Saved (leave empty to keep)' : '' %>"><small>Stored encrypted. Never shown again.</small></p>
+      <div class="adform">
+        <p><label for="ad_domain">Domain</label><input id="ad_domain" name="domain" value="<%= ad.cfg.domain || '' %>" placeholder="corp.local" autocomplete="off"></p>
+        <p><label for="ad_server">IPv4 address</label><input id="ad_server" name="server" value="<%= ad.cfg.server || '' %>" placeholder="192.168.1.10" autocomplete="off"><small>Of your domain controller. A name such as dc1.corp.local works too.</small></p>
+        <p><label for="ad_user">User name</label><input id="ad_user" name="service_user" value="<%= ad.cfg.service_user || '' %>" placeholder="svc-itsm" autocomplete="off"><small>A normal read-only AD account used to look people up. The domain is added for you.</small></p>
+        <p><label for="ad_pw">Password</label><input id="ad_pw" name="password" type="password" autocomplete="new-password" placeholder="<%= ad.cfg.password_saved ? 'Saved (leave empty to keep)' : '' %>"><small>Stored encrypted. Never shown again.</small></p>
+        <p><label for="ad_base">Search base</label><span class="adbase"><input id="ad_base" name="base_dn" value="<%= ad.cfg.base_dn || '' %>" placeholder="DC=corp,DC=local" autocomplete="off"><button class="btn ghost" type="submit" formaction="/admin/users/directory/discover">Discover</button></span><small>Where to look for people. <b>Discover</b> saves what you typed, connects, and fills this in for you.</small></p>
+        <p><label for="ad_sec">Connection security</label>
+          <select id="ad_sec" name="security">
+            <option value="ldaps" <%= sec === 'ldaps' ? 'selected' : '' %>>Encrypted: LDAPS, port 636 (recommended)</option>
+            <option value="starttls" <%= sec === 'starttls' ? 'selected' : '' %>>Encrypted: STARTTLS, port 389</option>
+            <option value="none" <%= sec === 'none' ? 'selected' : '' %>>None, port 389 (not recommended)</option>
+          </select>
+          <small>The two encrypted choices need a certificate on the domain controller. "None" sends passwords unprotected across your network: use it only on a trusted internal network, and only if your domain controller allows it.</small></p>
       </div>
+      <% if (sec === 'none') { %><p class="notice warn">Connection security is set to <b>None</b>: the service account password and everyone's sign-in password travel unprotected between this server and the domain controller.</p><% } %>
       <details class="adadv"><summary>Advanced (usually not needed)</summary>
         <div class="grid2">
-          <p><label for="ad_port">Port</label><input id="ad_port" name="port" value="<%= ad.cfg.port %>" inputmode="numeric"><small>636 is the encrypted default. 389 uses STARTTLS.</small></p>
-          <p><label for="ad_base">Search base</label><input id="ad_base" name="base_dn" value="<%= ad.cfg.base_dn || '' %>" placeholder="worked out from the domain"><small>Only to look in one part of the directory, for example OU=Staff,DC=corp,DC=local.</small></p>
+          <p><label for="ad_port">Port</label><input id="ad_port" name="port" value="<%= ad.cfg.port !== defPort ? ad.cfg.port : '' %>" placeholder="<%= defPort %>" inputmode="numeric"><small>Leave empty to use the usual port for the security you chose.</small></p>
           <p><label for="ad_ca">Certificate file</label><input id="ad_ca" name="ca_file" value="<%= ad.cfg.ca_file || '' %>" placeholder="/etc/itsm/ad-ca.pem"><small>Only if your domain controllers use a certificate from your own authority.</small></p>
         </div>
       </details>
@@ -42,7 +51,7 @@
 <td><% if (r.kind === 'staff') { %><select name="role" form="uf<%= r.id %>"><% staffRoles.forEach(function (x) { %><option value="<%= x %>" <%= r.role === x ? 'selected' : '' %>><%= roleLabels[x] %></option><% }) %></select><% } else { %><%= roleLabels[r.role] %><% } %></td>
 <td><input type="checkbox" name="active" form="uf<%= r.id %>" <%= r.active ? 'checked' : '' %>></td>
 <td><% if (r.kind === 'staff') { %><input type="checkbox" name="available" form="uf<%= r.id %>" <%= r.available ? 'checked' : '' %>><% } else { %>—<% } %></td>
-<td><%= r.totp_enabled ? 'on' : 'off' %></td><td><%= fmt.dt(r.last_login_at) %></td>
+<td><%= r.totp_enabled ? 'on' : 'off' %><% if (r.totp_enabled) { %><form method="post" action="/admin/users/<%= r.id %>/reset-mfa" data-confirm="Switch off two-step verification for this person? Use this when their phone is lost."><%- include('../partials/csrf') %><button class="link" type="submit">Reset</button></form><% } %></td><td><%= fmt.dt(r.last_login_at) %></td>
 <td><form id="uf<%= r.id %>" method="post" action="/admin/users/<%= r.id %>"><%- include('../partials/csrf') %><% if (r.kind === 'customer') { %><input type="hidden" name="available" value="on"><% } %><button class="btn ghost" type="submit">Save</button></form>
 <% if (r.auth_source !== 'ldap') { %><form method="post" action="/admin/users/<%= r.id %>/reset-password" data-confirm="Reset this password and sign the person out?"><%- include('../partials/csrf') %><button class="link" type="submit">Reset password</button></form><% } %></td></tr><% }) %>
 </tbody></table>

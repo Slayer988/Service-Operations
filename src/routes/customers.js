@@ -95,12 +95,23 @@ router.post('/customers/:id', manage, wrap(async (req, res) => {
   const status = u.oneOf(req.body.status, ['active', 'suspended'], 'active');
   const name = u.str(req.body.name, 120);
   if (!name) throw new tickets.UserError('Enter a customer name.');
+  const before = (await q('select email_domains from customers where id = $1', [id])).rows[0];
+  if (!before) return notFound(res);
+  let domains = before.email_domains;
+  if (req.body.email_domains !== undefined) {
+    const d = require('../services/guest').parseDomains(req.body.email_domains);
+    if (d.error) throw new tickets.UserError(d.error);
+    const taken = (await q('select name, d from customers, unnest(email_domains) d where id <> $1 and d = any($2) limit 1', [id, d.domains])).rows[0];
+    if (taken) throw new tickets.UserError(`The domain ${taken.d} is already set on ${taken.name}. A domain can belong to one customer only.`);
+    domains = d.domains;
+  }
   try {
-    const r = await q('update customers set name = $2, notes = $3, status = $4, industry = $5 where id = $1 returning id',
-      [id, name, u.str(req.body.notes, 2000), status, u.str(req.body.industry, 80)]);
+    const r = await q('update customers set name = $2, notes = $3, status = $4, industry = $5, email_domains = $6 where id = $1 returning id',
+      [id, name, u.str(req.body.notes, 2000), status, u.str(req.body.industry, 80), domains]);
     if (!r.rows[0]) return notFound(res);
   } catch (e) { if (e.code === '23505') throw new tickets.UserError('Another customer already has that name.'); throw e; }
-  await audit({ query: q }, req.user, 'customer_updated', 'customer', id, `status ${status}`, id, req.ip);
+  const changed = before.email_domains.join(',') !== domains.join(',') ? `; e-mail domains: ${domains.join(', ') || 'none'}` : '';
+  await audit({ query: q }, req.user, 'customer_updated', 'customer', id, `status ${status}${changed}`, id, req.ip);
   req.flash('success', 'Saved. History is kept when a customer is suspended.');
   return res.redirect(`/customers/${id}`);
 }));
@@ -116,8 +127,8 @@ router.post('/customers/:id/delete', manage, wrap(async (req, res) => {
       await db.query('select 1 from customers where id = $1 for update', [id]);
       const n = (await db.query(
         `select (select count(*) from tickets where customer_id = $1) + (select count(*) from contracts where customer_id = $1) + (select count(*) from services where customer_id = $1)
-              + (select count(*) from opportunities where customer_id = $1) + (select count(*) from tenders where customer_id = $1) as n`, [id])).rows[0].n;
-      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities or tenders. Suspend it instead; history is kept.');
+              + (select count(*) from opportunities where customer_id = $1) + (select count(*) from tenders where customer_id = $1) + (select count(*) from quotes where customer_id = $1) as n`, [id])).rows[0].n;
+      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities, tenders or quotes. Suspend it instead; history is kept.');
       await db.query('delete from users where customer_id = $1', [id]);
       await db.query('delete from sites where customer_id = $1', [id]);
       await db.query('delete from csids where customer_id = $1', [id]);

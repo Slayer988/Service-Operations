@@ -8,6 +8,7 @@ const charts = require('../lib/charts');
 const settings = require('../lib/settings');
 const audit = require('../lib/audit');
 const u = require('../lib/util');
+const config = require('../config');
 const B = require('../services/business');
 const P = require('../services/pipeline');
 const T = require('../services/tenders');
@@ -31,7 +32,7 @@ router.get('/operations', requireStaff, requirePerm('operations.view'), wrap(asy
   // the pipeline, tender and contract detail from before, for those allowed to see it
   let detail = null; let stageChart = ''; let pc = cur; let pt = null; let labels = {}; let tlabels = {};
   if (can('business.view')) {
-    detail = await B.overview(q, can, cur, new Date().toISOString().slice(0, 10));
+    detail = await B.overview(q, can, cur, u.localDay(config.timezone));
     labels = (await P.listSettings({ query: q })).labels; tlabels = (await T.listSettings({ query: q })).labels;
     pc = detail.pipeline ? (detail.pipeline.currencies.includes(cur) ? cur : detail.pipeline.currencies[0] || cur) : cur;
     pt = detail.pipeline && detail.pipeline.totals[pc] ? detail.pipeline.totals[pc] : null;

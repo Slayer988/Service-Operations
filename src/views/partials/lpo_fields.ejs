@@ -1,0 +1,25 @@
+<%# LPO header form. form; suppliers, supplierQuotes, contracts, projects, tenders, customerQuotes, currencies %>
+<div class="grid2">
+<p><label for="lf_supplier">Supplier / contractor</label><select id="lf_supplier" name="supplier_id" required><option value="">Choose…</option>
+<% suppliers.forEach(function (s) { %><option value="<%= s.id %>" <%= String(form.supplier_id) === String(s.id) ? 'selected' : '' %>><%= s.name %> (<%= s.code %>)</option><% }) %></select>
+<small>Only active suppliers. <a href="/suppliers/new">Add one to the register</a>.</small></p>
+<p><label for="lf_title">For (what is ordered)</label><input id="lf_title" name="title" maxlength="200" required value="<%= form.title || '' %>"></p>
+<p><label for="lf_doc">Against their quote</label><select id="lf_doc" name="supplier_doc_id"><option value="">—</option>
+<% supplierQuotes.forEach(function (d) { %><option value="<%= d.id %>" <%= String(form.supplier_doc_id) === String(d.id) ? 'selected' : '' %>><%= d.supplier_name %> · <%= d.reference || d.filename %><%= d.amount ? ' · ' + d.currency + ' ' + Number(d.amount).toLocaleString('en-US') : '' %></option><% }) %></select></p>
+<p><label for="lf_contract">Against a contract</label><select id="lf_contract" name="contract_id"><option value="">—</option>
+<% contracts.forEach(function (c) { %><option value="<%= c.id %>" <%= String(form.contract_id) === String(c.id) ? 'selected' : '' %>><%= c.reference %> · <%= c.title %></option><% }) %></select></p>
+<p><label for="lf_project">For a project</label><select id="lf_project" name="project_id"><option value="">—</option>
+<% projects.forEach(function (p) { %><option value="<%= p.id %>" <%= String(form.project_id) === String(p.id) ? 'selected' : '' %>><%= p.ref %> · <%= p.name %></option><% }) %></select></p>
+<p><label for="lf_tender">For a tender</label><select id="lf_tender" name="tender_id"><option value="">—</option>
+<% tenders.forEach(function (t) { %><option value="<%= t.id %>" <%= String(form.tender_id) === String(t.id) ? 'selected' : '' %>><%= t.ref %> · <%= t.title %></option><% }) %></select></p>
+<p><label for="lf_cq">Back-to-back with our quote</label><select id="lf_cq" name="customer_quote_id"><option value="">—</option>
+<% customerQuotes.forEach(function (x) { %><option value="<%= x.id %>" <%= String(form.customer_quote_id) === String(x.id) ? 'selected' : '' %>><%= x.ref %><%= x.revision > 1 ? ' R' + x.revision : '' %> · <%= x.title %></option><% }) %></select></p>
+<p><label for="lf_cur">Currency</label><select id="lf_cur" name="currency"><% currencies.forEach(function (c) { %><option <%= form.currency === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+<p><label for="lf_tax">Tax</label><span class="rowform"><input name="tax_label" maxlength="20" value="<%= form.tax_label || 'VAT' %>" aria-label="Tax name" class="num"> <input id="lf_tax" name="tax_rate" inputmode="decimal" value="<%= form.tax_rate %>" aria-label="Tax rate in percent" class="num"> %</span></p>
+<p><label for="lf_date">Order date</label><input id="lf_date" name="issue_date" type="date" value="<%= form.issue_date ? String(form.issue_date).slice(0, 10) : '' %>"><small>Set to the day it is issued.</small></p>
+<p><label for="lf_deliv">Deliver by</label><input id="lf_deliv" name="delivery_date" type="date" value="<%= form.delivery_date ? String(form.delivery_date).slice(0, 10) : '' %>"></p>
+<p><label for="lf_pay">Payment terms</label><input id="lf_pay" name="payment_terms" maxlength="500" value="<%= form.payment_terms || '' %>"></p>
+</div>
+<p><label for="lf_addr">Deliver to</label><textarea id="lf_addr" name="delivery_address" rows="2" maxlength="500"><%= form.delivery_address || '' %></textarea></p>
+<p><label for="lf_terms">Terms <small class="muted">(printed on the LPO)</small></label><textarea id="lf_terms" name="terms" rows="3" maxlength="4000"><%= form.terms || '' %></textarea></p>
+<p><label for="lf_notes">Internal notes <small class="muted">(never printed)</small></label><textarea id="lf_notes" name="internal_notes" rows="2" maxlength="4000"><%= form.internal_notes || '' %></textarea></p>

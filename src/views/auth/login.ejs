@@ -1,24 +1,30 @@
 <%- include('../partials/header', { bare: true }) %>
-<div class="loginwrap">
-  <section class="loginhero">
-    <div class="brandline"><svg class="ic logo"><use href="#i-logo"/></svg><b><%= appName %></b></div>
-    <h1>One place for every request.</h1>
-    <p>Log incidents and requests, follow your service levels, and keep contracts, tenders and the sales pipeline in one workspace.</p>
-    <svg class="wave" viewBox="0 0 800 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 160V90C120 40 220 130 360 100 500 70 620 10 800 50V160z"/></svg>
-  </section>
-  <section class="loginform">
-    <div class="card">
-      <h1>Sign in</h1>
+<div class="signin">
+  <section class="signin-panel">
+    <div class="signin-inner">
+      <% var B = (typeof brand !== 'undefined' && brand) || { name: '', displayName: appName, logo: null }; %>
+      <div class="signin-brand<%= B.logo ? ' has-logo' : '' %>"><% if (B.logo) { %><span><%= appName %></span><img class="signin-logo<%= B.recolor ? ' tint' : '' %>" src="/branding/logo?v=<%= B.logo.sha.slice(0, 12) %>" alt="<%= B.displayName %>"><% } else { %><svg class="ic logo" aria-hidden="true"><use href="#i-logo"/></svg><span><%= B.displayName %><% if (B.name) { %><small><%= appName %></small><% } %></span><% } %></div>
+      <h1 class="signin-title">Sign in</h1>
+      <% if (typeof expired !== 'undefined' && expired) { %><p class="notice" data-expired-notice>You were signed out because you were inactive for <%= typeof idleMinutes !== 'undefined' ? idleMinutes : 10 %> minutes. Please sign in again.</p><% } %>
       <% if (error) { %><p class="error"><%= error %></p><% } %>
-      <form method="post" action="/login">
+      <form method="post" action="/login" class="signin-form">
         <%- include('../partials/csrf') %>
         <input type="hidden" name="next" value="<%= next %>">
-        <p><label for="email">Email address or user name</label><input id="email" name="email" type="text" maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus></p>
-        <p><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></p>
-        <button class="btn" type="submit">Sign in</button>
+        <p><label for="email">Email address or user name</label><input id="email" name="email" type="text" maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus placeholder="name@example.com"></p>
+        <p><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Password"></p>
+        <% if (typeof loginNotice !== 'undefined' && loginNotice) { %>
+        <label class="signin-agree"><input type="checkbox" name="agree" required> <span>I agree to <b class="signin-notice"><%= loginNotice %></b></span></label>
+        <% } %>
+        <button class="btn signin-btn" type="submit">Sign in</button>
       </form>
       <p class="hint">Forgotten your password? Ask your service desk administrator to reset it.</p>
+      <% if (typeof guestEnabled !== 'undefined' && guestEnabled) { %><p class="hint"><b>No account?</b> <a href="/request">Raise a request with your work e-mail and your CSID</a>.</p><% } %>
     </div>
+    <p class="signin-ver"><%= appName %> <%= appVersion %></p>
+  </section>
+  <section class="signin-art" aria-hidden="true">
+    <i class="sq s1"></i><i class="sq s2"></i><i class="sq s3"></i><i class="sq s4"></i><i class="sq s5"></i><i class="sq s6"></i>
+    <i class="sq s7"></i><i class="sq s8"></i><i class="sq s9"></i><i class="sq s10"></i><i class="sq s11"></i><i class="sq s12"></i>
   </section>
 </div>
 <%- include('../partials/footer', { bare: true }) %>

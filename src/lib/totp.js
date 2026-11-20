@@ -36,19 +36,24 @@ function code(secret, timeMs = Date.now(), step = 30, digits = 6) {
   return String(bin % 10 ** digits).padStart(digits, '0');
 }
 
-function verify(secret, supplied, timeMs = Date.now(), window = 1) {
+/** The 30-second step that the code belongs to (so the caller can refuse the same step twice), or null when the code is wrong. */
+function matchStep(secret, supplied, timeMs = Date.now(), window = 1) {
   const s = String(supplied || '').replace(/\s+/g, '');
-  if (!/^\d{6}$/.test(s)) return false;
-  let ok = false;
+  if (!/^\d{6}$/.test(s) || !secret) return null;
+  let found = null;
   for (let i = -window; i <= window; i++) {
     const c = code(secret, timeMs + i * 30000);
-    if (crypto.timingSafeEqual(Buffer.from(c), Buffer.from(s))) ok = true;
+    if (crypto.timingSafeEqual(Buffer.from(c), Buffer.from(s))) found = Math.floor(timeMs / 1000 / 30) + i;
   }
-  return ok;
+  return found;
+}
+
+function verify(secret, supplied, timeMs = Date.now(), window = 1) {
+  return matchStep(secret, supplied, timeMs, window) !== null;
 }
 
 function otpauthUri(secret, account, issuer = require('../config').appName) {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
 }
 
-module.exports = { newSecret, code, verify, otpauthUri, base32Encode, base32Decode };
+module.exports = { newSecret, code, verify, matchStep, otpauthUri, base32Encode, base32Decode };

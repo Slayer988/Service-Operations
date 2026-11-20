@@ -8,6 +8,8 @@
 <div class="grid2"><p><label for="name">Name</label><input id="name" name="name" value="<%= customer.name %>" required maxlength="120"></p>
 <p><label for="industry">Industry</label><input id="industry" name="industry" value="<%= customer.industry %>" maxlength="80"></p>
 <p><label for="status">Status</label><select id="status" name="status"><option value="active" <%= customer.status === 'active' ? 'selected' : '' %>>Active</option><option value="suspended" <%= customer.status === 'suspended' ? 'selected' : '' %>>Suspended (users cannot sign in; history is kept)</option></select></p></div>
+<p><label for="email_domains">E-mail domains <small class="muted">(one per line, the part after @)</small></label><textarea id="email_domains" name="email_domains" rows="2" placeholder="example.co.ug"><%= (customer.email_domains || []).join('\n') %></textarea>
+<small>People with an address on these domains can raise a request without signing in, by giving this customer's CSID and a code e-mailed to them. Leave empty to switch it off for this customer.</small></p>
 <p><label for="notes">Notes</label><textarea id="notes" name="notes" rows="2"><%= customer.notes %></textarea></p>
 <button class="btn" type="submit">Save</button></form></section>
 <% } %>

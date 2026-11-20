@@ -1,0 +1,18 @@
+<%# Supplier / contractor fields. form, Sup %>
+<div class="grid2">
+<p><label for="sf_name">Name</label><input id="sf_name" name="name" maxlength="200" required value="<%= form.name || '' %>"></p>
+<p><label for="sf_kind">Type</label><select id="sf_kind" name="kind"><% Object.keys(Sup.KINDS).forEach(function (k) { %><option value="<%= k %>" <%= form.kind === k ? 'selected' : '' %>><%= Sup.KINDS[k] %></option><% }) %></select></p>
+<p><label for="sf_status">Status</label><select id="sf_status" name="status"><% Object.keys(Sup.STATUSES).forEach(function (k) { %><option value="<%= k %>" <%= (form.status || 'active') === k ? 'selected' : '' %>><%= Sup.STATUSES[k] %></option><% }) %></select><small>Orders can only be raised for active suppliers.</small></p>
+<p><label for="sf_tin">TIN</label><input id="sf_tin" name="tin" maxlength="40" value="<%= form.tin || '' %>"></p>
+<p><label for="sf_reg">Company registration no.</label><input id="sf_reg" name="registration_no" maxlength="60" value="<%= form.registration_no || '' %>"></p>
+<p><label for="sf_phone">Phone</label><input id="sf_phone" name="phone" maxlength="60" value="<%= form.phone || '' %>"></p>
+<p><label for="sf_email">E-mail</label><input id="sf_email" name="email" type="email" maxlength="254" value="<%= form.email || '' %>"></p>
+<p><label for="sf_web">Website</label><input id="sf_web" name="website" maxlength="200" value="<%= form.website || '' %>"></p>
+<p><label for="sf_cname">Contact person</label><input id="sf_cname" name="contact_name" maxlength="120" value="<%= form.contact_name || '' %>"></p>
+<p><label for="sf_cphone">Contact phone</label><input id="sf_cphone" name="contact_phone" maxlength="60" value="<%= form.contact_phone || '' %>"></p>
+<p><label for="sf_cemail">Contact e-mail</label><input id="sf_cemail" name="contact_email" type="email" maxlength="254" value="<%= form.contact_email || '' %>"></p>
+<p><label for="sf_pay">Payment terms</label><input id="sf_pay" name="payment_terms" maxlength="500" placeholder="e.g. 30 days after invoice" value="<%= form.payment_terms || '' %>"></p>
+</div>
+<p><label for="sf_services">What they supply or do</label><textarea id="sf_services" name="services" rows="2" maxlength="2000" placeholder="e.g. Structured cabling, civil works, Cisco distribution"><%= form.services || '' %></textarea></p>
+<p><label for="sf_addr">Address</label><textarea id="sf_addr" name="address" rows="2" maxlength="500"><%= form.address || '' %></textarea></p>
+<p><label for="sf_notes">Notes <small class="muted">(internal)</small></label><textarea id="sf_notes" name="notes" rows="2" maxlength="4000"><%= form.notes || '' %></textarea></p>

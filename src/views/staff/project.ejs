@@ -50,6 +50,8 @@
   <input type="date" name="due_date" aria-label="Due date"><button class="btn" type="submit">Add</button></form><% } %>
 </section>
 
+<% if (sw) { %><%- include('../partials/supplier_work', { sw: sw, swType: 'project', swId: p.id, swCanLink: swCanLink, swCanUpload: swCanUpload, swCanLpo: swCanLpo, swSuppliers: swSuppliers }) %><% } %>
+
 <section class="card" id="team"><h2>Team</h2>
 <table class="grid"><thead><tr><th>Name</th><th>Role</th><% if (a.manage) { %><th></th><% } %></tr></thead><tbody>
 <% team.forEach(function (m) { %><tr><td><%= m.name %></td><td><%= m.role || '–' %></td><% if (a.manage) { %><td><% if (m.id !== p.manager_id) { %><form method="post" action="/projects/<%= p.id %>/team/<%= m.id %>/remove"><%- include('../partials/csrf') %><button class="btn ghost small" type="submit">Remove</button></form><% } %></td><% } %></tr><% }) %></tbody></table>

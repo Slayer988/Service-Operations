@@ -1,0 +1,13 @@
+<%# A table of supplier documents. docs; showSupplier; canLpo (offers "Raise LPO" on their quotes) %>
+<% if (docs.length) { %>
+<table class="grid"><thead><tr><th>Document</th><% if (showSupplier) { %><th>Supplier</th><% } %><th>Kind</th><th>Reference</th><th class="num">Amount</th><th>Date</th><th>For</th><th>Added</th><th></th></tr></thead><tbody>
+<% docs.forEach(function (d) { %>
+<tr><td><a href="/documents/<%= d.attachment_id %>"><%= d.filename %></a><% if (d.scan_status === 'infected') { %> <span class="tag bad">blocked</span><% } %></td>
+<% if (showSupplier) { %><td><a href="/suppliers/<%= d.supplier_id %>"><%= d.supplier_name %></a></td><% } %>
+<td><%= d.kind_label %></td><td><%= d.reference || '—' %></td><td class="num"><%= d.amount !== null && d.amount !== undefined ? d.currency + ' ' + Number(d.amount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—' %></td>
+<td><%= d.doc_date ? fmt.date(d.doc_date) : '—' %><% if (d.valid_until) { %><br><small>valid until <%= fmt.date(d.valid_until) %></small><% } %></td>
+<td><%- [d.project_ref ? '<a href="/projects/' + d.project_id + '">' + d.project_ref + '</a>' : '', d.tender_ref ? '<a href="/tenders/' + d.tender_id + '">' + d.tender_ref + '</a>' : '', d.lpo_ref ? '<a href="/lpo/' + d.purchase_order_id + '">' + d.lpo_ref + '</a>' : ''].filter(Boolean).join(' · ') || '—' %></td>
+<td><%= fmt.date(d.uploaded_at) %><br><small><%= d.uploader || '' %></small></td>
+<td><% if (canLpo && d.kind === 'quote') { %><a class="btn ghost small" href="/lpo/new?supplier_doc=<%= d.id %>">Raise LPO</a><% } %></td></tr>
+<% }) %></tbody></table>
+<% } else { %><p class="empty">No documents yet.</p><% } %>

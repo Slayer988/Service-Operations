@@ -73,4 +73,21 @@ function dayDiff(a, b) {
   return Math.round((d(b) - d(a)) / 86400000);
 }
 
-module.exports = { id, intIn, str, oneOf, dateStr, email, safeNext, toCsv, money, dayDiff };
+/** The calendar date (YYYY-MM-DD) in a time zone, `shift` days from now. The server clock is UTC-based, so toISOString() is a day behind
+ *  for the first hours of each local day (Kampala is UTC+3: midnight to 03:00). */
+function localDay(tz, shift = 0, now = new Date()) {
+  const d = new Date(now.getTime() + shift * 86400000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+/** A date and time as read in a time zone, with the zone named: "2026-11-02 08:00 (Africa/Kampala)". 'n/a' when there is none. */
+function localStamp(d, tz) {
+  if (!d) return 'n/a';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return 'n/a';
+  const p = {};
+  for (const x of new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date)) p[x.type] = x.value;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} (${tz})`;
+}
+
+module.exports = { id, intIn, str, oneOf, dateStr, email, safeNext, toCsv, money, dayDiff, localDay, localStamp };

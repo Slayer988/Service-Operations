@@ -17,6 +17,7 @@ const docs = require('../services/documents');
 const { upload, wrap } = require('./util');
 const { requireStaff, requirePerm } = require('../middleware/auth');
 
+const Sup = require('../services/suppliers');
 const router = express.Router();
 const view = [requireStaff, requirePerm('tender.view')];
 const manage = [requireStaff, requirePerm('tender.manage')];
@@ -155,7 +156,11 @@ router.get('/tenders/:id', ...view, wrap(async (req, res) => {
   const left = new Date(t.submission_due).getTime() - Date.now();
   const sections = {}; for (const k of tasks) (sections[k.section] = sections[k.section] || []).push(k);
   const review = T.reviewSummary(reviews);
+  const swView = perms.can(req.user, 'supplier.view');
   res.render('staff/tender', {
+    sw: swView ? await Sup.forEntity(db0, 'tender', id) : null, swCanLink: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'tender.manage'),
+    swCanUpload: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'lpo.manage'), swCanLpo: perms.can(req.user, 'lpo.manage'),
+    swSuppliers: swView ? (await q(`select id, name, kind from suppliers where status <> 'inactive' order by name`)).rows.map((r) => ({ ...r, kind_label: Sup.KINDS[r.kind] })) : [],
     title: t.ref, t, tasks, sections, events, members, reviews, review, approved: T.approvedAll(review), evals, mail, files: await docs.list(db0, 'tender', id), docKinds: docs.KINDS.tender,
     next: T.TRANSITIONS[t.status] || [], ...fd, T, myStages: T.stagesFor(req.user.role),
     leftText: T.PRE_SUBMISSION.includes(t.status) ? (left < 0 ? `overdue by ${charts.duration(-left)}` : `${charts.duration(left)} left`) : '', overdue: left < 0 && T.PRE_SUBMISSION.includes(t.status),

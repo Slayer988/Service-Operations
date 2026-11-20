@@ -1,0 +1,95 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'accepted' ? '' : (s === 'rejected' || s === 'expired' ? 'bad' : (s === 'sent' ? 'blue' : (s === 'draft' ? 'warn' : 'grey'))); }; %>
+<p><a href="/quotes">← Quotes</a><% if (quote.opportunity_id) { %> · <a href="/pipeline/<%= quote.opportunity_id %>#quotes">← Opportunity <%= quote.opportunity_ref %></a><% } %></p>
+<div class="head"><h1><%= Q.label(quote) %> <span class="tag <%= tone(quote.status) %>"><%= Q.STATUS_LABELS[quote.status] %></span></h1>
+<span><% if (can('lpo.manage') && ['sent','accepted'].includes(quote.status)) { %><a class="btn ghost" href="/lpo/new?customer_quote=<%= quote.id %><%= quote.opportunity_id ? '' : '' %>">Raise a back-to-back LPO</a> <% } %><a class="btn" href="/quotes/<%= quote.id %>/pdf"><%= quote.status === 'draft' ? 'Download draft PDF' : 'Download PDF' %></a></span></div>
+<p class="muted"><%= quote.title %> · <%= quote.org || '—' %><% if (quote.opportunity_id) { %> · opportunity <a href="/pipeline/<%= quote.opportunity_id %>"><%= quote.opportunity_ref %> <%= quote.opportunity_name %></a><% } %> · Owner <%= quote.owner_name %></p>
+
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#lines', icon: 'dollar', label: 'Total (with ' + quote.tax_label + ')', value: quote.currency + ' ' + money(quote.total), small: true }) %>
+  <%- include('../partials/kpi', { href: '#lines', icon: 'chart', label: 'Before ' + quote.tax_label, value: quote.currency + ' ' + money(quote.subtotal), small: true }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: 'Valid until', value: quote.valid_until ? fmt.date(quote.valid_until) : 'Not set', small: true, tone: quote.status === 'expired' ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#lines', icon: 'list', label: 'Lines', value: String(lines.length) }) %>
+</div>
+
+<% if (quote.status === 'superseded') { %><p class="banner">This revision was replaced by a newer one. <% if (revisions.length && revisions[0].id !== quote.id) { %><a href="/quotes/<%= revisions[0].id %>">Open <%= quote.ref %> R<%= revisions[0].revision %></a><% } %></p><% } %>
+<% if (quote.decision_note && ['accepted','rejected','cancelled'].includes(quote.status)) { %><p class="banner"><%= Q.STATUS_LABELS[quote.status] %>: <%= quote.decision_note %></p><% } %>
+
+<% if (moves.length || revisable) { %>
+<section class="card" id="status"><h2>Next step</h2>
+<% if (moves.length) { %>
+<form method="post" action="/quotes/<%= quote.id %>/status" class="rowform"><%- include('../partials/csrf') %>
+<select name="status" aria-label="Mark the quote as"><% moves.forEach(function (m) { %><option value="<%= m %>"><%= { sent: 'Sent to the customer', accepted: 'Accepted by the customer', rejected: 'Declined by the customer', expired: 'Expired', cancelled: 'Cancelled (withdrawn)' }[m] %></option><% }) %></select>
+<input name="note" maxlength="1000" placeholder="Note (the reason is required when the customer declines)">
+<% if (quote.opportunity_id && moves.includes('accepted')) { %><label class="check"><input type="checkbox" name="update_opportunity" value="1" checked> If accepted, set the opportunity value to <%= quote.currency %> <%= money(quote.subtotal) %> (before <%= quote.tax_label %>)</label><% } %>
+<button class="btn" type="submit">Save</button></form>
+<% if (quote.status === 'draft') { %><p class="muted">Download the PDF, send it to the customer from your e-mail, then mark it as sent here. After that it can no longer be changed: changes are made as a new revision.</p><% } %>
+<% } %>
+<% if (revisable) { %><form method="post" action="/quotes/<%= quote.id %>/revise" class="inline" data-confirm="Make a new revision of this quote?"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Make a new revision</button></form>
+<span class="muted">Copies this quote into a new draft (<%= quote.ref %> R<%= quote.revision + 1 %>)<%= quote.status === 'sent' ? '; this one is then marked superseded' : '' %>.</span><% } %>
+</section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (editable) { %>
+<form method="post" action="/quotes/<%= quote.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/quote_fields', { form: quote }) %>
+<button class="btn ghost" type="submit">Save details</button></form>
+<% } else { %>
+<table class="kv"><tbody>
+<tr><th>Customer</th><td><%= quote.org || '—' %></td></tr>
+<tr><th>Contact</th><td><%= [quote.contact_name, quote.contact_email].filter(Boolean).join(' · ') || '—' %></td></tr>
+<tr><th>Quote date</th><td><%= fmt.date(quote.issue_date) %></td></tr>
+<tr><th>Valid until</th><td><%= quote.valid_until ? fmt.date(quote.valid_until) : 'Not set' %></td></tr>
+<tr><th>Currency and tax</th><td><%= quote.currency %> · <%= quote.tax_label %> <%= Number(quote.tax_rate) %>%</td></tr>
+<tr><th>Sent</th><td><%= quote.sent_at ? fmt.dt(quote.sent_at) : '—' %></td></tr>
+<% if (quote.intro) { %><tr><th>Introduction</th><td class="desc"><%= quote.intro %></td></tr><% } %>
+<% if (quote.terms) { %><tr><th>Terms</th><td class="desc"><%= quote.terms %></td></tr><% } %>
+<% if (quote.internal_notes) { %><tr><th>Internal notes</th><td class="desc"><%= quote.internal_notes %></td></tr><% } %>
+</tbody></table>
+<% } %>
+</section>
+
+<section class="card" id="lines"><h2>Lines</h2>
+<% if (editable) { %>
+<form method="post" action="/quotes/<%= quote.id %>/lines" data-quote-lines data-tax-rate="<%= Number(quote.tax_rate) %>"><%- include('../partials/csrf') %>
+<datalist id="catalogue-names"><% catalogue.forEach(function (n) { %><option value="<%= n %>"><% }) %></datalist>
+<table class="grid lines"><thead><tr><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price (<%= quote.currency %>)</th><th class="num">Disc. %</th><th class="num">Amount</th></tr></thead><tbody>
+<% lines.concat(Array.apply(null, Array(blankRows)).map(function () { return null; })).forEach(function (l) { %>
+<tr><td><input name="description" maxlength="1000" list="catalogue-names" value="<%= l ? l.description : '' %>" aria-label="Description"></td>
+<td><input class="num" name="quantity" inputmode="decimal" value="<%= l ? Number(l.quantity) : '' %>" aria-label="Quantity" placeholder="1"></td>
+<td><input class="num" name="unit" maxlength="40" value="<%= l ? l.unit : '' %>" aria-label="Unit" placeholder="each"></td>
+<td><input class="num" name="unit_price" inputmode="decimal" value="<%= l ? Number(l.unit_price) : '' %>" aria-label="Unit price"></td>
+<td><input class="num" name="discount_pct" inputmode="decimal" value="<%= l && Number(l.discount_pct) ? Number(l.discount_pct) : '' %>" aria-label="Discount percent"></td>
+<td class="num" data-amount><%= l ? money(l.line_total) : '' %></td></tr>
+<% }) %></tbody></table>
+<p class="muted">Empty rows are ignored; clear a description to remove that line. Save to get more empty rows. Descriptions can be picked from the service catalogue as you type.</p>
+<table class="totals"><tbody>
+<tr><th>Subtotal</th><td class="num" data-subtotal><%= money(quote.subtotal) %></td></tr>
+<tr><th><%= quote.tax_label %> <%= Number(quote.tax_rate) %>%</th><td class="num" data-tax><%= money(quote.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= quote.currency %>)</th><td class="num" data-total><%= money(quote.total) %></td></tr></tbody></table>
+<button class="btn" type="submit">Save lines</button></form>
+<% } else { %>
+<% if (lines.length) { %>
+<table class="grid"><thead><tr><th>#</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price</th><th class="num">Disc. %</th><th class="num">Amount (<%= quote.currency %>)</th></tr></thead><tbody>
+<% lines.forEach(function (l, i) { %><tr><td><%= i + 1 %></td><td><%= l.description %></td><td class="num"><%= Number(l.quantity) %></td><td><%= l.unit %></td><td class="num"><%= money(l.unit_price) %></td><td class="num"><%= Number(l.discount_pct) ? Number(l.discount_pct) : '' %></td><td class="num"><%= money(l.line_total) %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No lines.</p><% } %>
+<table class="totals"><tbody>
+<% if (Number(quote.discount_total) > 0) { %><tr><th>Discounts</th><td class="num">- <%= money(quote.discount_total) %></td></tr><% } %>
+<tr><th>Subtotal</th><td class="num"><%= money(quote.subtotal) %></td></tr>
+<tr><th><%= quote.tax_label %> <%= Number(quote.tax_rate) %>%</th><td class="num"><%= money(quote.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= quote.currency %>)</th><td class="num"><%= money(quote.total) %></td></tr></tbody></table>
+<% } %>
+</section>
+
+<% if (revisions.length > 1) { %>
+<section class="card" id="revisions"><h2>Revisions</h2>
+<table class="grid"><thead><tr><th>Revision</th><th>Status</th><th>Date</th><th class="num">Total</th></tr></thead><tbody>
+<% revisions.forEach(function (r) { %><tr><td><% if (r.id === quote.id) { %><b>R<%= r.revision %></b> (this one)<% } else { %><a href="/quotes/<%= r.id %>">R<%= r.revision %></a><% } %></td><td><span class="tag <%= tone(r.status) %>"><%= Q.STATUS_LABELS[r.status] %></span></td><td><%= fmt.date(r.issue_date) %></td><td class="num"><%= r.currency %> <%= money(r.total) %></td></tr><% }) %>
+</tbody></table></section>
+<% } %>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.at) %></time> <%= e.text %></li><% }) %></ul></section>
+<%- include('../partials/footer') %>

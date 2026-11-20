@@ -4,6 +4,9 @@ const express = require('express');
 const session = require('express-session');
 const PgStore = require('connect-pg-simple')(session);
 const config = require('./config');
+const branding = require('./services/branding');
+const markdown = require('./lib/markdown');
+const slaView = require('./lib/sla_view');
 const { pool, q } = require('./db');
 const csrf = require('./lib/csrf');
 const auth = require('./middleware/auth');
@@ -15,7 +18,8 @@ const themes = require('./lib/themes');
 const user_admin = (u) => require('./lib/admin_tiles').tiles(u).length > 0;
 const dashboard = require('./services/dashboard');
 
-const MULTIPART_ROUTES = [/^\/tickets\/new$/, /^\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/portal\/tickets\/new$/, /^\/portal\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/(contracts|tenders|pipeline)\/\d+\/files$/];
+const MULTIPART_ROUTES = [/^\/tickets\/new$/, /^\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/portal\/tickets\/new$/, /^\/portal\/tickets\/[A-Z]+-\d{6}\/comment$/, /^\/(contracts|tenders|pipeline)\/\d+\/files$/,
+  /^\/suppliers\/\d+\/documents$/, /^\/lpo\/\d+\/files$/, /^\/admin\/branding\/logo$/];
 
 function createApp() {
   const app = express();
@@ -23,6 +27,18 @@ function createApp() {
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, 'views'));
   app.disable('x-powered-by');
+  // the screen version of the logo recolouring: one SVG colour filter per theme (see lib/doc_theme.js and the icon sprite)
+  { const DT = require('./lib/doc_theme'); app.locals.logoFilters = Object.keys(DT.PALETTES).map((id) => ({ id, values: DT.logoMatrix(DT.logoTint(id)) })); }
+
+  app.get('/branding/logo', async (req, res) => {
+    try {
+      const f = await branding.logoFile({ query: q });
+      if (!f) return res.status(404).type('text/plain').send('no logo');
+      if (req.headers['if-none-match'] === `"${f.sha256}"`) return res.status(304).end();
+      res.set({ 'Content-Type': f.mime, 'Cache-Control': 'public, max-age=300', ETag: `"${f.sha256}"`, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'", 'Content-Disposition': 'inline' });
+      return res.send(f.data);
+    } catch (_) { return res.status(503).type('text/plain').send('unavailable'); }
+  });
 
   app.get('/healthz', async (req, res) => {
     try { await q('select 1'); res.type('text/plain').send('ok'); } catch (_) { res.status(503).type('text/plain').send('database unavailable'); }
@@ -44,7 +60,7 @@ function createApp() {
     name: 'itsm.sid',
     store: new PgStore({ pool, tableName: 'session', createTableIfMissing: false }),
     secret: config.sessionSecret, resave: false, saveUninitialized: false, rolling: true,
-    cookie: { httpOnly: true, secure: config.secureCookies, sameSite: 'lax', maxAge: config.sessionIdleHours * 3600 * 1000 },
+    cookie: { httpOnly: true, secure: config.secureCookies, sameSite: 'lax', maxAge: config.sessionIdleMinutes * 60 * 1000 },     // rolling: every request starts the idle time again
   }));
 
   app.use((req, res, next) => {
@@ -83,6 +99,7 @@ function createApp() {
   });
 
   app.use(auth.loadUser);
+  app.use(auth.enforcePasswordChange);
   app.use(auth.enforceMfaEnrolment);
   // colour theme: own choice, else (signed out) the one remembered in this browser, else green; and whether the side menu is collapsed
   app.use(async (req, res, next) => {
@@ -91,6 +108,13 @@ function createApp() {
       res.locals.theme = themes.resolve(req.user ? req.user.theme : cookieTheme);
       res.locals.navCollapsed = /(?:^|;\s*)itsm\.nav=collapsed(?:;|$)/.test(req.headers.cookie || '');
       res.locals.themes = themes.THEMES;
+      // company branding: name and logo for the pages, and what documents need (PDF header and footer, Excel titles)
+      try {
+        res.locals.brand = await branding.get({ query: q });
+        res.locals.docBrand = await branding.forDocuments({ query: q });
+      } catch (_) {                                  // never let branding stop a page: fall back to the product name
+        res.locals.brand = { name: '', displayName: config.appName, logo: null }; res.locals.docBrand = { name: '', displayName: config.appName, image: null };
+      }
       res.locals.currentUrl = req.originalUrl;
       next();
     } catch (err) { next(err); }
@@ -107,7 +131,10 @@ function createApp() {
       date: (d) => (!d ? '—' : /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? dDay.format(new Date(`${d}T00:00:00Z`)) : dOnly.format(new Date(d))),
       iso: (d) => (!d ? '' : /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? String(d) : new Date(d).toISOString().slice(0, 10)),
       size: (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'),
+      // formatted text (comments, notes, descriptions written with the editor): safe HTML; everything else is shown as written
+      rich: (body, base) => markdown.render(body, { base: base || '/kb' }),
     };
+    res.locals.slaView = slaView.view;
     res.locals.statusLabels = tickets.STATUS_LABELS;
     res.locals.priorityLabels = priorityLib.LABELS;
     res.locals.levelLabels = priorityLib.LEVELS;
@@ -137,10 +164,13 @@ function createApp() {
   });
 
   app.use(require('./routes/auth'));
+  app.use(require('./routes/guest'));
   app.use('/portal', require('./routes/portal'));
+  app.use(require('./routes/search'));
   app.use(require('./routes/tickets'));
   app.use(require('./routes/customers'));
   app.use(require('./routes/catalogue'));
+  app.use(require('./routes/kb'));
   app.use(require('./routes/documents'));
   app.use(require('./routes/sla'));
   app.use(require('./routes/contracts'));
@@ -148,6 +178,9 @@ function createApp() {
   app.use(require('./routes/projects'));
   app.use(require('./routes/tenders'));
   app.use(require('./routes/pipeline'));
+  app.use(require('./routes/quotes'));
+  app.use(require('./routes/suppliers'));
+  app.use(require('./routes/lpo'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

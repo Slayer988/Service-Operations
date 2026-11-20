@@ -1,0 +1,11 @@
+node_modules/
+storage/
+*.env
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.tar.gz
+*.log
+.DS_Store

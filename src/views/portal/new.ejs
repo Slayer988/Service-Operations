@@ -1,6 +1,7 @@
 <%- include('../partials/header') %>
 <section class="card">
   <h1>New ticket</h1>
+  <p class="notice">Your answer may already be in the <a href="/portal/help">Help Articles</a>. Have a quick look first.</p>
   <% if (typeof error !== 'undefined' && error) { %><p class="error"><%= error %></p><% } %>
   <form method="post" action="/portal/tickets/new" enctype="multipart/form-data">
     <%- include('../partials/csrf') %>
@@ -14,7 +15,7 @@
       <p><label for="urgency">How urgent is it?</label><select id="urgency" name="urgency"><option value="1">Work has stopped</option><option value="2" selected>Work is slowed down</option><option value="3">Can wait</option></select></p>
     </div>
     <p><label for="subject">Subject</label><input id="subject" name="subject" maxlength="200" required value="<%= form.subject || '' %>"></p>
-    <p><label for="description">Describe the problem or request</label><textarea id="description" name="description" rows="7"><%= form.description || '' %></textarea></p>
+    <p><label for="description">Describe the problem or request</label><textarea id="description" name="description" rows="7" data-rich data-rich-format="description_format"><%= form.description || '' %></textarea></p>
     <p><label for="files">Attach files (optional, up to 5)</label><input id="files" name="files" type="file" multiple></p>
     <button class="btn" type="submit">Submit ticket</button>
   </form>

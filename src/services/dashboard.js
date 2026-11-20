@@ -97,11 +97,11 @@ async function staff(q, user, timezone, tab) {
   const catChart = charts.donut(categories.map((c) => ({ value: c.n, cls: c.cls })));
 
   const slaRow = async (typeCond) => {
-    const r = (await q(`select count(*) filter (where t.resolved_at <= t.resolution_due)::int as met, count(*) filter (where t.resolved_at > t.resolution_due)::int as missed
+    const r = (await q(`select count(*) filter (where t.resolved_at <= t.resolution_due and not (t.sla_breaches ? 'resolution'))::int as met, count(*) filter (where t.resolved_at > t.resolution_due or (t.sla_breaches ? 'resolution'))::int as missed
        ${base} and t.resolution_due is not null and t.resolved_at >= now() - interval '30 days' ${typeCond}`, p)).rows[0];
     return pct(r.met, r.missed);
   };
-  const respRow = (await q(`select count(*) filter (where t.responded_at <= t.response_due)::int as met, count(*) filter (where t.responded_at > t.response_due)::int as missed
+  const respRow = (await q(`select count(*) filter (where t.responded_at <= t.response_due and not (t.sla_breaches ? 'response'))::int as met, count(*) filter (where t.responded_at > t.response_due or (t.sla_breaches ? 'response'))::int as missed
        ${base} and t.response_due is not null and t.responded_at is not null and t.created_at >= now() - interval '30 days'`, p)).rows[0];
   const overall = await slaRow('');
   const sla = [

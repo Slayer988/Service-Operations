@@ -1,0 +1,20 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'cancelled' ? 'grey' : (s === 'draft' ? 'warn' : (s === 'issued' ? 'blue' : '')); }; %>
+<div class="head"><h1>Suppliers & Contractors</h1><% if (canManage) { %><a class="btn" href="/lpo/new">New purchase order</a><% } %></div>
+<%- include('../partials/procurement_tabs', { tab: 'lpo', canLpoView: true }) %>
+<h2>LPO tracker<%= f.supplier ? ': ' + ((suppliers.find(function (s) { return String(s.id) === String(f.supplier); }) || {}).name || '') : '' %></h2>
+<%- include('../partials/lpo_tracker', { trk: trk, base: '?' + (f.supplier ? 'supplier=' + f.supplier + '&' : ''), current: f.status, money: money }) %>
+<form method="get" class="filters wide">
+  <select name="status" aria-label="Status"><% [['open','Open (draft, issued, received)'],['draft','Draft'],['issued','Awaiting delivery'],['late','Late'],['received','Received'],['closed','Closed'],['cancelled','Cancelled'],['all','Any status']].forEach(function (v) { %><option value="<%= v[0] %>" <%= f.status === v[0] ? 'selected' : '' %>><%= v[1] %></option><% }) %></select>
+  <input type="search" name="q" value="<%= f.q %>" placeholder="LPO, what it is for, or supplier" aria-label="Search purchase orders">
+  <select name="supplier" aria-label="Supplier"><option value="">All suppliers</option><% suppliers.forEach(function (s) { %><option value="<%= s.id %>" <%= String(f.supplier) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% }) %></select>
+  <button class="btn ghost" type="submit">Filter</button></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>LPO</th><th>Supplier / contractor</th><th>For</th><th>Project</th><th>Status</th><th class="num">Total</th><th>Date</th><th>Deliver by</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/lpo/<%= r.id %>"><%= r.ref %></a></td><td><a href="/suppliers/<%= r.supplier_id %>"><%= r.supplier_name %></a></td><td><%= r.title %></td>
+<td><%- r.project_ref ? '<a href="/projects/' + r.project_id + '">' + r.project_ref + '</a>' : '—' %></td><td><span class="tag <%= tone(r.status) %>"><%= PO.STATUS_LABELS[r.status] %></span></td>
+<td class="num"><%= r.currency %> <%= money(r.total) %></td><td><%= fmt.date(r.issue_date) %></td><td><%= r.delivery_date ? fmt.date(r.delivery_date) : '—' %><% if (r.late) { %> <span class="tag bad">late</span><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No purchase orders match.</p><% } %>
+<p class="muted">Download this list: <a href="/lpo/export?format=xlsx&status=<%= f.status %>&supplier=<%= f.supplier %>&q=<%= encodeURIComponent(f.q) %>">Excel</a> · <a href="/lpo/export?format=pdf&status=<%= f.status %>&supplier=<%= f.supplier %>&q=<%= encodeURIComponent(f.q) %>">PDF</a> · <a href="/lpo/export?format=csv&status=<%= f.status %>&supplier=<%= f.supplier %>&q=<%= encodeURIComponent(f.q) %>">CSV</a></p>
+<%- include('../partials/footer') %>

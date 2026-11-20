@@ -1,0 +1,8 @@
+<% var cur = typeof current !== 'undefined' ? current : ''; var fmtBy = function (by) { return Object.keys(by).map(function (c) { return c + ' ' + money(by[c]); }).join(' · '); };
+   var stages = [['draft', 'Drafts', 'not yet issued'], ['issued', 'Awaiting delivery', 'issued to the supplier'], ['late', 'Late', 'past the deliver-by date'], ['received', 'Received', 'waiting to be closed'], ['closed', 'Closed', 'complete']]; %>
+<div class="tiles lpotrack">
+<% stages.forEach(function (st) { var x = trk[st[0]]; %>
+  <a class="tile<%= st[0] === 'late' && x.n ? ' alert' : '' %><%= cur === st[0] ? ' on' : '' %>" href="<%= base %>status=<%= st[0] %>"><b><%= x.n %></b><span class="tl"><%= st[1] %></span><span><%= x.n ? fmtBy(x.by) : st[2] %></span></a>
+<% }) %>
+</div>
+<% if (trk.committed.n) { %><p class="muted">Committed, not yet closed (issued or received): <b><%= fmtBy(trk.committed.by) %></b> on <%= trk.committed.n %> order<%= trk.committed.n === 1 ? '' : 's' %>.</p><% } %>

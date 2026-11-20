@@ -128,6 +128,27 @@ function businessMinutesBetween(a, b, cal) {
 
 const TARGETS = ['response', 'restoration', 'resolution'];
 
+/**
+ * The targets this ticket has missed, kept for good: { response: { due, at }, ... }. A target is missed when it was met after
+ * its due time, or is still unmet and past due while the clock is running. Targets already on record are never removed, so
+ * recalculating a due date (reopening, a priority change) cannot hide an earlier breach.
+ */
+function breachRecord(ticket, now = new Date()) {
+  const out = { ...(ticket.sla_breaches || {}) };
+  const pairs = {
+    response: [ticket.response_due, ticket.responded_at],
+    restoration: [ticket.type === 'request' ? null : ticket.restoration_due, ticket.restored_at],
+    resolution: [ticket.resolution_due, ticket.resolved_at],
+  };
+  for (const [k, [due, met]] of Object.entries(pairs)) {
+    if (!due || out[k]) continue;
+    const dueD = new Date(due);
+    const at = met ? new Date(met) : (ticket.paused_at ? null : now);        // a paused clock is not running
+    if (at && at > dueD) out[k] = { due: dueD.toISOString(), at: at.toISOString() };
+  }
+  return out;
+}
+
 module.exports = {
-  localParts, zonedToUtc, validateSchedule, makeCalendar, addBusinessMinutes, businessMinutesBetween, TARGETS,
+  localParts, zonedToUtc, validateSchedule, makeCalendar, addBusinessMinutes, businessMinutesBetween, breachRecord, TARGETS,
 };

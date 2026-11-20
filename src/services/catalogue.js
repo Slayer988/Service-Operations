@@ -5,8 +5,24 @@ const audit = require('../lib/audit');
 
 const ICONS = ['grid', 'laptop', 'lock', 'mail', 'wifi', 'printer', 'server', 'shield', 'user', 'clipboard', 'code', 'headset', 'pulse', 'building', 'file', 'chart'];
 
-async function featured(q) {
+async function featured(q, customerId = null) {
+  if (customerId) return (await forCustomer(q, customerId)).filter((c) => c.featured).slice(0, 8);
   return (await q(`select name, category, icon, description, request_type from service_catalogue where active and featured order by sort_order, name limit 8`)).rows;
+}
+
+/**
+ * What a customer may see of the catalogue: only the services that are active on their own CSID(s), never the whole list.
+ * A service belongs to a catalogue entry by its catalogue link or, for older records, by having the same name as its type.
+ */
+async function forCustomer(q, customerId) {
+  return (await q(
+    `select c.id, c.name, c.description, c.icon, c.category, c.request_type, c.featured, c.sort_order,
+            array_agg(distinct cs.csid order by cs.csid) as csids
+       from service_catalogue c
+       join services s on s.status = 'active' and s.customer_id = $1 and (s.catalogue_id = c.id or lower(s.service_type) = lower(c.name))
+       join csids cs on cs.id = s.csid_id and cs.customer_id = s.customer_id and cs.status = 'active'
+      where c.active
+      group by c.id order by c.sort_order, c.name`, [customerId])).rows;
 }
 
 function read(b, categories) {
@@ -77,4 +93,4 @@ async function remove(db, actor, ip, id) {
   return { deleted: true, used: 0 };
 }
 
-module.exports = { ICONS, featured, read, create, update, remove };
+module.exports = { ICONS, featured, forCustomer, read, create, update, remove };

@@ -29,23 +29,28 @@ const baseToDomain = (base) => String(base || '').split(',').map((p) => /^DC=(.+
  *   port 636 -> ldaps://server:636 (the normal, encrypted way); port 389 -> STARTTLS; the search base comes from the domain.
  * Returns { config } in the stored shape (no password, no derived values) or { error } in plain words.
  */
+const SECURITY = ['ldaps', 'starttls', 'none'];
 function validateConfig(input) {
   let server = String(input.server || '').trim().replace(/^ldaps?:\/\//i, '');
-  let port = input.port === undefined || input.port === '' || input.port === null ? 636 : Number(input.port);
+  const noPort = input.port === undefined || input.port === '' || input.port === null;
+  let port = noPort ? null : Number(input.port);
   const m = /^([^:/]+):(\d{1,5})\/?$/.exec(server);               // someone pasted "dc1.corp.local:636"
-  if (m) { server = m[1]; if (input.port === undefined || input.port === '') port = Number(m[2]); }
+  if (m) { server = m[1]; if (noPort) port = Number(m[2]); }
   server = server.replace(/\/+$/, '');
+  // how the connection is protected: LDAPS (636), STARTTLS (389) or none (389, passwords travel unprotected)
+  const security = SECURITY.includes(input.security) ? input.security : (port === 389 ? 'starttls' : 'ldaps');
+  if (port === null) port = security === 'ldaps' ? 636 : 389;
   const c = {
     enabled: input.enabled === true || input.enabled === 'on',
-    server, port,
+    server, port, security,
     domain: String(input.domain || '').trim().toLowerCase(),
     service_user: String(input.service_user || '').trim().slice(0, 300),
     base_dn: String(input.base_dn || '').trim().slice(0, 500),
     ca_file: String(input.ca_file || '').trim(),
     default_role: STAFF_ROLES.includes(input.default_role) ? input.default_role : 'agent',
   };
-  if (c.server && !/^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/.test(c.server)) return { error: 'The server must be a name or address such as dc1.corp.local, with no "ldap://" or slashes.' };
-  if (!Number.isInteger(c.port) || c.port < 1 || c.port > 65535) return { error: 'The port must be a number from 1 to 65535 (636 is normal).' };
+  if (c.server && !/^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/.test(c.server)) return { error: 'The server must be an IPv4 address or a name such as dc1.corp.local, with no "ldap://" or slashes.' };
+  if (!Number.isInteger(c.port) || c.port < 1 || c.port > 65535) return { error: 'The port must be a number from 1 to 65535 (636 or 389 is normal).' };
   if (c.domain && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(c.domain)) return { error: 'The domain must look like corp.local.' };
   if (c.service_user && /[\u0000-\u001f]/.test(c.service_user)) return { error: 'The service account contains characters that are not allowed.' };
   if (c.base_dn && !/^[A-Za-z]+=.+/.test(c.base_dn)) return { error: 'The search base must look like DC=corp,DC=local.' };
@@ -63,11 +68,12 @@ function derive(stored) {
   if (!c.server && c.url) { const m = /^ldaps?:\/\/([^:/]+)(?::(\d+))?$/.exec(c.url); if (m) { c.server = m[1]; c.port = Number(m[2]) || (c.url.startsWith('ldaps') ? 636 : 389); } }
   if (!c.service_user && c.bind_dn) c.service_user = c.bind_dn;
   if (!c.domain && c.base_dn) c.domain = baseToDomain(c.base_dn);
-  c.port = Number(c.port) || 636;
+  c.security = SECURITY.includes(c.security) ? c.security : (Number(c.port) === 389 ? 'starttls' : 'ldaps');
+  c.port = Number(c.port) || (c.security === 'ldaps' ? 636 : 389);
   c.base_dn = c.base_dn || domainToBase(c.domain);
   c.default_role = STAFF_ROLES.includes(c.default_role) ? c.default_role : 'agent';
-  c.starttls = c.port === 389;
-  c.url = c.server ? `${c.starttls ? 'ldap' : 'ldaps'}://${c.server}:${c.port}` : '';
+  c.starttls = c.security === 'starttls';
+  c.url = c.server ? `${c.security === 'ldaps' ? 'ldaps' : 'ldap'}://${c.server}:${c.port}` : '';
   c.bind_dn = c.service_user ? bindName(c) : '';
   c.user_filter = DEFAULT_FILTER; c.email_attr = 'mail'; c.name_attr = 'displayName';
   return c;
@@ -91,6 +97,30 @@ function scrub(err, ...secrets) {
   return m.slice(0, 300);
 }
 
+/**
+ * A plain-words reason for a connection failure, then the technical message in brackets.
+ * cfg is the derived configuration (server, port, starttls).
+ */
+function explain(err, cfg, ...secrets) {
+  const raw = scrub(err, ...secrets);
+  const code = String((err && err.code) || '');
+  const where = cfg && cfg.server ? `${cfg.server} on port ${cfg.port}` : 'the server';
+  const msg = `${raw} ${code}`;
+  let hint = '';
+  if (isBadCredentials(err)) hint = 'The directory refused the service account or its password. Check the account name (try the form user@domain) and retype the password.';
+  else if (/ECONNRESET|socket hang up|EPIPE|before secure TLS connection|wrong version number/i.test(msg)) {
+    hint = `${where} answered and then closed the connection while setting up the encrypted link. This usually means that domain controller has no certificate for secure LDAP (LDAPS), or something between (firewall, load balancer) is cutting it. `
+      + (cfg && cfg.security === 'ldaps' ? 'You can try Connection security "STARTTLS" (port 389), which asks for encryption on the normal port, or "None" on a trusted network.' : 'Try Connection security "LDAPS" (port 636).')
+      + ' Both ways need a certificate installed on the domain controller. From this server, "openssl s_client -connect ' + (cfg && cfg.server ? cfg.server : 'dc') + ':636" shows whether it offers one.';
+  } else if (/integrity checking|strongerAuth|confidentiality required/i.test(msg) || code === '8') hint = 'The domain controller requires an encrypted or signed connection. Set Connection security to LDAPS or STARTTLS.';
+  else if (/ECONNREFUSED/i.test(msg)) hint = `Nothing is listening on ${where}. Check the server name and port, and that the firewall allows this server to reach it.`;
+  else if (/ETIMEDOUT|timed out|timeout/i.test(msg)) hint = `${where} did not answer in time. Usually a firewall between this server and the domain controller.`;
+  else if (/ENOTFOUND|EAI_AGAIN/i.test(msg)) hint = 'This server cannot find that server name. Check the spelling, or use a name that this server\'s DNS knows.';
+  else if (/self[- ]signed|unable to verify|UNABLE_TO_GET_ISSUER|CERT_|certificate/i.test(msg) && !/Hostname\/IP/i.test(msg)) hint = 'The domain controller\'s certificate is not trusted by this server. Copy your company CA certificate (PEM) to the server and enter its path under Advanced, "Certificate file".';
+  else if (/Hostname\/IP|altnames|does not match/i.test(msg)) hint = 'The certificate was issued for a different name than the one you typed. Use the exact server name that is on the certificate (the full name, such as dc1.corp.local, not an IP address).';
+  return hint ? `${hint} (${raw})` : raw;
+}
+
 let clientFactory = null;   // tests only: replaces the real LDAP client
 async function newClient(cfg) {
   if (clientFactory) return clientFactory(cfg);
@@ -98,7 +128,7 @@ async function newClient(cfg) {
   const tlsOptions = { rejectUnauthorized: true };
   if (cfg.ca_file) tlsOptions.ca = [fs.readFileSync(cfg.ca_file)];
   const client = new Client({ url: cfg.url, timeout: 10000, connectTimeout: 5000, tlsOptions });
-  if (cfg.url.startsWith('ldap://') && cfg.starttls) await client.startTLS(tlsOptions);
+  if (cfg.url.startsWith('ldap://') && cfg.starttls) await client.startTLS(tlsOptions);      // security "none": the plain connection is used as it is
   return client;
 }
 
@@ -189,6 +219,29 @@ async function testConnection(cfg, svcPassword) {
 }
 
 /**
+ * "Discover": connect with the typed settings and find out what the directory can tell us: the search base (the domain's naming
+ * context) and the service account's own distinguished name. Returns { base_dn, user_dn }.
+ */
+async function discover(cfg, svcPassword) {
+  const svc = await serviceClient(cfg, svcPassword);
+  try {
+    let base = '';
+    try {
+      const root = (await svc.search('', { scope: 'base', filter: '(objectClass=*)', attributes: ['defaultNamingContext'] })).searchEntries[0];
+      base = root ? first(root.defaultNamingContext) : '';
+    } catch (e) { if (!isNoSuchObject(e)) throw e; }
+    if (!base) base = cfg.base_dn;
+    const sam = String(cfg.service_user).split('\\').pop().split('@')[0];
+    let userDn = '';
+    try {
+      const f = (await svc.search(base, { scope: 'sub', filter: `(&(objectClass=user)(sAMAccountName=${escapeFilter(sam)}))`, attributes: ['dn'], sizeLimit: 2 })).searchEntries[0];
+      userDn = f ? f.dn : '';
+    } catch (e) { if (!isNoSuchObject(e) && !isTooMany(e)) throw e; }
+    return { base_dn: base, user_dn: userDn };
+  } finally { await close(svc); }
+}
+
+/**
  * Re-read directory accounts by distinguished name. One result per DN: { dn, state: 'ok'|'gone'|'disabled', user }.
  * Used to import the people an administrator ticked (so the details come from the directory, not from the browser) and for
  * the hourly check. Throws if the directory is unreachable so that nobody is switched off because of a network problem.
@@ -210,6 +263,6 @@ async function recheck(cfg, svcPassword, dns) {
 
 module.exports = {
   _useClientFactory: (f) => { clientFactory = f; },
-  DEFAULT_FILTER, escapeFilter, buildUserFilter, validateConfig, derive, bindName, isConfigured, domainToBase, baseToDomain, isDisabled,
-  authenticate, searchUsers, testConnection, recheck, scrub,
+  DEFAULT_FILTER, escapeFilter, buildUserFilter, validateConfig, derive, bindName, isConfigured, domainToBase, baseToDomain, isDisabled, explain,
+  authenticate, searchUsers, testConnection, recheck, discover, SECURITY, scrub,
 };

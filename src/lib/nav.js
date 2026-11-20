@@ -16,6 +16,7 @@ function build(user, ctx, counts = {}) {
       { label: 'Submit Request', href: '/portal/tickets/new', icon: 'plus', on: path === '/portal/tickets/new' },
       { label: 'My Services', href: '/portal/services', icon: 'grid', on: path === '/portal/services' },
       { label: 'Service Catalogue', href: '/portal/catalogue', icon: 'clipboard', on: path === '/portal/catalogue' },
+      { label: 'Help Articles', href: '/portal/help', icon: 'book', on: starts('/portal/help') },
     ];
     if (user.role === 'customer_admin') items.push({ label: 'Our Users', href: '/portal/users', icon: 'users', on: path === '/portal/users' });
     return [items];
@@ -34,6 +35,7 @@ function build(user, ctx, counts = {}) {
     can('ticket.view') && { label: 'Service Requests', href: '/tickets?type=request', icon: 'shield', on: req },
     can('ticket.view') && { label: 'All Tickets', href: '/tickets', icon: 'list', on: starts('/tickets') && path !== '/tickets/new' && !mine && !inc && !req },
     can('customer.view') && { label: 'Customers', href: '/customers', icon: 'building', on: starts('/customers', '/services', '/customer-contracts') },
+    can('kb.view') && { label: 'Knowledge Base', href: '/kb', icon: 'book', on: starts('/kb') },
     { label: 'Reports', href: '/reports', icon: 'chart', on: starts('/reports') },
   ].filter(Boolean);
   const business = [
@@ -42,6 +44,9 @@ function build(user, ctx, counts = {}) {
     can('contract.view') && { label: 'Contracts', href: '/contracts', icon: 'file', on: starts('/contracts') },
     can('tender.view') && { label: 'Tender Management', href: '/tenders', icon: 'clipboard', on: starts('/tenders') },
     (can('pipeline.view') || can('pipeline.support')) && { label: can('pipeline.view') ? 'Pipeline Tracker' : 'My Opportunities', href: '/pipeline', icon: 'funnel', on: starts('/pipeline') },
+    can('quote.view') && { label: 'Quotes', href: '/quotes', icon: 'dollar', on: starts('/quotes') },
+    // the register and the purchase orders (LPO tracker) are one module, with tabs
+    (can('supplier.view') || can('lpo.view')) && { label: 'Suppliers & Contractors', href: can('supplier.view') ? '/suppliers' : '/lpo', icon: 'users', on: starts('/suppliers', '/lpo') },
   ].filter(Boolean);
   return [main, business].filter((g) => g.length);
 }

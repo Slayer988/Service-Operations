@@ -9,6 +9,12 @@ const tickets = require('../services/tickets');
 const inbound = require('../services/inbound');
 const mailhealth = require('../services/mailhealth');
 const providers = require('../services/providers');
+const outgoing = require('../services/outgoing');
+const secretsLib = require('../lib/secrets');
+const { secretOf, hasStoredSecret } = require('../services/providers/common');
+const mailer = require('../lib/mailer');
+const smtpLib = require('../lib/smtp');
+const config = require('../config');
 const { wrap } = require('./util');
 const { requireStaff, requirePerm } = require('../middleware/auth');
 
@@ -31,8 +37,8 @@ router.get('/mail', requireStaff, requirePerm('mail.view'), wrap(async (req, res
   const stats = Object.fromEntries((await q(
     `select mailbox_id, count(*) filter (where received_at > now() - interval '24 hours')::int as n24, max(received_at) as last_at from inbound_messages group by mailbox_id`)).rows.map((r) => [r.mailbox_id, r]));
   const health = Object.fromEntries(mailboxes.map((m) => [m.id, mailhealth.assess(m)]));
-  const secretsConfigured = Object.fromEntries(mailboxes.map((m) => [m.id, !!(m.secret_env && process.env[m.secret_env])]));
-  res.render('staff/mail', { title: 'Mailboxes and e-mail', providerList: providers.names, providerLabels: Object.fromEntries(Object.entries(providers.providers).map(([k, v]) => [k, v.label])), maxMailboxes: MAX_MAILBOXES, mailboxes, messages, policies, notifications, outcome: outcome || '', secretsConfigured, stats, health, canManage: perms.can(req.user, 'mail.manage') });
+  const secretState = Object.fromEntries(mailboxes.map((m) => [m.id, { stored: hasStoredSecret(m) && !!secretsLib.decrypt(m.secret_enc), lost: hasStoredSecret(m) && !secretsLib.decrypt(m.secret_enc), envSet: !!(m.secret_env && process.env[m.secret_env]), any: !!secretOf(m, process.env) }]));
+  res.render('staff/mail', { title: 'Mailboxes and e-mail', providerList: providers.names, providerLabels: Object.fromEntries(Object.entries(providers.providers).map(([k, v]) => [k, v.label])), maxMailboxes: MAX_MAILBOXES, mailboxes, messages, policies, notifications, outcome: outcome || '', secretState, stats, health, canManage: perms.can(req.user, 'mail.manage'), out: await outgoing.view({ query: q }), meEmail: req.user.email });
 }));
 
 router.get('/mail/messages/:id', requireStaff, requirePerm('mail.view'), wrap(async (req, res) => {
@@ -96,6 +102,17 @@ router.post('/mail/mailboxes/:id', requireStaff, requirePerm('mail.manage'), wra
   const tenant = u.str(b.tenant_id, 100); const client = u.str(b.client_id, 60);
   if (tenant && !/^[A-Za-z0-9.-]{3,100}$/.test(tenant)) throw new tickets.UserError('The Microsoft tenant ID is a GUID (or your .onmicrosoft.com domain).');
   if (client && !/^[0-9a-fA-F-]{36}$/.test(client)) throw new tickets.UserError('The application (client) ID is a GUID such as 11111111-2222-3333-4444-555555555555.');
+  // the password, client secret or key typed on this page: stored encrypted; empty keeps what is saved
+  const typed = String(b[`secret_${provider}`] || '').trim();                     // one box per way of reading; only the chosen one is used
+  let secretEnc = provider === before.provider ? before.secret_enc : '';                      // a secret belongs to the way the mailbox is read
+  if (typed) {
+    if (typed.length > 20000) throw new tickets.UserError('That is too long to be a password, secret or key.');
+    if (provider === 'gmail') {
+      let k = null; try { k = JSON.parse(typed); } catch (_) { /* reported below */ }
+      if (!k || !k.client_email || !k.private_key) throw new tickets.UserError('Paste the whole contents of the Google service-account key file (the JSON that contains client_email and private_key).');
+    } else if (typed.length > 500 || /[\r\n]/.test(typed)) throw new tickets.UserError('That does not look like a password or client secret. Type or paste just the secret, on one line.');
+    secretEnc = secretsLib.encrypt(typed);
+  } else if (b.clear_secret === 'on') secretEnc = '';
   const folder = u.str(b.imap_folder, 100) || 'INBOX';
   if (!/^[A-Za-z0-9 ._/&-]{1,100}$/.test(folder)) throw new tickets.UserError('The folder name may contain letters, digits, spaces and . _ / - only.');
   // A different account or folder is a different message stream: start again from "unread mail of the last two days".
@@ -109,15 +126,15 @@ router.post('/mail/mailboxes/:id', requireStaff, requirePerm('mail.manage'), wra
               provider = $19, tenant_id = $20, client_id = $21, queue = $22,
               last_uid = case when $23 then null else last_uid end, uid_validity = case when $23 then null else uid_validity end,
               last_received_at = case when $23 then null else last_received_at end,
-              consecutive_failures = case when $23 then 0 else consecutive_failures end
+              consecutive_failures = case when $23 then 0 else consecutive_failures end, secret_enc = $24
         where id = $1 returning key`,
       [id, name, address, u.str(b.category, 60) || 'General', u.intIn(b.default_priority, 1, 4) || 3, u.oneOf(b.tier, ['l1', 'l2', 'l3'], 'l1'), u.id(b.sla_policy_id),
         u.str(b.imap_host, 200), u.intIn(b.imap_port, 1, 65535) || 993, b.imap_tls === 'on', u.str(b.imap_user, 200), secretEnv,
         u.intIn(b.poll_seconds, 30, 3600) || 60, u.intIn(b.max_attachment_mb, 1, 25) || 10, b.enabled === 'on', folder, b.mark_seen === 'on',
-        u.intIn(b.stale_minutes, 2, 1440) || 15, provider, tenant, client, queue, restart]);
+        u.intIn(b.stale_minutes, 2, 1440) || 15, provider, tenant, client, queue, restart, secretEnc]);
   } catch (err) { throw dbFailure(err); }
-  await audit({ query: q }, req.user, 'mailbox_updated', 'mailbox', r.rows[0].key, `${provider}, enabled=${b.enabled === 'on'}`, null, req.ip);
-  req.flash('success', 'Mailbox settings saved. Passwords, secrets and key files are never stored here: they are read from the server environment file.');
+  await audit({ query: q }, req.user, 'mailbox_updated', 'mailbox', r.rows[0].key, `${provider}, enabled=${b.enabled === 'on'}${typed ? ', secret changed' : (b.clear_secret === 'on' ? ', secret removed' : '')}`, null, req.ip);
+  req.flash('success', `Mailbox settings saved.${typed ? ' The secret is stored encrypted and will not be shown again.' : ''} Use "Test connection" to check them.`);
   res.redirect(`/mail#mb-${r.rows[0].key}`);
 }));
 
@@ -141,6 +158,35 @@ router.post('/mail/mailboxes/:id/test', requireStaff, requirePerm('mail.manage')
   await audit({ query: q }, req.user, 'mailbox_tested', 'mailbox', mb.key, r.ok ? 'ok' : 'failed', null, req.ip);
   req.flash(r.ok ? 'success' : 'error', `${mb.name}: ${r.message}`);
   res.redirect('/mail');
+}));
+
+// ---- outgoing mail (SMTP): the server, the sign-in and the From address used for every notification the application sends
+router.post('/mail/outgoing', requireStaff, requirePerm('mail.manage'), wrap(async (req, res) => {
+  const b = req.body;
+  const saved = await outgoing.saveConfig({ query: q }, { server: b.server, port: b.port, security: b.security, user: b.user, password: b.password, from_address: b.from_address, from_name: b.from_name, allow_untrusted: b.allow_untrusted });
+  if (saved.error) throw new tickets.UserError(saved.error);
+  const c = saved.config;
+  await audit({ query: q }, req.user, 'smtp_settings_saved', 'settings', 'smtp', c.server ? `${c.server}:${c.port} ${c.security}${c.user ? `, user ${c.user}` : ', no sign-in'}${saved.password_changed ? ', password changed' : ''}` : 'cleared', null, req.ip);
+  req.flash('success', c.server ? 'Saved. Use "Send test email" to check it.' : 'Saved. No mail server is set here any more.');
+  res.redirect('/mail#outgoing');
+}));
+
+router.post('/mail/outgoing/test', requireStaff, requirePerm('mail.manage'), wrap(async (req, res) => {
+  const to = u.str(req.body.to, 254).toLowerCase() || req.user.email;
+  if (!/^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/.test(to)) throw new tickets.UserError('Enter the e-mail address to send the test to.');
+  const eff = await outgoing.effective({ query: q });
+  if (eff.source === 'none') throw new tickets.UserError('Enter and save the mail server first.');
+  let ok = false; let message;
+  try {
+    await mailer.deliver(eff, { to, subject: `Test message from ${config.appName}`, text: `This is a test message from ${config.appName}.\n\nIt was sent by ${req.user.name} (${req.user.email}) to check the outgoing mail settings. If you can read it, notifications will reach people.\n` });
+    ok = true; message = `The mail server ${eff.server} accepted the test message for ${to}. Check that inbox; if it does not arrive, look in the junk folder.`;
+  } catch (err) {
+    message = `The test message was not sent. ${smtpLib.explain(err, eff, eff.password)}`;
+  }
+  await outgoing.recordTest({ query: q }, ok, to, ok ? 'accepted' : message);
+  await audit({ query: q }, req.user, 'smtp_tested', 'settings', 'smtp', `${ok ? 'ok' : 'failed'} to ${to}`, null, req.ip);
+  req.flash(ok ? 'success' : 'error', message);
+  res.redirect('/mail#outgoing');
 }));
 
 router.post('/mail/notifications/:id/retry', requireStaff, requirePerm('mail.manage'), wrap(async (req, res) => {

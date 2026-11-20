@@ -17,7 +17,7 @@
       <p><label for="urgency">Urgency</label><select id="urgency" name="urgency"><option value="1">High</option><option value="2" selected>Medium</option><option value="3">Low</option></select></p>
     </div>
     <p><label for="subject">Subject</label><input id="subject" name="subject" maxlength="200" required value="<%= form.subject || '' %>"></p>
-    <p><label for="description">Description</label><textarea id="description" name="description" rows="6"><%= form.description || '' %></textarea></p>
+    <p><label for="description">Description</label><textarea id="description" name="description" rows="6" data-rich data-rich-format="description_format"><%= form.description || '' %></textarea></p>
     <p><label for="files">Attachments</label><input id="files" name="files" type="file" multiple></p>
     <button class="btn" type="submit">Create ticket</button>
   </form>

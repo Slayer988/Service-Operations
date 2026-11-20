@@ -98,6 +98,8 @@
 <p><label>Date</label><input type="date" name="event_date"></p><p><label>Response due</label><input type="date" name="due_date"></p><p><label>Responded on</label><input type="date" name="responded_on"></p><p><label>Score</label><input name="score" inputmode="decimal"></p>
 <p><label>Outcome</label><input name="outcome" maxlength="300"></p><p><label>Notes</label><input name="notes" maxlength="1000"></p></div><button class="btn" type="submit">Record</button></form></details><% } %></section>
 
+<% if (sw) { %><%- include('../partials/supplier_work', { sw: sw, swType: 'tender', swId: t.id, swCanLink: swCanLink, swCanUpload: swCanUpload, swCanLpo: swCanLpo, swSuppliers: swSuppliers }) %><% } %>
+
 <section class="card" id="team"><h2>Bid team</h2>
 <table class="grid"><thead><tr><th>Name</th><th>Role</th><th></th></tr></thead><tbody>
 <% members.forEach(function (m) { %><tr><td><%= m.name %></td><td><%= T.MEMBER_ROLES[m.role] || m.role %></td><td><% if (canManage) { %><form method="post" action="/tenders/<%= t.id %>/members/<%= m.user_id %>/remove" class="inline"><%- include('../partials/csrf') %><button class="link danger" type="submit" data-confirm="Remove <%= m.name %> from the team?">Remove</button></form><% } %></td></tr><% }) %></tbody></table>

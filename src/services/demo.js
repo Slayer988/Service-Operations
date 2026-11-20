@@ -46,6 +46,9 @@ async function status(db) {
     deals: await n('select count(*)::int as n from opportunities where notes like $1', [`${TAG}%`]),
     projects: await n('select count(*)::int as n from projects where description like $1', [`${TAG}%`]),
     articles: await n('select count(*)::int as n from kb_articles where summary like $1', [`${TAG}%`]),
+    quotes: await n('select count(*)::int as n from quotes where internal_notes like $1', [`${TAG}%`]),
+    suppliers: await n('select count(*)::int as n from suppliers where notes like $1', [`${TAG}%`]),
+    lpos: await n('select count(*)::int as n from purchase_orders where internal_notes like $1', [`${TAG}%`]),
   };
 }
 const isEmpty = (s) => Object.values(s).every((v) => v === 0);
@@ -56,6 +59,7 @@ const STAFF = [
   ['engineer1', 'David Mugisha', 'engineer'], ['engineer2', 'Esther Namutebi', 'engineer'], ['soc', 'Felix Kato', 'security_analyst'],
   ['contracts', 'Grace Akello', 'contract_manager'], ['bd', 'Henry Ssemwogerere', 'bd_manager'], ['bids', 'Irene Nabirye', 'bid_manager'],
   ['sde', 'James Opio', 'sde'], ['finance', 'Kevin Lutaaya', 'finance'], ['executive', 'Lydia Namara', 'management'], ['depthead', 'Moses Byaruhanga', 'dept_head'],
+  ['procurement', 'Nora Kirabo', 'procurement'],
 ];
 
 const CUSTOMERS = [
@@ -317,7 +321,106 @@ async function load(db, { now = new Date() } = {}) {
   await db.query(`insert into weekly_highlights (week_start, top_presales, major_delivery, updated_by) values ($1,$2,$3,$4) on conflict (week_start) do nothing`, [monday, `${TAG} Two deals moved to negotiation and closing; the tender for the security operations centre is under evaluation.`, `${TAG} Hospital cabling is finished; the warehouse project needs a decision on extra budget.`, U.manager]);
   await db.query(`insert into weekly_highlights (week_start, top_presales, major_delivery, updated_by) values ($1,$2,$3,$4) on conflict (week_start) do nothing`, [lastMonday, `${TAG} Cybersecurity assessment won; office relocation services won.`, `${TAG} Core banking migration kicked off.`, U.manager]);
   await loadArticles(db, U, await demoCustomerIds(db));
+  await loadQuotes(db, U, oppIds, cur, now);
+  await loadProcurement(db, U, cur, now);
+  await loadExtras(db, U, oppIds, cur, now);
   return status(db);
+}
+
+/** The rest of every module, so each screen and tab has something in it: contract obligations, payments, SLA performance, reviews and
+ *  amendments; deal tasks, proposals, solution work and effort; tender reviews and evaluations; formatted ticket comments; article votes;
+ *  e-mail domains for requests without signing in. Nothing here sends e-mail. */
+async function loadExtras(db, U, oppIds, cur, now) {
+  const q = (sql, p = []) => db.query(sql, p);
+  const day = (n) => ymd(addDays(now, n));
+  // ---- customers: e-mail domains, so "Raise a request with your work e-mail and your CSID" can be tried
+  for (const [code, dom] of [['DEMO-KCB', 'kcb.demo.invalid'], ['DEMO-LVH', 'lakeview.demo.invalid'], ['DEMO-NLL', 'nilelogistics.demo.invalid']]) {
+    await q('update customers set email_domains = $2 where code = $1', [code, [dom]]);
+  }
+  // ---- tickets: a few comments written with the formatting toolbar
+  const open = (await q(`select t.id, t.assignee_id, t.requester_id from tickets t join customers c on c.id = t.customer_id where c.code like 'DEMO%' and t.status in ('open','in_progress') order by t.id limit 4`)).rows;
+  const RICH = [
+    '**Update:** we found the cause.\n\n- The link to the branch dropped at **09:40**\n- The provider has replaced a faulty module\n- We are watching it for one more hour\n\nWe will confirm before we close the ticket.',
+    'Steps we took:\n\n1. Restarted the service\n2. Cleared the cache\n3. Tested with *two* users\n\n__Please try again__ and tell us if the problem is still there.',
+    '~~Planned for tonight~~ moved to **Saturday 22:00** at your request. Expected downtime: 15 minutes.',
+    '> Internal: the root cause is a full disk on the backup server.\n\nNext: **extend the volume** and move old backups to the archive.',
+  ];
+  for (const [i, t] of open.entries()) {
+    await q(`insert into ticket_comments (ticket_id, author_id, body, internal, source, format, created_at) values ($1,$2,$3,$4,'agent','rich',$5)`,
+      [t.id, t.assignee_id || U.agent1, RICH[i], i === 3, new Date(now.getTime() - (30 + i * 10) * 60000)]);
+  }
+  // ---- contracts: contacts, obligations, payments, measured SLA performance, approvals, an amendment and history
+  const cons = (await q(`select c.id, c.title, c.customer_id, c.value, c.annual_value, c.status, c.counterparty_kind from contracts c where c.notes like $1 or c.customer_id in (select id from customers where code like 'DEMO%') order by c.id`, [`${TAG}%`])).rows;
+  for (const [i, c] of cons.entries()) {
+    await q('insert into contract_events (contract_id, actor_id, kind, text, created_at) values ($1,$2,$3,$4,$5)', [c.id, U.contracts, 'created', `Grace Akello created the contract. ${TAG}`, addDays(now, -120 + i)]);
+    await q('insert into contract_contacts (contract_id, user_id) values ($1,$2), ($1,$3) on conflict do nothing', [c.id, U.contracts, U.manager]);
+    if (!c.customer_id || c.status === 'expired') continue;
+    const quarter = Math.round(Number(c.annual_value || c.value || 0) / 4);
+    for (const [k, [due, st, paid]] of [[-80, 'paid', -75], [10, 'invoiced', null], [100, 'scheduled', null], [-170, 'paid', -160]].entries()) {
+      await q('insert into contract_payments (contract_id, due_date, description, amount, status, paid_on) values ($1,$2,$3,$4,$5,$6)', [c.id, day(due), `Quarterly service fee (instalment ${k + 1})`, quarter, st, paid === null ? null : day(paid)]);
+    }
+    const obl = [['deliverable', 'Monthly service report', 'Availability, tickets and SLA results for the month.', 'open', 8], ['milestone', 'Quarterly service review meeting', 'Review the quarter with the customer.', 'done', -20],
+      ['obligation', 'Disaster recovery test', 'Restore one critical system from backup and record the result.', i === 0 ? 'open' : 'in_progress', i === 0 ? -6 : 25]];
+    for (const [kind, title, desc, st, due] of obl) {
+      await q('insert into contract_obligations (contract_id, kind, title, description, responsible_id, due_date, status, completed_at) values ($1,$2,$3,$4,$5,$6,$7,$8)', [c.id, kind, title, desc, U.manager, day(due), st, st === 'done' ? addDays(now, due) : null]);
+    }
+    const targets = (await q('select id, metric, target from contract_sla_targets where contract_id = $1', [c.id])).rows;
+    for (const t of targets) {
+      for (let m = 3; m >= 1; m--) {
+        const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - m, 1)); const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - m + 1, 0));
+        const tg = Number(t.target);
+        const measured = t.metric === 'availability' ? Math.min(100, +(tg + (m === 2 && i === 0 ? -0.35 : 0.05 * m)).toFixed(3)) : +(tg * (m === 1 && i === 1 ? 1.25 : 0.6 + 0.1 * m)).toFixed(2);
+        await q('insert into contract_performance (contract_id, sla_target_id, period_start, period_end, measured, note, recorded_by) values ($1,$2,$3,$4,$5,$6,$7)',
+          [c.id, t.id, ymd(start), ymd(end), measured, `${TAG} from the monthly service report`, U.manager]);
+      }
+    }
+  }
+  const firstCustomerContract = cons.find((c) => c.customer_id && c.status !== 'expired');
+  if (firstCustomerContract) {
+    for (const [stage, who, decision, comment] of [['legal', U.contracts, 'approved', 'Liability cap and data protection clauses are acceptable.'], ['finance', U.finance, 'approved', 'Pricing and payment terms agreed.'], ['management', U.executive, 'changes_requested', 'Add a clause for the annual price review.']]) {
+      await q('insert into contract_reviews (contract_id, stage, reviewer_id, decision, comment) values ($1,$2,$3,$4,$5)', [firstCustomerContract.id, stage, who, decision, comment]);
+    }
+    await q(`insert into contract_amendments (contract_id, kind, effective_date, description, old_value, new_value, created_by) values ($1,'variation',$2,'Two more branches added to the network support scope.',$3,$4,$5)`,
+      [firstCustomerContract.id, day(-30), firstCustomerContract.value, Math.round(Number(firstCustomerContract.value) * 1.12), U.contracts]);
+  }
+  const cisco = cons.find((c) => /Cisco/.test(c.title) || c.status === 'renewal_in_progress');
+  if (cisco) await q(`insert into contract_amendments (contract_id, kind, effective_date, description, created_by) values ($1,'extension',$2,'Extended by three months while the renewal is negotiated.',$3)`, [cisco.id, day(-10), U.contracts]);
+  // ---- deals: engineering tasks with history, proposals, solution work and effort
+  const deal = async (oi) => oppIds[oi];
+  const o0 = await deal(0); const o1 = await deal(1); const o3 = await deal(3);
+  await q('insert into opportunity_engineers (opportunity_id, user_id, assigned_by) values ($1,$2,$3) on conflict do nothing', [o0, U.engineer1, U.bd]);
+  const TASKS = [[o0, 'Site survey of the data centre', U.sde, 'high', -12, -2, 'completed', 100], [o0, 'Size the new server and storage platform', U.sde, 'high', -5, 4, 'in_progress', 60],
+    [o0, 'Migration runbook draft', U.engineer1, 'normal', 0, -1, 'in_progress', 30], [o1, 'Wireless heat-map for the branches', U.sde, 'urgent', -6, 3, 'pending', 0]];
+  for (const [o, title, who, pr, startIn, dueIn, st, prog] of TASKS) {
+    const t = (await q(`insert into opp_tasks (opportunity_id, title, description, assignee_id, priority, start_date, due_date, status, progress, work_notes, completed_at, created_by)
+                        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id, ref`,
+      [o, title, `${TAG} sample engineering task`, who, pr, day(startIn), day(dueIn), st, prog, st === 'pending' ? '' : 'Notes from the work so far are kept here.', st === 'completed' ? addDays(now, dueIn) : null, U.bd])).rows[0];
+    await q('insert into opp_task_history (task_id, actor_id, text, created_at) values ($1,$2,$3,$4)', [t.id, U.bd, `Henry Ssemwogerere created the task and assigned it.`, addDays(now, startIn)]);
+    if (st !== 'pending') await q('insert into opp_task_history (task_id, actor_id, text) values ($1,$2,$3)', [t.id, who, `Progress ${prog}%${st === 'completed' ? ', completed' : ''}.`]);
+  }
+  for (const [o, kind, ref, due, sub, st] of [[o0, 'technical_submission', 'TS-CBK-01', 12, null, 'preparing'], [o1, 'proposal', 'PR-WIFI-02', -4, -4, 'submitted'], [o3, 'quotation', 'QT-BKP-03', -10, -11, 'submitted']]) {
+    await q('insert into opportunity_proposals (opportunity_id, kind, reference, due_date, submitted_on, status, prepared_by, notes) values ($1,$2,$3,$4,$5,$6,$7,$8)', [o, kind, ref, day(due), sub === null ? null : day(sub), st, U.sde, TAG]);
+  }
+  for (const [kind, title, st] of [['design', 'High-level design: two-site active/standby', 'completed'], ['sizing', 'Compute and storage sizing (5-year growth)', 'completed'], ['bom', 'Bill of materials with distributor pricing', 'in_progress']]) {
+    await q('insert into opportunity_solution_items (opportunity_id, kind, title, description, status, author_id) values ($1,$2,$3,$4,$5,$6)', [o0, kind, title, `${TAG} sample solution work`, st, U.sde]);
+  }
+  for (const [who, name, skill, plan, act] of [[U.sde, 'James Opio', 'Solution architecture', 40, 22], [U.engineer1, 'David Mugisha', 'Data centre engineering', 16, 4]]) {
+    await q('insert into opportunity_resources (opportunity_id, user_id, name, skill, planned_hours, actual_hours, notes) values ($1,$2,$3,$4,$5,$6,$7)', [o0, who, name, skill, plan, act, TAG]);
+  }
+  // ---- tenders: approvals before submission, evaluation steps after it, and history
+  const tends = (await q(`select id, status, title from tenders where notes like $1 order by id`, [`${TAG}%`])).rows;
+  for (const t of tends) await q('insert into tender_events (tender_id, actor_id, kind, text, at) values ($1,$2,$3,$4,$5)', [t.id, U.bids, 'created', `Irene Nabirye registered the tender. ${TAG}`, addDays(now, -40)]);
+  const prep = tends.filter((t) => t.status === 'bid_preparation');
+  if (prep[0]) for (const [stage, who, d, c] of [['technical', U.sde, 'approved', 'Technical proposal complete and compliant.'], ['commercial', U.finance, 'approved', 'Margin 18%, within policy.']]) await q('insert into tender_reviews (tender_id, stage, reviewer_id, decision, comment) values ($1,$2,$3,$4,$5)', [prep[0].id, stage, who, d, c]);
+  if (prep[1]) await q(`insert into tender_reviews (tender_id, stage, reviewer_id, decision, comment) values ($1,'technical',$2,'changes_requested','Add the warranty terms for the laptops.')`, [prep[1].id, U.sde]);
+  for (const t of tends.filter((x) => ['submitted', 'under_evaluation', 'awarded', 'unsuccessful'].includes(x.status))) {
+    await q(`insert into tender_evaluations (tender_id, kind, title, event_date, due_date, responded_on, outcome, notes, created_by) values ($1,'clarification','Clarification on the support hours',$2,$3,$4,'Answered',$5,$6)`, [t.id, day(-12), day(-10), day(-11), TAG, U.bids]);
+    if (t.status !== 'submitted') await q(`insert into tender_evaluations (tender_id, kind, title, event_date, score, outcome, notes, created_by) values ($1,'score','Technical evaluation',$2,$3,$4,$5,$6)`, [t.id, day(-8), t.status === 'unsuccessful' ? 64 : 82, t.status === 'unsuccessful' ? 'Below the winning score' : 'Passed to the financial stage', TAG, U.bids]);
+  }
+  // ---- Knowledge Base: readers' votes
+  const arts = (await q(`select id from kb_articles where summary like $1 and status = 'published' order by id`, [`${TAG}%`])).rows;
+  const voters = (await q(`select id from users where email like $1 order by id limit 6`, [`%@${DEMO_DOMAIN}`])).rows;
+  for (const [i, a] of arts.entries()) for (const [j, v] of voters.entries()) if ((i + j) % 3 !== 0) await q('insert into kb_votes (article_id, user_id, helpful) values ($1,$2,$3) on conflict do nothing', [a.id, v.id, (i + j) % 5 !== 0]);
 }
 
 /** Knowledge Base articles: some for staff only, some for customers, one still a draft; a few are linked to demo tickets. */
@@ -337,6 +440,96 @@ const ARTICLES = [
   ['New starter checklist', 'Procedures', 'internal', 'draft', 'onboarding starter', 'Draft: what to prepare for a new employee.',
     '- Create the account and mailbox\n- Order a laptop\n- Add to the department group\n- Book a 30 minute induction'],
 ];
+
+// Quotes on four of the deals: one sent, one revised after negotiation (R1 superseded, R2 sent with a discount), one accepted, one draft.
+async function loadQuotes(db, U, oppIds, cur, now) {
+  const Q = require('./quotes');
+  const bd = { id: U.bd, name: 'Henry Ssemwogerere', email: `bd@${DEMO_DOMAIN}`, kind: 'staff', role: 'bd_manager' };
+  const s = await Q.listSettings(db);
+  const today = ymd(now);
+  const make = async (oppIndex, lines, extra = {}) => {
+    const d = await Q.defaults(db, oppIds[oppIndex], today);
+    const h = { ...d, currency: cur, valid_until: ymd(addDays(now, 30)), tax_rate: s.taxRate, tax_label: s.taxLabel, internal_notes: `${TAG} sample quote`, intro: 'Thank you for the opportunity to quote. Our proposal is set out below.', customer_id: d.customer_id || null, opportunity_id: d.opportunity_id || null, ...extra };
+    let q = await Q.create(db, h, bd, '');
+    q = await Q.saveLines(db, q, lines.map(([description, quantity, unit, unit_price, discount_pct = 0]) => ({ description, quantity, unit, unit_price, discount_pct, line_total: Q.lineTotal(quantity, unit_price, discount_pct) })), bd);
+    return q;
+  };
+  // 1: Branch Wi-Fi and SD-WAN rollout (proposal submission): sent
+  let q1 = await make(1, [['SD-WAN edge appliance', 12, 'each', 18500000], ['Wi-Fi 6 access point', 40, 'each', 2400000], ['Installation and configuration', 12, 'site', 3500000], ['Managed SD-WAN service', 12, 'month', 9800000]]);
+  q1 = await Q.setStatus(db, q1, 'sent', bd, { note: 'E-mailed to the IT manager.' });
+  // 2: Managed backup for clinics (negotiation): R1 sent, then revised with a discount and sent again
+  let q2 = await make(3, [['Backup appliance', 2, 'each', 32000000], ['Cloud backup storage (10 TB)', 12, 'month', 6500000], ['Onboarding and restore testing', 1, 'project', 12000000]]);
+  q2 = await Q.setStatus(db, q2, 'sent', bd, { note: 'First offer.' });
+  let q2b = await Q.revise(db, q2, bd, '');
+  q2b = await Q.saveLines(db, q2b, [['Backup appliance', 2, 'each', 32000000, 5], ['Cloud backup storage (10 TB)', 12, 'month', 6500000, 10], ['Onboarding and restore testing', 1, 'project', 12000000]]
+    .map(([description, quantity, unit, unit_price, discount_pct = 0]) => ({ description, quantity, unit, unit_price, discount_pct, line_total: Q.lineTotal(quantity, unit_price, discount_pct) })), bd);
+  await Q.setStatus(db, q2b, 'sent', bd, { note: 'Revised after the commercial meeting: discount on hardware and storage.' });
+  // 3: Cybersecurity assessment (won): accepted
+  let q3 = await make(7, [['External penetration test', 1, 'engagement', 38000000], ['Internal vulnerability assessment', 1, 'engagement', 27000000], ['Report and executive debrief', 1, 'each', 6000000]]);
+  q3 = await Q.setStatus(db, q3, 'sent', bd, {});
+  await Q.setStatus(db, q3, 'accepted', bd, { note: 'Purchase order received.' });
+  // 4: Fleet tracking integration (lead, a prospect): draft
+  await make(5, [['GPS tracker with installation', 150, 'vehicle', 950000], ['Tracking platform licence', 150, 'vehicle / month', 45000]]);
+}
+
+// Three suppliers in the register, on demo projects and tenders, and two LPOs (one issued for a project, one draft against a contract).
+async function loadProcurement(db, U, cur, now = new Date()) {
+  const Sup = require('./suppliers'); const PO = require('./purchase_orders'); const Q = require('./quotes');
+  const buyer = { id: U.procurement, name: 'Nora Kirabo', email: `procurement@${DEMO_DOMAIN}`, kind: 'staff', role: 'procurement' };
+  const mk = (f) => Sup.create(db, { status: 'active', services: '', tin: '', registration_no: '', address: '', phone: '', email: '', website: '', contact_name: '', contact_phone: '', contact_email: '', payment_terms: '', ...f, notes: `${TAG} sample supplier` }, buyer, '');
+  const cab = await mk({ name: 'Rwenzori Cabling Contractors (Demo)', kind: 'contractor', services: 'Structured cabling, fibre splicing, small civil works', tin: '1000456789', address: 'Plot 4, Ntinda Industrial Area, Kampala', phone: '+256 414 000 101', contact_name: 'Peter Ochieng', contact_phone: '+256 772 000 101', contact_email: `peter@cabling.${DEMO_DOMAIN}`, payment_terms: '50% on order, 50% on completion' });
+  const dist = await mk({ name: 'Equator Networks Distribution (Demo)', kind: 'distributor', services: 'Cisco, Fortinet and HPE distribution', tin: '1000987654', address: 'Lugogo Bypass, Kampala', phone: '+256 414 000 202', contact_name: 'Martha Nambi', contact_email: `martha@equator.${DEMO_DOMAIN}`, payment_terms: '30 days after delivery' });
+  await mk({ name: 'Kivu Security Consultants (Demo)', kind: 'consultant', services: 'Penetration testing support, ISO 27001 advisory', contact_name: 'Alex Mutebi', payment_terms: '30 days after invoice' });
+  const projs = (await db.query(`select id from projects where description like $1 order by id limit 2`, [`${TAG}%`])).rows.map((r) => r.id);
+  const tends = (await db.query(`select id from tenders where notes like $1 order by id limit 1`, [`${TAG}%`])).rows.map((r) => r.id);
+  if (projs[0]) await Sup.link(db, cab, { type: 'project', id: projs[0] }, 'Cabling subcontractor', buyer);
+  if (projs[0]) await Sup.link(db, dist, { type: 'project', id: projs[0] }, 'Equipment supplier', buyer);
+  if (tends[0]) await Sup.link(db, dist, { type: 'tender', id: tends[0] }, 'Distributor (back-to-back pricing)', buyer);
+  const s = await PO.listSettings(db);
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = (rows) => rows.map(([description, quantity, unit, unit_price]) => ({ description, quantity, unit, unit_price, discount_pct: 0, line_total: Q.lineTotal(quantity, unit_price, 0) }));
+  let po = await PO.create(db, { ...(await PO.defaults(db, { supplier: cab.id, project: projs[0] || '' }, today)), currency: cur, title: 'Cabling for the new floor', tax_rate: s.taxRate, tax_label: s.taxLabel,
+    internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, contract_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
+  po = await PO.saveLines(db, po, lines([['Cat6A cabling points, installed and tested', 48, 'point', 185000], ['Fibre backbone, 12 core, spliced', 1, 'run', 2600000]]), buyer);
+  await PO.setStatus(db, po, 'issued', buyer, { note: 'Sent to Peter Ochieng.' });
+  const con = (await db.query(`select id from contracts where notes like $1 order by id limit 1`, [`${TAG}%`])).rows[0];
+  let po2 = await PO.create(db, { ...(await PO.defaults(db, { supplier: dist.id, contract: con ? con.id : '' }, today)), currency: cur, title: 'Firewall renewal licences', tax_rate: s.taxRate, tax_label: s.taxLabel,
+    internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, project_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
+  await PO.saveLines(db, po2, lines([['FortiGate 100F UTP bundle, 1 year', 2, 'licence', 6400000]]), buyer);
+  // more orders, so the LPO tracker has every stage: late, received, closed and cancelled
+  const kivu = (await db.query(`select id from suppliers where notes like $1 and kind = 'consultant' limit 1`, [like()])).rows[0];
+  const more = [
+    [dist.id, 'Core switches for the data centre', projs[0] || '', -4, [['Cisco Catalyst 9300 48-port switch', 4, 'each', 21500000]], ['issued'], 'Late: the distributor is waiting for stock.'],
+    [dist.id, 'Wi-Fi access points for the hospital', projs[1] || '', -12, [['Wi-Fi 6 access point', 30, 'each', 1850000], ['PoE injector', 30, 'each', 120000]], ['issued', 'received'], 'Delivered complete; waiting for the invoice.'],
+    [cab.id, 'Cabling for the clinic rooms', projs[1] || '', -40, [['Cat6 cabling points', 24, 'point', 165000]], ['issued', 'received', 'closed'], 'Invoiced and paid.'],
+    [kivu ? kivu.id : cab.id, 'Penetration test support (2 days)', '', 7, [['Senior consultant day', 2, 'day', 2800000]], ['issued', 'cancelled'], 'The customer moved the test to next year.'],
+  ];
+  for (const [sid, title, proj, delivIn, rows, moves, note] of more) {
+    let o = await PO.create(db, { ...(await PO.defaults(db, { supplier: sid, project: proj }, today)), currency: cur, title, tax_rate: s.taxRate, tax_label: s.taxLabel, delivery_date: ymd(addDays(now, delivIn)),
+      internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, contract_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
+    o = await PO.saveLines(db, o, lines(rows), buyer);
+    for (const m of moves) o = await PO.setStatus(db, o, m, buyer, { note: m === moves[moves.length - 1] ? note : '' });
+    await db.query('update purchase_orders set issue_date = least(issue_date, $2::date) where id = $1', [o.id, ymd(addDays(now, Math.min(delivIn - 14, -2)))]);
+  }
+  // their documents, as real files you can open: a quote, a tax clearance and a delivery note
+  const storage = require('../lib/storage'); const pdf = require('../lib/pdf');
+  const firstPo = (await db.query(`select id, ref from purchase_orders where supplier_id = $1 and internal_notes like $2 order by id limit 1`, [cab.id, like()])).rows[0];
+  const docs = [
+    [cab, 'quote', 'RCC-Q-0118', 9480000, 'Rwenzori Cabling quote RCC-Q-0118.pdf', projs[0] || null, null, 'Quotation RCC-Q-0118', [['Cat6A cabling points, installed and tested', '48 x 185,000'], ['Fibre backbone, 12 core', '1 x 2,600,000']]],
+    [dist, 'tax_clearance', 'TCC-2026-5531', null, 'Equator tax clearance 2026.pdf', null, null, 'Tax clearance certificate (sample)', [['Valid until', '31 Dec 2026']]],
+    [cab, 'delivery_note', 'DN-7781', null, 'Delivery note DN-7781.pdf', projs[0] || null, firstPo ? firstPo.id : null, 'Delivery note DN-7781', [['Cat6A cabling points', '48 installed'], ['Received by', 'Site engineer']]],
+  ];
+  for (const [sup, kind, ref, amount, filename, projectId, poId, title, kv] of docs) {
+    const buf = pdf.document({ title, subtitle: 'Sample document from the demo data', appName: sup.name, blocks: [{ type: 'kv', rows: [['Reference', ref], ...kv] }, { type: 'p', text: 'This is a sample document created with the demo data. It can be removed with the rest of the demo data.' }] });
+    const f = await storage.storeFile({ buffer: buf, filename, mime: 'application/pdf', maxBytes: 10 * 1048576, blockedExt: [] });
+    if (f.rejected) continue;
+    const a = (await db.query(`insert into attachments (supplier_id, purchase_order_id, filename, mime, size_bytes, sha256, storage_name, scan_status, uploaded_by, doc_kind, version) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1) returning id`,
+      [sup.id, poId, f.filename, f.mime, f.size_bytes, f.sha256, f.storage_name, f.scan_status, U.procurement, `supplier_${kind}`])).rows[0];
+    await db.query(`insert into supplier_documents (attachment_id, supplier_id, kind, reference, amount, currency, doc_date, valid_until, project_id, tender_id, purchase_order_id, notes) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,null,$10,$11)`,
+      [a.id, sup.id, kind, ref, amount, amount === null ? '' : cur, ymd(addDays(now, -15)), kind === 'quote' ? ymd(addDays(now, 15)) : kind === 'tax_clearance' ? `${now.getUTCFullYear()}-12-31` : null, projectId, poId, TAG]);
+  }
+}
+const like = () => `${TAG}%`;
 
 async function loadArticles(db, U, custIds) {
   const cats = Object.fromEntries((await db.query('select id, name from kb_categories')).rows.map((r) => [r.name, r.id]));
@@ -366,6 +559,10 @@ async function remove(db) {
   const projs = await ids(db, `select id from projects where description like $1`, [like]);
   const cons = await ids(db, `select id from contracts where notes like $1 or customer_id = any($2)`, [like, cust]);
 
+  // stored files of every attachment about to go: removed from disk after the rows
+  const files = (await db.query(`select storage_name from attachments where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or customer_id = any($5)
+                                    or supplier_id in (select id from suppliers where notes like $6)`, [tix, opps, tends, cons, cust, like])).rows.map((r) => r.storage_name);
+  await run('delete from kb_votes where user_id = any($1)', [usr]);
   await run('delete from notifications where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or recipient_user_id = any($5) or recipient_email like $6', [tix, opps, tends, cons, usr, `%@${DEMO_DOMAIN}`]);
   await run('delete from attachments where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or customer_id = any($5)', [tix, opps, tends, cons, cust]);
   await run('delete from inbound_messages where ticket_id = any($1)', [tix]);
@@ -374,12 +571,32 @@ async function remove(db) {
   await run('delete from tickets where id = any($1)', [tix]);
 
   await run('delete from kb_articles where summary like $1', [like]);                         // versions, votes and ticket links go with it
+  // purchase orders and suppliers: the sample ones, and any made on demo records or by demo people while trying the system
+  const sups = await ids(db, 'select id from suppliers where notes like $1', [like]);
+  const pos = await ids(db, `select id from purchase_orders where internal_notes like $1 or supplier_id = any($2) or owner_id = any($3) or project_id = any($4) or tender_id = any($5) or contract_id = any($6)
+                              or customer_quote_id in (select id from quotes where internal_notes like $1 or opportunity_id = any($7) or customer_id = any($8) or owner_id = any($3))`, [like, sups, usr, projs, tends, cons, opps, cust]);
+  await run('update attachments set purchase_order_id = null where purchase_order_id = any($1)', [pos]);
+  await run('update supplier_documents set purchase_order_id = null where purchase_order_id = any($1)', [pos]);
+  await run('update purchase_order_events set actor_id = null where actor_id = any($1)', [usr]);
+  await run('update purchase_orders set issued_by = null where issued_by = any($1)', [usr]);
+  await run('delete from purchase_orders where id = any($1)', [pos]);                           // lines and history go with it
+  await run('delete from attachments where supplier_id = any($1)', [sups]);                    // their document records go with them
+  await run('delete from suppliers where id = any($1)', [sups]);                               // links and history go with them
+  await run('update suppliers set created_by = null where created_by = any($1)', [usr]);
+  await run('update supplier_events set actor_id = null where actor_id = any($1)', [usr]);
+  await run('update supplier_links set added_by = null where added_by = any($1)', [usr]);
+  await run('update attachments set uploaded_by = null where uploaded_by = any($1) and supplier_id is not null', [usr]);
   await run('delete from projects where id = any($1)', [projs]);                              // tasks, members and events go with the project
   await run('delete from tenders where id = any($1)', [tends]);                               // children go with the tender
+  // quotes: the sample ones, and any made on demo deals or customers or by demo people while trying the system
+  await run('update quote_events set actor_id = null where actor_id = any($1)', [usr]);
+  await run('delete from quotes where internal_notes like $1 or opportunity_id = any($2) or customer_id = any($3) or owner_id = any($4) or created_by = any($4)', [like, opps, cust, usr]);
   await run('update contracts set opportunity_id = null where opportunity_id = any($1)', [opps]);
   await run('update projects set opportunity_id = null where opportunity_id = any($1)', [opps]);
   await run('delete from opportunities where id = any($1)', [opps]);
 
+  await run('delete from attachments where renewal_id in (select id from renewals where customer_id = any($1) or contract_id = any($2))', [cust, cons]);
+  await run('delete from renewal_events where renewal_id in (select id from renewals where customer_id = any($1) or contract_id = any($2))', [cust, cons]);
   await run('delete from renewals where customer_id = any($1) or contract_id = any($2)', [cust, cons]);
   await run('delete from contracts where id = any($1)', [cons]);                              // its SLA targets, links and history go with it
   await run('delete from engineer_assignments where service_id in (select id from services where customer_id = any($1)) or reason like $2', [cust, `${TAG}%`]);
@@ -390,6 +607,8 @@ async function remove(db) {
   await run('delete from weekly_highlights where top_presales like $1 or major_delivery like $1', [like]);
   await run('delete from users where id = any($1)', [usr]);
   await run('delete from customers where id = any($1)', [cust]);
+  const storage = require('../lib/storage');
+  for (const f of files) await storage.removeStored(f);
   return before;
 }
 

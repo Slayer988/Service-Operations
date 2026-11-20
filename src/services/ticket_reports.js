@@ -19,8 +19,9 @@ const CATEGORIES = [
 ];
 
 // A ticket's response / resolution was met (true), missed (false) or is still running (null).
-const RESP = `case when t.response_due is null then null when t.responded_at is not null then t.responded_at <= t.response_due when now() > t.response_due then false else null end`;
-const RESO = `case when t.resolution_due is null then null when t.resolved_at is not null then t.resolved_at <= t.resolution_due when now() > t.resolution_due then false else null end`;
+// A target missed once stays missed (sla_breaches), even when the ticket was reopened and its due time recalculated.
+const RESP = `case when t.response_due is null then null when (t.sla_breaches ? 'response') then false when t.responded_at is not null then t.responded_at <= t.response_due when now() > t.response_due then false else null end`;
+const RESO = `case when t.resolution_due is null then null when (t.sla_breaches ? 'resolution') then false when t.resolved_at is not null then t.resolved_at <= t.resolution_due when now() > t.resolution_due then false else null end`;
 const OPEN = `('new','open','in_progress','pending_customer','pending_vendor','restored')`;
 const hours = (a, b) => `round(avg(extract(epoch from (${b} - ${a})) / 3600) filter (where ${b} is not null)::numeric, 1)`;
 const ts = (col, p) => `to_char(${col} at time zone ${p.tz}, 'YYYY-MM-DD HH24:MI')`;
@@ -28,7 +29,7 @@ const ts = (col, p) => `to_char(${col} at time zone ${p.tz}, 'YYYY-MM-DD HH24:MI
 /** Builds the WHERE clause for tickets the person may see. period=false is a snapshot of what is open now. */
 function scope(user, p, { period = true, col = 't.created_at' } = {}) {
   const params = []; const where = ['not t.needs_verification'];
-  if (period) { params.push(p.from, p.to); where.push(`${col} >= $1::date and ${col} < ($2::date + 1)`); }
+  if (period) params.push(p.from, p.to);
   where.push(perms.ticketVisibility(user, params, 't'));
   if (p.customer) { params.push(p.customer); where.push(`t.customer_id = $${params.length}`); }
   // The time-zone parameter is always part of the statement, even when a report does not format times, because PostgreSQL
@@ -36,6 +37,8 @@ function scope(user, p, { period = true, col = 't.created_at' } = {}) {
   params.push(config.timezone);
   const tz = `$${params.length}::text`;
   where.push(`${tz} is not null`);
+  // the dates are days in the application's time zone (a ticket raised at 00:40 in Kampala belongs to that day, whatever the database clock says)
+  if (period) where.push(`${col} >= ($1::date)::timestamp at time zone ${tz} and ${col} < (($2::date + 1)::timestamp at time zone ${tz})`);
   return { params, where: where.join(' and '), tz };
 }
 const pn = (v) => (v === null || v === undefined ? null : Number(v));

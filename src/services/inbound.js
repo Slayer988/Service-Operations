@@ -170,14 +170,18 @@ async function handle(db, row, parsed) {
         internal: false, source: 'email', messageId: row.provider_message_id,
       });
       await saveAttachments(db, parsed, t, trusted, { maxBytes, blocked });
-      if (['resolved', 'closed'].includes(t.status) && trusted.kind === 'customer') {
-        try { await tickets.setStatus(db, t, 'open', trusted); } catch (e) {
-          if (!(e instanceof tickets.UserError)) throw e;
-          await tickets.event(db, t.id, null, 'email', `A reply arrived after the reopen period: ${e.userMessage}`, true);
-        }
-      }
+      // a customer's reply on a Resolved or Closed ticket reopens it inside addComment (and is only noted after the reopen period)
       return { outcome: 'reply_appended', ticketId: ticket.id, detail: `Appended to ${ticket.ref}` };
     }
+  }
+
+  // ---- a reply to a ticket raised without signing in, from the address that was confirmed with a code (and passed the sender checks)
+  if (ticket && !trusted && !suspicious && ticket.raised_by_guest && String(ticket.requester_email || '').toLowerCase() === sender) {
+    const stripped = stripQuoted(text);
+    const guestAuthor = { id: null, kind: 'customer', name: row.from_name || ticket.requester_name || sender, email: sender, customer_id: ticket.customer_id };
+    const t = await tickets.addComment(db, ticket, { author: null, authorLabel: guestAuthor.name, body: stripped || '(empty message)', internal: false, source: 'email', messageId: row.provider_message_id });
+    await saveAttachments(db, parsed, t, guestAuthor, { maxBytes, blocked });
+    return { outcome: 'reply_appended', ticketId: ticket.id, detail: `Appended to ${ticket.ref} (requester without an account)` };
   }
 
   // ---- otherwise a new ticket

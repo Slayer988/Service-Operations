@@ -13,9 +13,11 @@ const u = require('../lib/util');
 const tickets = require('../services/tickets');
 const dashboard = require('../services/dashboard');
 const catalogue = require('../services/catalogue');
+const kb = require('../services/kb');
 const { upload, wrap, saveUploads, ticketTimeline } = require('./util');
 const { requireCustomer } = require('../middleware/auth');
 
+const searchLib = require('../lib/search');
 const router = express.Router();
 
 async function formData(user) {
@@ -29,7 +31,7 @@ async function formData(user) {
 router.get('/', requireCustomer, wrap(async (req, res) => {
   const d = await dashboard.customer(q, req.user, u.oneOf(req.query.tab, ['open', 'in_progress', 'resolved'], 'open'));
   const categories = (await settings.get({ query: q }, 'categories', [])) || [];
-  res.render('portal/home', { title: 'Dashboard', d, tiles: dashboard.serviceTiles(await catalogue.featured(q), categories), catIcon: dashboard.catIcon });
+  res.render('portal/home', { title: 'Dashboard', d, tiles: dashboard.serviceTiles(await catalogue.featured(q, req.user.customer_id), categories), catIcon: dashboard.catIcon });
 }));
 
 router.get('/tickets', requireCustomer, wrap(async (req, res) => {
@@ -39,7 +41,7 @@ router.get('/tickets', requireCustomer, wrap(async (req, res) => {
   const cond = view === 'open' ? `t.status not in ('resolved','closed','cancelled')` : `t.status in ('resolved','closed','cancelled')`;
   let search = '';
   const text = u.str(req.query.q, 100);
-  if (text) { params.push(`%${text.replace(/[%_\\]/g, '\\$&')}%`); search = ` and (t.subject ilike $${params.length} or t.ref ilike $${params.length})`; }
+  if (text) { params.push(searchLib.like(text)); search = ` and ${searchLib.ticketClause(params.length)}`; }
   const rows = (await q(
     `select t.ref, t.subject, t.status, t.priority, t.created_at, t.updated_at, s.name as service_name
        from tickets t left join services s on s.id = t.service_id
@@ -62,7 +64,7 @@ router.post('/tickets/new', requireCustomer, upload.array('files', 5), csrf.prot
       const t = await tickets.createTicket(db, {
         type, customerId: req.user.customer_id, csidId: u.id(b.csid_id), serviceId: u.id(b.service_id), siteId: u.id(b.site_id),
         requester: { id: req.user.id, email: req.user.email, name: req.user.name },
-        subject: u.str(b.subject, 200), description: u.str(b.description, 20000),
+        subject: u.str(b.subject, 200), description: u.str(b.description, 20000), descriptionFormat: b.description_format === 'rich' ? 'rich' : 'text',
         category: categories.includes(b.category) ? b.category : '',
         impact: u.intIn(b.impact, 1, 3) || 2, urgency: u.intIn(b.urgency, 1, 3) || 2,
         source: 'portal', actor: req.user, enforceActive: true,
@@ -87,7 +89,7 @@ router.get('/tickets/:ref', requireCustomer, wrap(async (req, res) => {
   if (!ticket) return res.status(404).render('error', { title: 'Not found', message: 'That ticket does not exist, or you do not have access to it.' });
   const { timeline, attachments } = await ticketTimeline({ query: q }, req.user, ticket);
   const reopenDays = Number(await settings.get({ query: q }, 'reopen_window_days', 5));
-  return res.render('portal/ticket', { title: ticket.ref, ticket, timeline, attachments, reopenDays });
+  return res.render('portal/ticket', { title: ticket.ref, ticket, timeline, attachments, reopenDays, helpArticles: await kb.forTicket(q, req.user, ticket.id) });
 }));
 
 async function withTicket(req, res, fn) {
@@ -101,8 +103,8 @@ router.post('/tickets/:ref/comment', requireCustomer, upload.array('files', 5), 
   try {
     const st = await settings.getAll({ query: q }, ['attachment_blocked_ext', 'attachment_max_mb']);
     await withTicket(req, res, async (db, ticket) => {
-      if (['closed', 'cancelled'].includes(ticket.status)) throw new tickets.UserError('This ticket is closed. Use "Reopen" or create a new ticket.');
-      const t = await tickets.addComment(db, ticket, { author: req.user, body: req.body.body, source: 'portal' });
+      if (ticket.status === 'cancelled') throw new tickets.UserError('This ticket was cancelled. Create a new ticket if you still need help.');
+      const t = await tickets.addComment(db, ticket, { author: req.user, body: req.body.body, source: 'portal', strict: true, format: req.body.format === 'rich' ? 'rich' : 'text' });
       const rejected = await saveUploads(db, req, t, req.user, st);
       if (rejected.length) req.flash('error', 'Some files were not attached: ' + rejected.join('; '));
       req.flash('success', 'Comment added.');
@@ -141,7 +143,7 @@ router.post('/tickets/:ref/cancel', requireCustomer, wrap(async (req, res) => {
 
 // ---- the service catalogue, as customers see it
 router.get('/catalogue', requireCustomer, wrap(async (req, res) => {
-  const rows = (await q(`select name, description, icon, category, request_type from service_catalogue where active order by sort_order, name`)).rows;
+  const rows = await catalogue.forCustomer(q, req.user.customer_id);            // only the services on this customer's own CSID
   res.render('portal/catalogue', { title: 'Service Catalogue', rows });
 }));
 
@@ -169,7 +171,7 @@ router.post('/users', requireCustomer, requireCustomerAdmin, wrap(async (req, re
   const exists = await q('select 1 from users where lower(email) = $1', [email]);
   if (exists.rows.length) throw new tickets.UserError('That email address is already registered.');
   const temp = password.randomPassword();
-  const r = await q(`insert into users (email, name, kind, role, customer_id, password_hash, password_changed_at) values ($1,$2,'customer',$3,$4,$5, now()) returning id`,
+  const r = await q(`insert into users (email, name, kind, role, customer_id, password_hash, password_changed_at, must_change_password) values ($1,$2,'customer',$3,$4,$5, now(), true) returning id`,
     [email, name, role, req.user.customer_id, await password.hash(temp)]);
   await audit({ query: q }, req.user, 'user_created', 'user', r.rows[0].id, `${email} as ${role}`, req.user.customer_id, req.ip);
   const rows = (await q('select id, name, email, role, active, last_login_at from users where customer_id = $1 order by name', [req.user.customer_id])).rows;

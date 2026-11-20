@@ -4,16 +4,17 @@
 // The environment variable named in "secret" holds the PATH of the service-account JSON key file (for example /etc/itsm/google-sa.json).
 const fs = require('fs');
 const crypto = require('crypto');
-const { FIRST_RUN_MAX, BATCH, request, form, b64url, fromB64url } = require('./common');
+const { FIRST_RUN_MAX, BATCH, request, form, b64url, fromB64url, secretOf } = require('./common');
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';   // fixed: never taken from the key file
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const tokens = new Map();
 const recent = new Map();   // mailbox id -> Set of Gmail ids handled lately (cheap duplicate skip at the time boundary)
 
+/** The service-account key: the JSON typed on the E-mail page, or the file named by the mailbox's variable (earlier setups). */
 function readKey(mb, env) {
-  const file = env[mb.secret_env];
-  const k = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const typed = mb.secret_enc ? secretOf(mb, env) : '';
+  const k = JSON.parse(typed || fs.readFileSync(env[mb.secret_env], 'utf8'));
   if (!k.client_email || !k.private_key) throw new Error('The key file is not a Google service-account key (client_email / private_key missing).');
   return k;
 }
@@ -52,7 +53,8 @@ module.exports = {
   assertion,
   configError(mb, env) {
     if (!mb.address) return 'The mailbox address (the user to read) must be set.';
-    if (!mb.secret_env || !env[mb.secret_env]) return `The key-file variable ${mb.secret_env || '(none named)'} is not set in the server environment file.`;
+    if (mb.secret_enc && secretOf(mb, env)) return '';                                         // the key was pasted on the E-mail page
+    if (!mb.secret_env || !env[mb.secret_env]) return mb.secret_env ? `The key-file variable ${mb.secret_env} is not set in the server environment file. Paste the key on this page instead, or set the variable.` : 'The service-account key has not been entered. Paste the contents of the JSON key file in the box below.';
     if (!fs.existsSync(env[mb.secret_env])) return `The service-account key file ${env[mb.secret_env]} does not exist.`;
     return '';
   },

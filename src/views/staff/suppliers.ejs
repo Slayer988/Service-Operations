@@ -1,0 +1,19 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Suppliers & Contractors</h1><% if (canManage) { %><a class="btn" href="/suppliers/new">Add a supplier or contractor</a><% } %></div>
+<%- include('../partials/procurement_tabs', { tab: 'register' }) %>
+<form method="get" class="filters wide">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Name, code, services, contact or TIN" aria-label="Search the register">
+  <select name="kind" aria-label="Type"><option value="">All types</option><% Object.keys(Sup.KINDS).forEach(function (k) { %><option value="<%= k %>" <%= f.kind === k ? 'selected' : '' %>><%= Sup.KINDS[k] %></option><% }) %></select>
+  <select name="status" aria-label="Status"><% [['active','Active'],['on_hold','On hold'],['inactive','Inactive'],['all','Any status']].forEach(function (v) { %><option value="<%= v[0] %>" <%= f.status === v[0] ? 'selected' : '' %>><%= v[1] %></option><% }) %></select>
+  <button class="btn ghost" type="submit">Filter</button>
+</form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Supplies / does</th><th>Contact</th><th class="num">Projects / tenders</th><th class="num">Documents</th><th class="num">Open LPOs</th><th>Status</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %>
+<tr><td><a href="/suppliers/<%= r.id %>"><%= r.code %></a></td><td><a href="/suppliers/<%= r.id %>"><%= r.name %></a></td><td><%= Sup.KINDS[r.kind] %></td><td><%= r.services.length > 80 ? r.services.slice(0, 80) + '…' : r.services %></td>
+<td><%= [r.contact_name, r.contact_phone].filter(Boolean).join(' · ') || '—' %></td><td class="num"><%= r.links %></td><td class="num"><%= r.docs %></td><td class="num"><%= r.open_lpos %></td>
+<td><span class="tag <%= r.status === 'active' ? '' : (r.status === 'on_hold' ? 'warn' : 'grey') %>"><%= Sup.STATUSES[r.status] %></span></td></tr>
+<% }) %></tbody></table>
+<% } else { %><p class="empty">No supplier or contractor matches.</p><% } %>
+<p class="muted">Download this list: <a href="/suppliers/export?format=xlsx&status=<%= f.status %>&kind=<%= f.kind %>&q=<%= encodeURIComponent(f.q) %>">Excel</a> · <a href="/suppliers/export?format=pdf&status=<%= f.status %>&kind=<%= f.kind %>&q=<%= encodeURIComponent(f.q) %>">PDF</a> · <a href="/suppliers/export?format=csv&status=<%= f.status %>&kind=<%= f.kind %>&q=<%= encodeURIComponent(f.q) %>">CSV</a></p>
+<%- include('../partials/footer') %>

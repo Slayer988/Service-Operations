@@ -13,6 +13,18 @@ const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 // Block types: { p }, { h }, { steps: [] }, { list: [] }, { tip }, { table: { head: [], rows: [[]] } }, { access: [perm names] }
 // Section: { id, title, who: 'all' | 'staff' | 'customer', perm?, role?, intro?, blocks }
 
+/** Demo sign-ins for the manual, read from the demo data itself so the two cannot disagree. */
+function demoInfo() {
+  const demo = require('../services/demo');
+  const USE = { service_manager: 'the dashboards, assigning, SLA notes, weekly highlights', agent: 'the service desk: replying, assigning, verification', engineer: 'working tickets and project tasks',
+    security_analyst: 'the Security queue', contract_manager: 'contracts, obligations, payments, renewals', bd_manager: 'the pipeline and quotes', bid_manager: 'tenders and bid tasks',
+    sde: 'deal engineering tasks, solution design, tender reviews', finance: 'contract financials, approvals, LPOs (view)', management: 'the Operations Overview and approvals',
+    dept_head: 'department views and approvals', procurement: 'Suppliers & Contractors and purchase orders', customer_admin: 'the customer portal and the customer\'s users', customer_user: 'the customer portal' };
+  const rows = [...demo.STAFF.map(([k, , r]) => [`${k}@${demo.DEMO_DOMAIN}`, perms.ROLE_LABELS[r] || r, USE[r] || '']),
+    ...demo.CUSTOMERS.flatMap((c) => c.users.slice(0, 1).map(([k, , r]) => [`${k}@${demo.DEMO_DOMAIN}`, `${perms.ROLE_LABELS[r] || r} (${c.name.replace(/ \(Demo\)$/, '')})`, USE[r] || '']))];
+  return { rows, password: demo.DEMO_PASSWORD, domain: demo.DEMO_DOMAIN };
+}
+
 function sections(user) {
   const staff = !(user && user.kind === 'customer');
   const themeRows = THEMES.map((t) => [t.label, t.text]);
@@ -27,7 +39,7 @@ function sections(user) {
           ...(staff ? ['Staff whose account was imported from Active Directory sign in with their normal Windows password (the user name or the e-mail address both work).'] : []),
           'If two-step verification is on for you, type the 6-digit code from your authenticator app and press **Continue**.',
         ] },
-        { tip: `After ${config.lockoutAttempts} wrong passwords in a row an account is locked for ${config.lockoutMinutes} minutes. You are signed out after ${config.sessionIdleHours} hours without activity.` },
+        { tip: `After ${config.lockoutAttempts} wrong passwords in a row an account is locked for ${config.lockoutMinutes} minutes. You are signed out after ${config.sessionIdleMinutes} minutes without activity: a warning appears a minute before, and pressing a key, clicking or scrolling keeps you signed in.` },
         { h: 'Finding your way around' },
         { list: [
           '**The menu on the left** lists only what your role may use. The button with three lines at the top folds it away.',
@@ -51,6 +63,13 @@ function sections(user) {
           'Type the 6-digit code the app shows and confirm. From now on you are asked for a code every time you sign in.',
         ] },
         { tip: 'Some roles must use two-step verification. If yours does, you are taken to this page until it is on. To turn it off yourself, open Manage and enter your password and a current code.' },
+        { h: 'First sign-in, and lost phones' },
+        { list: [
+          'A password someone else chose for you (a new account, or a reset by an administrator) must be replaced at your first sign-in. Until you do, only this page is open.',
+          'Changing your password signs you out everywhere else.',
+          'A code can be used once. After five wrong passwords or codes the account is locked for a while; starting again does not give more tries.',
+          'Lost your phone? An administrator can reset your two-step verification; you then set it up again with the new phone.',
+        ] },
       ],
     },
     {
@@ -68,11 +87,12 @@ function sections(user) {
         { steps: [
           'Press **Submit Request** in the menu.',
           'Choose whether it is an **incident** (something is broken) or a **service request** (you need something), then the service and category.',
-          'Describe the problem or request. Say what you expected and what happened, and who is affected.',
+          'Describe the problem or request. Say what you expected and what happened, and who is affected. You can format the text with the toolbar (bold, lists, links ...), as in a word processor.',
           'Set how many people are affected (impact) and how urgent it is. These two answers set the priority and therefore how fast we respond.',
           'Attach screenshots or files if they help (up to five), then press **Submit**.',
         ] },
         { p: 'You get a ticket reference on the page and can follow it under My Requests. You can also write to the support mailbox your provider gave you: the e-mail becomes a ticket as well.' },
+        { tip: 'Colleagues without an account can raise a request too, if your organisation has this turned on: they choose **Raise a request** on the sign-in page, give their work e-mail address and your CSID, and type the code they receive by e-mail.' },
         { table: { head: ['Priority', 'Meaning'], rows: [['P1 Critical', 'Service is down or many people cannot work.'], ['P2 High', 'A major problem with a limited number of people, or a workaround is hard.'], ['P3 Medium', 'Normal problems and requests.'], ['P4 Low', 'Small issues and questions that can wait.']] } },
       ],
     },
@@ -84,6 +104,8 @@ function sections(user) {
           ['New / Open', 'We have it and will start.'], ['In progress', 'Someone is working on it.'], ['Waiting for customer', 'We need something from you. Reply on the ticket; the clock is paused until you do.'],
           ['Waiting for vendor', 'We are waiting for a supplier.'], ['Service restored', 'The service works again; we are finishing the follow-up.'], ['Resolved', 'We believe it is fixed. Please confirm or reopen.'],
           ['Closed / Cancelled', 'Finished.'] ] } },
+        { tip: 'You receive an e-mail when your request is logged (with when we will respond, in local time), when we need something from you, when service is restored, when it is resolved and when it is closed. A reply to a resolved or closed request reopens it, within the reopen period.' },
+        { tip: 'The search box at the top finds your tickets in any status (open, resolved or closed) by reference, subject or words in the conversation, and links to Help articles. Type a ticket reference and press Enter to open it.' },
         { h: 'When we say it is resolved' },
         { list: [
           '**Confirm** if it is fixed. You can rate the service from 1 to 5 and leave a comment. The ticket is then closed.',
@@ -95,7 +117,14 @@ function sections(user) {
     {
       id: 'c-services', title: 'Your services and the catalogue', who: 'customer',
       blocks: [
-        { p: '**My Services** shows what we provide to you. **Service Catalogue** shows everything you can ask for, with a short description of each. Pick one there and the request form opens with it already chosen.' },
+        { p: '**My Services** shows what we provide to you. **Service Catalogue** lists the services that are on your account, each with its CSID. Pick one there and the request form opens with it already chosen.' },
+      ],
+    },
+    {
+      id: 'c-help', title: 'Help Articles', who: 'customer',
+      blocks: [
+        { p: 'Many questions already have an answer. Open **Help Articles**, type a few words and read the steps. Press **Yes, it helped** or **No** at the end: it tells us which articles to improve.' },
+        { tip: 'Not solved? Use **Submit Request**. A request we have answered with an article shows the article under "Help articles" on the request page.' },
       ],
     },
     {
@@ -116,13 +145,17 @@ function sections(user) {
           '**My Requests**: tickets assigned to you.  **Incidents** and **Service Requests**: the two types.  **All Tickets**: everything you may see, with filters for status, priority, customer and more.',
           'Staff see the tickets of every customer (tickets in the Security queue only the security roles). Customers only ever see their own.',
         ] },
+        { h: 'Searching' },
+        { p: 'The search box at the top finds tickets in any status by reference, subject, sender, customer, CSID or words written on the ticket, and lists matching customers. Type a ticket reference and press Enter to open that ticket. Below the results are links to search Contracts, Tenders, Pipeline, Projects and the Knowledge Base for the same words.' },
         { h: 'Working a ticket' },
         { steps: [
-          'Open the ticket. The top shows the status, priority, customer, service and the SLA clocks (response and resolution).',
-          'Write a reply to the customer, or tick **Internal note** for a note only staff can see. Attach files if needed.',
+          'Open the ticket. A coloured **SLA bar** under the title says at once whether the SLA is on track (green), at risk (amber: due within the hour or less than a quarter of the time left), breached or missed (red) or paused (blue). The **SLA card** at the top of the right-hand column shows each target with the time left or how late it is, counting down while the page is open.',
+          'Write a reply to the customer, or tick **Internal note** for a note only staff can see. The box formats text like a word processor: **bold**, italic, underline, strike-through, headings, bulleted and numbered lists, quotes, code and links (toolbar or Ctrl+B / Ctrl+I / Ctrl+U). Text pasted from Word or a web page keeps its bold, italics, lists and links. The customer receives the reply as plain text by e-mail. Attach files if needed.',
           'Change the **status** as the work moves: In progress, Waiting for customer, Waiting for vendor, Service restored, then Resolved. Resolving asks for a resolution code and note.',
           'Use **Assign** to give the ticket to a colleague, and **Priority** (impact and urgency) if the first assessment was wrong. Every change is written to the ticket history.',
         ] },
+        { tip: 'The status list shows only what is allowed from where the ticket is. Nothing is closed directly: **Resolve** it first (the customer is asked to confirm, or it closes by itself after a few days). A closed ticket can only be reopened, and a cancelled ticket stays cancelled. A customer reply on a resolved or closed ticket reopens it; after the reopen period the portal refuses it and an e-mailed reply is kept on the ticket with a note for staff.' },
+        { tip: 'The **first response** is a reply to the customer (a public comment), asking them for information, or resolving. Moving a ticket to In progress is not a response. A target that was missed stays on the ticket as **Missed earlier**, even if a reopen or a priority change moves the due time later, and the reports count it as missed.' },
         { tip: 'The SLA clock stops while a ticket is Waiting for customer or Waiting for vendor and starts again when it moves on. It counts only inside the business hours of the SLA policy.' },
         { h: 'Statuses' },
         { table: { head: ['Status', 'Use it when'], rows: [
@@ -170,7 +203,9 @@ function sections(user) {
       id: 'customers', title: 'Customers, services and sites', who: 'staff', perm: 'customer.view',
       blocks: [
         { p: '**Customers** lists the organisations we serve. A customer page holds the details, the **CSID** (the customer service ID used on tickets), the services we provide with their SLA policy and execution engineer, contracts, sites and the customer\'s users.' },
-        { list: ['Service managers create customers and services, and set which SLA policy and engineer apply.', 'The **execution engineer** is the person notified first for tickets on that service.'] },
+        { list: ['Service managers create customers and services, and set which SLA policy and engineer apply.', 'The **execution engineer** is the person notified first for tickets on that service.',
+          '**E-mail domains** (customer details): people with an address on these domains can raise a request **without an account** at /request (link on the sign-in page). They give the customer\'s CSID, type a 6-digit code e-mailed to them, then see the active services on that CSID and raise a ticket. Their e-mailed replies to that ticket are added to it. Leave the domains empty to switch this off for a customer; an administrator can switch it off for everyone in Settings, Tickets.'] },
+        { tip: 'Tickets raised this way are marked in their history ("Raised without signing in ... confirmed with a one-time code"). It needs outgoing mail to be set up, because the code is sent by e-mail.' },
       ],
     },
     {
@@ -229,10 +264,66 @@ function sections(user) {
       blocks: [
         { p: 'Every sales opportunity moves through stages: Lead identification, Prospecting, Qualification, Solution development, Proposal submission, Negotiation, Closing, then Won, Lost or On hold. Each stage has a default win probability that you can adjust.' },
         { list: [
-          'Add customer contacts, activities, proposals and documents to the deal.',
+          'Add customer contacts, activities, proposals, **quotes** and documents to the deal.',
           'Business development managers can ask **Service delivery engineers** or technical team members for support; they see only the deals assigned to them (**My Opportunities**) and keep technical tasks and solution notes there.',
           '**Escalate** a deal when leadership support is needed. It appears on the Operations Overview until the escalation is cleared.',
           'When a deal is **Won**, press **Start a project** (or **Create the contract**) on the deal and the new form opens with its details filled in.',
+        ] },
+      ],
+    },
+    {
+      id: 'quotes', title: 'Quotes', who: 'staff', perm: 'quote.view',
+      intro: 'A quote is a priced offer with lines, tax and terms, downloaded as a PDF to send to the customer. It is usually made from an opportunity in the pipeline.',
+      blocks: [
+        { steps: [
+          'On an opportunity, press **New quote for this opportunity** (or open **Quotes** and press **New quote**). The customer, contact, currency and title are filled in from the opportunity; the tax rate, validity and terms come from Settings.',
+          'Add the **lines**: description, quantity, unit (each, month, user / month ...), unit price and an optional discount in percent. The amounts and totals update as you type. Empty rows are ignored; clear a description to remove a line. Descriptions can be picked from the service catalogue.',
+          'Press **Download draft PDF** to check it. The draft PDF is marked DRAFT.',
+          'Send the PDF to the customer from your e-mail, then choose **Sent to the customer** under Next step.',
+          'When the customer answers, mark it **Accepted** (with an opportunity, you can set the opportunity value to the quote amount before tax at the same time) or **Declined** with the reason.',
+        ] },
+        { list: [
+          'A sent quote cannot be changed. To change it, press **Make a new revision**: a copy opens as a draft (for example QUO-000012 R2) and the sent one is marked **Superseded**. Every revision stays on record.',
+          'A sent quote whose **Valid until** date has passed is marked **Expired** overnight. It can still be marked Accepted if the customer agrees later, or revised with a new date.',
+          'The **Quotes** page lists the newest revision of each quote, with filters, and downloads the list in Excel, PDF or CSV. The opportunity page lists its quotes.',
+          'Administrators set the company name, address, tax ID, tax rate, validity and standard terms printed on every quote in **Settings**, Quotes.',
+          'Internal notes are never printed. Approval before sending is not part of this version yet.',
+        ] },
+      ],
+    },
+    {
+      id: 'suppliers', title: 'Suppliers and contractors', who: 'staff', perm: 'supplier.view',
+      intro: 'The register of the companies we buy from or subcontract to: contractors, subcontractors, distributors, vendors, consultants and other third parties.',
+      blocks: [
+        { steps: [
+          'Open **Suppliers & Contractors** and press **Add a supplier or contractor**: name, type, TIN, contact, payment terms and what they supply or do.',
+          'On the supplier page, **Upload a document**: their quote (with its reference, amount, date and validity), an LPO given to them outside this system, an invoice, a delivery note, or papers such as registration and tax clearance. A document can be marked as being for a project, a tender or one of our LPOs.',
+          'Put them on a **project** or a **tender** with their role there (for example "cabling subcontractor"), from the supplier page or from the **Contractors and suppliers** card on the project or tender page.',
+        ] },
+        { list: [
+          'The project and tender pages list their contractors and suppliers, the documents for that project or tender and the LPOs raised for it.',
+          'A supplier **On hold** or **Inactive** cannot be given new orders.',
+          'Procurement and the managers of the register keep it; project and tender managers add contractors to their own project or tender; everyone who works on projects or tenders, and finance, can see it.',
+        ] },
+      ],
+    },
+    {
+      id: 'lpo', title: 'Purchase orders (LPOs)', who: 'staff', perm: 'lpo.view',
+      intro: 'Local purchase orders that the procurement team issues to suppliers, contractors, distributors and other third parties.',
+      blocks: [
+        { steps: [
+          'Raise an LPO from where it starts: **Raise LPO** next to a supplier\'s quote, **Raise an LPO** on a supplier, on a project\'s or tender\'s contractor card, **Raise an LPO against this contract** on a contract, or **Raise a back-to-back LPO** on one of our quotes to a customer. The supplier, project, tender, contract and payment terms are filled in for you; you can also start from **Suppliers & Contractors**, the **Purchase orders (LPO)** tab, New purchase order.',
+          'Add the **lines** (description, quantity, unit, unit price, discount); totals and VAT update as you type.',
+          'Check the **draft PDF**, then **Issue to the supplier**. The order is then fixed and dated, and its PDF (with signature boxes for us and for the supplier) is what you send.',
+          'Attach the **signed copy**, the **delivery note** and the **invoice** to the order as they come in. Mark it **Received** when the goods or services are delivered and **Closed** when it is invoiced and settled.',
+        ] },
+        { list: [
+          'Purchase orders live in **Suppliers & Contractors**, on the **Purchase orders (LPO)** tab. Its **LPO tracker** shows how many orders, and how much money, are Drafts, Awaiting delivery, **Late** (past their deliver-by date), Received and Closed; press a box to list those orders. Choose a supplier to see the tracker for that supplier only.',
+          'Each supplier\'s page has the same tracker for that supplier, with every order, its project, its deliver-by date and a **late** mark.',
+          'An issued order cannot be changed: cancel it (a reason is required, because the supplier has a copy) and raise a new one.',
+          'Every step is in the order\'s history, the supplier\'s history, the project\'s activity when it is for a project, and the audit log.',
+          'Company details, the standard LPO terms and the default delivery address are set by an administrator in **Settings**, Quotes and purchase orders.',
+          'Approval of an LPO before it is issued is not part of this version yet.',
         ] },
       ],
     },
@@ -244,9 +335,29 @@ function sections(user) {
       ],
     },
     {
+      id: 'kb', title: 'Knowledge Base', who: 'staff', perm: 'kb.view',
+      intro: 'Short guides for problems you meet more than once. A good article saves the next person the same hunt.',
+      blocks: [
+        { p: '**Knowledge Base** in the menu opens the list. Type a few words, part of a title or a tag in the search box. On a ticket, the **Knowledge Base** card on the right shows linked articles and a link to search for the same problem.' },
+        ...(perms.can(user, 'kb.write') ? [
+          { h: 'Writing an article' },
+          { steps: ['Search first. If an article exists, improve it instead of writing a second one.', 'Press **New article** (or **Write an article from this ticket** on a solved ticket: the problem and the fix are copied in; remove customer names and details).', 'Give it a title in the words people use, a short summary, a category and a few tags. The text is plain: **#** for headings, **-** for bullets, **1.** for steps, backticks for commands, **[[KB-0012]]** to link another article.', 'Choose who can read it: **Staff only**, or **Staff and customers**.', 'Save. It stays a draft until a service delivery manager publishes it.'] },
+          { tip: 'Every save keeps the old version. **History** shows who changed what and lets you restore an earlier version.' },
+          { p: 'An article that is live for customers can only be changed by a publisher, so nothing public is altered without a check. Articles have a **review by** date (a year after publishing unless you set it); old ones appear under **Review due**.' },
+        ] : []),
+        ...(perms.can(user, 'kb.publish') ? [
+          { h: 'Publishing' },
+          { p: 'Open a draft, read it, check that a customer article says nothing about a particular customer, then press **Publish**. **Take back to draft** hides it again; **Archive** keeps it but removes it from the lists. Categories are managed at the bottom of the Knowledge Base page.' },
+        ] : []),
+        { p: 'Press **Yes, it helped** or **No** on an article you used. The counts help the authors decide what to improve.' },
+      ],
+    },
+    {
       id: 'mail', title: 'E-mail to ticket', who: 'staff', perm: 'mail.view',
       blocks: [
         { p: 'Shared mailboxes (up to five) are read automatically and every message becomes a ticket, or a comment on the ticket named in the subject. **Administration → E-mail** shows each mailbox, when it was last read, whether it is healthy, and the log of outgoing mail.' },
+        ...(perms.can(user, 'mail.manage') ? [{ p: 'The **Outgoing mail** card at the top of that page is where the mail server for notifications is set: the server, the security (STARTTLS is the usual choice), a user name and password if the server asks for them, and the From address. **Send test email** checks it at once and explains in plain words if the server refuses. Until it is set, nobody receives notifications.' }] : []),
+        ...(perms.can(user, 'mail.manage') ? [{ p: 'Each mailbox form has a box for its **password** (IMAP), **client secret** (Microsoft 365) or **service-account key** (Google). Type it there once: it is stored encrypted and never shown again. Leave the box empty when you save other changes to keep the saved one.' }] : []),
         { tip: 'If a mailbox shows an error, tell an administrator: tickets by e-mail are not arriving until it is fixed. You get a notice when it recovers.' },
       ],
     },
@@ -259,23 +370,39 @@ function sections(user) {
           '**Add a staff member with a local password**: the page shows a one-time password once. Give it to the person; they should change it from My account.',
           '**Role**: choose from the list and press Save. The role you set is the role; the directory never changes it.',
           '**Active**: untick to block someone. **Available**: untick when a person is away so tickets skip them.',
-          '**Reset password** gives a one-time password for a local account. For an Active Directory account the password is changed in Windows.',
+          '**Reset password** gives a one-time password for a local account. The person must replace it at their first sign-in. For an Active Directory account the password is changed in Windows.',
+          '**Reset** next to Two-step shows where someone has two-step verification on. Use it when a phone is lost: it switches it off, ends their sessions and is written to the audit log. Roles that must use two-step set it up again at the next sign-in.',
         ] },
         { h: 'Active Directory (on the Users page)' },
         { p: 'Active Directory only does two things here: it lets you **import people** and it checks their password when they sign in. Roles are always chosen in this application.' },
         { steps: [
           'On **Users**, open **Connection settings** under Active Directory.',
-          'Type the **Server** (for example dc1.corp.local), the **Domain** (corp.local), the **Service account** (a normal read-only AD account, user name only) and its **Password**. Tick **Allow imported people to sign in with their Active Directory password** and press Save. The password is stored encrypted and never shown again.',
-          'Press **Test connection**. It says how many people it found, or why it could not connect.',
+          'Type the **Domain** (for example corp.local), the **IPv4 address** of your domain controller (a name such as dc1.corp.local also works), the **User name** of a normal read-only AD account (the name only; the domain is added) and its **Password**. The password is stored encrypted and never shown again.',
+          'Press **Discover**. It saves what you typed, connects, and fills in the **Search base** for you. If it cannot connect it says why.',
+          'Choose the **Connection security**: LDAPS (port 636) or STARTTLS (port 389) are encrypted and need a certificate on the domain controller. **None** works without a certificate but sends passwords unprotected, so use it only on a trusted internal network.',
+          'Tick **Allow imported people to sign in with their Active Directory password** and press **Save**, then **Test connection**.',
           'Press **Import users**, search by name, tick the people you want, choose their role and press **Import ticked people**.',
           'Those people now sign in with their Windows password. Anyone not imported cannot sign in.',
         ] },
         { tip: 'Every hour the system checks the imported people: anyone deleted or disabled in Active Directory is switched off here. If the server cannot be reached, nobody is switched off. Always keep one local administrator account for emergencies.' },
-        { p: 'The settings behind the form are simple: port 636 (secure) is used unless you change it under Advanced; the search base is worked out from the domain; a certificate file is only needed if your servers use a private certificate authority.' },
+        { p: 'Under Advanced you can set a different port, and a certificate file when your domain controllers use a certificate from your own authority.' },
+        { h: 'Company logo and name (Settings, Company branding)' },
+        { steps: [
+          'Open **Settings**. At the top, under **Company branding**, choose your logo file and press **Upload logo**. Use a PNG or JPEG of at most 1 MB; a wide logo with a transparent background looks best. SVG, GIF and WebP are not accepted.',
+          'Type the **Company name** in the next box and press **Save settings** at the bottom of the page.',
+        ] },
+        { list: [
+          '**The logo** replaces the company name wherever a mark is shown: the sign-in page, the menu, the customer portal and the request page (centred under the words Service Operations (Ops)), and the top of every PDF report, quote and purchase order (the logo alone).',
+          '**The company name** is used in page titles, page and PDF footers, the "From" block of quotes and LPOs, and Excel titles; with no logo it is shown in place of one.',
+          '**Recolour the logo to match each person\'s theme** (next to the company name, on by default): the dark parts of the logo take the theme colour and white stays white, on screen and in PDFs. Untick it to keep the logo in its own colours everywhere.',
+          '**Remove logo** goes back to the product mark. Changes show at once for everyone and are written to the audit log.',
+        ] },
         { h: 'Other administration pages' },
         { list: [
           '**Settings**: business hours, SLA clocks, security (which roles need two-step verification), currencies, contract and tender reminders.',
-          '**Audit log**: who did what, when and from where. It cannot be edited.',
+          '**Audit log**: who did what, when and from where. It cannot be edited or deleted, and each entry is chained to the one before it: the page shows the result of the daily check, and administrators are e-mailed if it ever fails.',
+          '**How long records are kept** (Settings): e-mail notifications (default 365 days), closed tickets and the audit log (default: for ever). A nightly clean-up removes what is older. Agree the periods with your legal and compliance people first: removed tickets cannot be brought back.',
+          '**Backups** are daily, encrypted and checked, with a monthly restore test. The passphrase is shown once at install: keep it in your password vault (see the README, Backup and restore).',
           '**E-mail**, **Service catalogue** and **SLA policies** are described in their own sections.',
         ] },
       ],
@@ -287,10 +414,30 @@ function sections(user) {
         ['ticket.view', 'See tickets'], ['ticket.work', 'Reply to, update and resolve tickets'], ['ticket.create_for_customer', 'Raise a ticket for a customer'], ['ticket.assign', 'Assign tickets'], ['ticket.verify', 'Verify e-mail tickets'],
         ['ticket.sla_note', 'Record SLA breach causes'], ['report.view', 'Reports'], ['customer.view', 'See customers and services'], ['customer.manage', 'Create and change customers'], ['catalogue.manage', 'Change the service catalogue'],
         ['sla.configure', 'Change SLA policies'], ['contract.view', 'See contracts'], ['contract.manage', 'Create and change contracts'], ['contract.finance', 'See contract financials'], ['tender.view', 'See tenders'], ['tender.manage', 'Create and move tenders'],
-        ['tender.contribute', 'Work on a tender'], ['pipeline.view', 'See the pipeline'], ['pipeline.manage', 'Create and change deals'], ['pipeline.escalate', 'Escalate a deal'], ['project.view', 'See projects'], ['project.manage', 'Create and change projects'],
-        ['project.contribute', 'Update tasks of own projects'], ['operations.view', 'Operations Overview'], ['operations.manage', 'Write the weekly highlights'], ['mail.view', 'See the e-mail page'], ['mail.manage', 'Change mailboxes'],
+        ['tender.contribute', 'Work on a tender'], ['pipeline.view', 'See the pipeline'], ['pipeline.manage', 'Create and change deals'], ['pipeline.escalate', 'Escalate a deal'], ['quote.view', 'See quotes'], ['quote.manage', 'Create and send quotes'], ['supplier.view', 'See suppliers and contractors'], ['supplier.manage', 'Register suppliers, upload their documents, put them on projects and tenders'], ['lpo.view', 'See purchase orders (LPOs)'], ['lpo.manage', 'Raise and issue purchase orders (LPOs)'], ['project.view', 'See projects'], ['project.manage', 'Create and change projects'],
+        ['project.contribute', 'Update tasks of own projects'], ['operations.view', 'Operations Overview'], ['operations.manage', 'Write the weekly highlights'], ['mail.view', 'See the e-mail page'], ['mail.manage', 'Change mailboxes'], ['kb.view', 'Read the Knowledge Base'], ['kb.write', 'Write and edit articles'], ['kb.publish', 'Publish and archive articles'],
         ['user.manage', 'Manage users and Active Directory'], ['settings.manage', 'Change settings'], ['audit.view', 'See the audit log'],
       ] }],
+    },
+    {
+      id: 'demo', title: 'Demo data: trying the system', who: 'staff',
+      intro: 'A test system can be filled with sample data so every screen has something to show. It is for trying and training only, and an administrator removes it before real work starts.',
+      blocks: [
+        { p: 'An administrator loads it on the server with **node scripts/demo-data.js load**, checks it with **status** and removes it with **remove** (see the README, Demo data). Everything sample is easy to recognise: customer names end in **(Demo)**, people\'s addresses end in **@' + demoInfo().domain + '**, and notes start with **[DEMO]**. Nothing is e-mailed while it is loaded.' },
+        { h: 'Signing in as a demo person' },
+        { p: 'Every demo person uses the same password: **' + demoInfo().password + '**. Sign in as the role you want to try:' },
+        { table: { head: ['Sign in as', 'Role', 'Good for trying'], rows: demoInfo().rows } },
+        { h: 'What is in it' },
+        { list: [
+          '**Service desk**: three customers with sites, CSIDs, services, contracts and SLA policies; about 64 tickets over the last eight weeks (some breached, some at risk, some waiting for the customer), two e-mails waiting on **Verification**, replies written with the formatting toolbar, and seven Knowledge Base articles with readers\' votes.',
+          '**Contracts**: customer and supplier contracts with SLA targets and three months of measured performance, obligations (one overdue), a quarterly payment schedule, approvals (one asking for changes), a variation and an extension, and one expired contract.',
+          '**Pipeline and quotes**: ten deals at every stage (one escalated), with engineering tasks, proposals, solution designs and engineer effort; five quotes (sent, revised with a discount, accepted, draft).',
+          '**Tenders**: eight tenders from identified to awarded and unsuccessful, with bid tasks, approvals before submission, clarifications and evaluation scores.',
+          '**Projects** and the **Operations Overview**: five projects in different health (one escalated) with tasks and milestones, and this and last week\'s highlights.',
+          '**Suppliers & Contractors**: three suppliers on projects and a tender, their documents (a quote, a tax clearance and a delivery note you can open), and purchase orders at every stage of the **LPO tracker**: draft, awaiting delivery, late, received, closed and cancelled.',
+        ] },
+        { tip: 'Requests without signing in: each demo customer has an e-mail domain (for example **kcb.demo.invalid**) and a CSID, so the request page accepts them, but the one-time code is e-mailed and those addresses cannot receive mail. To try it to the end, an administrator adds your own e-mail domain to a demo customer (Customers, the customer, E-mail domains) and removes it again afterwards.' },
+      ],
     },
     {
       id: 'help', title: 'Problems and questions', who: 'all',

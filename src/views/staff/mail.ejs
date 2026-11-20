@@ -1,7 +1,51 @@
 <%- include('../partials/header') %>
 <p class="jump"><a href="/admin">Administration</a> › E-mail</p>
 <h1>Mailboxes and e-mail</h1>
-<p class="muted">Up to five shared mailboxes create tickets automatically. Each is read through Microsoft 365 (Graph), Google Workspace (Gmail API) or plain IMAP. Mail is followed by arrival order, not by the "unread" flag, so people reading it in Outlook do not hide it from the application. When a mailbox is first connected, only unread mail from the last two days becomes tickets. <b>Passwords, client secrets and key files are never stored here</b>: they are read from variables in the server environment file.</p>
+<p class="muted">Up to five shared mailboxes create tickets automatically. Each is read through Microsoft 365 (Graph), Google Workspace (Gmail API) or plain IMAP. Mail is followed by arrival order, not by the "unread" flag, so people reading it in Outlook do not hide it from the application. When a mailbox is first connected, only unread mail from the last two days becomes tickets. <b>Passwords, client secrets and keys are typed here once</b>, stored encrypted and never shown again.</p>
+<section class="card" id="outgoing">
+  <div class="sechead"><h2>Outgoing mail</h2>
+    <% if (out.source === 'settings') { %><span class="pill">Sending through <%= out.cfg.server %></span><% } else if (out.source === 'env') { %><span class="pill">Server file settings in use</span><% } else { %><span class="pill off">Not set up</span><% } %></div>
+  <p class="muted">The mail server this application uses to send notifications: new tickets, replies, SLA warnings, contract reminders and the answers to people who write to a support mailbox. It is separate from the mailboxes below, which only <i>read</i> mail.</p>
+  <% if (out.source === 'none') { %><p class="notice warn"><b>Nobody is receiving notifications.</b> No mail server is set up, so messages wait here (for up to 7 days) and are sent as soon as you save a mail server below.<% if (out.pending || out.failed) { %> In the last 7 days: <%= out.pending %> waiting, <%= out.failed %> failed.<% } %></p>
+  <% } else if (out.source === 'env') { %><p class="notice">Using <b><%= out.env.host %></b> (port <%= out.env.port %>) from the server's environment file, as before. Saving a mail server below replaces it.</p><% } %>
+  <% if (out.password_lost) { %><p class="notice warn">The saved password can no longer be read (the server's secret changed). Type it again and save.</p><% } %>
+  <% if (out.last_test) { %><p class="muted">Last test: <b class="<%= out.last_test.ok ? 'ok' : 'bad' %>"><%= out.last_test.ok ? 'accepted' : 'failed' %></b> · <%= fmt.dt(out.last_test.at) %> · to <%= out.last_test.to %></p><% } %>
+  <% if (out.source !== 'none' && (out.pending || out.failed)) { %><p class="muted"><%= out.pending %> message(s) waiting and <%= out.failed %> failed in the last 7 days (see the log at the bottom of this page).</p><% } %>
+  <% if (canManage) { %>
+  <details class="adsetup" <%= out.source === 'settings' ? '' : 'open' %>><summary>Mail server settings</summary>
+    <form method="post" action="/mail/outgoing"><%- include('../partials/csrf') %>
+      <div class="adform">
+        <p><label for="sm_server">Mail server</label><input id="sm_server" name="server" value="<%= out.cfg.server %>" placeholder="smtp.example.com" autocomplete="off"><small>A name or an IPv4 address. Empty switches this off.</small></p>
+        <p><label for="sm_sec">Connection security</label>
+          <select id="sm_sec" name="security">
+            <option value="starttls" <%= out.cfg.security === 'starttls' ? 'selected' : '' %>>STARTTLS, port 587 (recommended)</option>
+            <option value="ssl" <%= out.cfg.security === 'ssl' ? 'selected' : '' %>>SSL/TLS, port 465</option>
+            <option value="none" <%= out.cfg.security === 'none' ? 'selected' : '' %>>None, port 25 (trusted internal network only)</option>
+          </select></p>
+        <p><label for="sm_user">User name</label><input id="sm_user" name="user" value="<%= out.cfg.user %>" placeholder="optional" autocomplete="off"><small>Leave empty if your mail server accepts mail from this server without signing in.</small></p>
+        <p><label for="sm_pw">Password</label><input id="sm_pw" name="password" type="password" autocomplete="new-password" placeholder="<%= out.password_saved ? 'Saved (leave empty to keep)' : '' %>"><small>Stored encrypted. Never shown again.</small></p>
+        <p><label for="sm_from">From address</label><input id="sm_from" name="from_address" type="email" value="<%= out.cfg.from_address %>" placeholder="noreply@example.com" autocomplete="off"><small>What people see as the sender. The mail server must allow this account to send as it.</small></p>
+        <p><label for="sm_name">Sender name</label><input id="sm_name" name="from_name" value="<%= out.cfg.from_name %>" placeholder="<%= appName %>" maxlength="80" autocomplete="off"></p>
+      </div>
+      <% if (out.cfg.server && out.cfg.security === 'none') { %><p class="notice warn">Security is set to <b>None</b>: messages and the password travel unprotected between this server and the mail server.</p><% } %>
+      <details class="adadv"><summary>Advanced (usually not needed)</summary>
+        <div class="grid2">
+          <p><label for="sm_port">Port</label><input id="sm_port" name="port" value="<%= out.cfg.port !== out.defaultPort ? out.cfg.port : '' %>" placeholder="<%= out.defaultPort %>" inputmode="numeric"><small>Leave empty to use the usual port for the security you chose.</small></p>
+          <p><label class="inline"><input type="checkbox" name="allow_untrusted" <%= out.cfg.allow_untrusted ? 'checked' : '' %>> Accept the mail server's certificate even if this server does not trust it</label><small>Only for a mail server inside your own network that you trust. It stops the connection being checked against a fake server.</small></p>
+        </div>
+      </details>
+      <button class="btn" type="submit">Save</button>
+    </form>
+    <% if (out.source !== 'none') { %>
+    <form method="post" action="/mail/outgoing/test" class="testrow"><%- include('../partials/csrf') %>
+      <label for="sm_to">Send a test email to</label>
+      <input id="sm_to" name="to" type="email" value="<%= meEmail %>" required>
+      <button class="btn ghost" type="submit">Send test email</button>
+    </form>
+    <% } %>
+  </details>
+  <% } %>
+</section>
 <% mailboxes.forEach(function (m) { %>
 <section class="card" id="mb-<%= m.key %>"><h2><%= m.name %> <span class="pill"><%= m.enabled ? 'enabled' : 'disabled' %></span> <span class="pill"><%= providerLabels[m.provider] %></span> <span class="pill"><%= m.queue === 'security' ? 'Security queue' : 'IT Services queue' %></span></h2>
 <% const h = health[m.id]; const st = stats[m.id] || {}; %>
@@ -20,8 +64,15 @@
 <p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP server</label><input name="imap_host" value="<%= m.imap_host %>" placeholder="mail.example.com"></p>
 <p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP port</label><input name="imap_port" value="<%= m.imap_port %>"></p>
 <p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label>IMAP user</label><input name="imap_user" value="<%= m.imap_user %>"><small>Exchange on-premises shared mailbox: <code>DOMAIN\user\sharedmailbox</code> or the mailbox's own login.</small></p>
-<p><label><span data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>>Variable holding the mailbox password</span><span data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>>Variable holding the client secret</span><span data-show-for="gmail" <%= m.provider === 'gmail' ? '' : 'hidden' %>>Variable holding the path of the service-account key file</span></label>
-<input name="secret_env" value="<%= m.secret_env %>" placeholder="MAILBOX_<%= m.key.toUpperCase() %>_SECRET"><small><%= secretsConfigured[m.id] ? 'The variable is set on the server.' : 'The variable is not set on the server yet.' %> It goes in /etc/itsm/itsm.env, never here.</small></p>
+<% var sst = secretState[m.id]; %>
+<p data-show-for="imap" <%= m.provider === 'imap' ? '' : 'hidden' %>><label for="sec_<%= m.id %>_imap">Mailbox password</label><input id="sec_<%= m.id %>_imap" name="secret_imap" type="password" autocomplete="new-password" placeholder="<%= sst.stored ? 'Saved (leave empty to keep)' : '' %>"><small>Stored encrypted. Never shown again.</small></p>
+<p data-show-for="graph" <%= m.provider === 'graph' ? '' : 'hidden' %>><label for="sec_<%= m.id %>_graph">Client secret</label><input id="sec_<%= m.id %>_graph" name="secret_graph" type="password" autocomplete="new-password" placeholder="<%= sst.stored ? 'Saved (leave empty to keep)' : '' %>"><small>The <b>Value</b> of the secret in the Entra app registration, not its ID. Stored encrypted. Secrets expire: note the expiry date.</small></p>
+<p data-show-for="gmail" <%= m.provider === 'gmail' ? '' : 'hidden' %>><label for="sec_<%= m.id %>_gmail">Service-account key</label><textarea id="sec_<%= m.id %>_gmail" name="secret_gmail" rows="3" class="mono" autocomplete="off" placeholder="<%= sst.stored ? 'Saved (leave empty to keep). To replace it, paste the new key.' : 'Paste the whole contents of the JSON key file' %>"></textarea><small>Stored encrypted. Never shown again.</small></p>
+<% if (sst.lost) { %><p class="notice warn">The saved secret can no longer be read (the server's secret changed). Enter it again and save.</p><% } %>
+<% if (sst.stored) { %><p><label class="inline"><input type="checkbox" name="clear_secret"> Remove the saved secret</label></p><% } %>
+<details class="adadv"><summary>Advanced: read it from a variable on the server instead</summary>
+<p><label for="env_<%= m.id %>">Variable name</label><input id="env_<%= m.id %>" name="secret_env" value="<%= m.secret_env %>" placeholder="MAILBOX_<%= m.key.toUpperCase() %>_SECRET"><small><%= m.secret_env ? (sst.envSet ? 'The variable is set on the server.' : 'The variable is not set on the server.') : 'Only for setups that keep it in /etc/itsm/itsm.env.' %> A secret typed above is used first.</small></p>
+</details>
 <p><label>Folder</label><input name="imap_folder" value="<%= m.imap_folder %>"><small>INBOX (Inbox) unless you read a sub-folder.</small></p>
 <p><label>Ticket category</label><input name="category" value="<%= m.category %>"></p>
 <p><label>Default priority</label><select name="default_priority"><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= m.default_priority === p ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select></p>

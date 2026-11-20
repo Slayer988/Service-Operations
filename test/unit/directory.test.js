@@ -24,7 +24,15 @@ test('settings: only server, domain and service account are needed; the rest is 
   const d = ldap.derive(ok);
   assert.equal(d.url, 'ldaps://dc1.corp.local:636'); assert.equal(d.starttls, false);
   assert.equal(d.bind_dn, 'svc-itsm@corp.local'); assert.equal(d.base_dn, 'DC=corp,DC=local');
-  assert.equal(ldap.derive({ ...ok, port: 389 }).url, 'ldap://dc1.corp.local:389'); assert.equal(ldap.derive({ ...ok, port: 389 }).starttls, true);   // plain ldap:// always upgrades to TLS
+  assert.equal(ldap.derive({ ...ok, port: 389, security: undefined }).url, 'ldap://dc1.corp.local:389'); assert.equal(ldap.derive({ ...ok, port: 389, security: undefined }).starttls, true);   // settings from before "Connection security" existed
+  // Connection security: LDAPS (default), STARTTLS, or none; the port follows unless one is typed
+  const sec = (x) => ldap.validateConfig({ server: '10.0.0.5', domain: 'corp.local', service_user: 'svc', ...x }).config;
+  assert.equal(ok.security, 'ldaps');
+  assert.deepEqual([sec({ security: 'starttls' }).port, sec({ security: 'none' }).port, sec({ security: 'ldaps' }).port, sec({ security: 'none', port: '3389' }).port], [389, 389, 636, 3389]);
+  assert.equal(sec({ security: 'bogus' }).security, 'ldaps');
+  assert.deepEqual([ldap.derive(sec({ security: 'starttls' })).url, ldap.derive(sec({ security: 'starttls' })).starttls], ['ldap://10.0.0.5:389', true]);
+  assert.deepEqual([ldap.derive(sec({ security: 'none' })).url, ldap.derive(sec({ security: 'none' })).starttls], ['ldap://10.0.0.5:389', false]);
+  assert.equal(ldap.derive(sec({})).url, 'ldaps://10.0.0.5:636');                       // an IPv4 address is accepted as the server
   assert.equal(ldap.derive({ ...ok, service_user: 'CORP\\svc' }).bind_dn, 'CORP\\svc');              // a full name is used as typed
   assert.equal(ldap.derive({ ...ok, service_user: 'svc@other.local' }).bind_dn, 'svc@other.local');
   assert.equal(ldap.derive({ ...ok, base_dn: 'OU=Staff,DC=corp,DC=local' }).base_dn, 'OU=Staff,DC=corp,DC=local');
@@ -175,4 +183,44 @@ test('assess: healthy, failing, stale, slow polling, disabled', () => {
   assert.equal(assess(box({ last_success_at: '2026-11-01T09:30:00Z', poll_seconds: 1800 }), now).healthy, true);   // 3 x 30 min allowed
   assert.equal(assess(box({ enabled: false, consecutive_failures: 9 }), now).healthy, true);
   assert.equal(assess(box({ last_success_at: null }), now).healthy, true);   // never succeeded yet: failures decide
+});
+
+test('explain: connection failures are put in plain words, secrets removed', () => {
+  const c = ldap.derive({ server: 'dc1.corp.local', port: 636, domain: 'corp.local', service_user: 'svc' });
+  const reset = ldap.explain(new Error('read ECONNRESET'), c, 'pw');
+  assert.match(reset, /no certificate|closed the connection/); assert.match(reset, /port 389/); assert.match(reset, /\(read ECONNRESET\)/);
+  assert.match(ldap.explain(new Error('read ECONNRESET'), ldap.derive({ server: 'x', port: 389, domain: 'c.l', service_user: 's' })), /port 636/);
+  assert.match(ldap.explain(new Error('connect ECONNREFUSED 10.0.0.1:636'), c), /Nothing is listening/);
+  assert.match(ldap.explain(new Error('Connection timeout'), c), /did not answer/);
+  assert.match(ldap.explain(new Error('getaddrinfo ENOTFOUND dc1'), c), /cannot find that server name/);
+  assert.match(ldap.explain(new Error('self-signed certificate in certificate chain'), c), /Certificate file/);
+  assert.match(ldap.explain(new Error("Hostname/IP does not match certificate's altnames"), c), /different name/);
+  const bad = new Error('80090308: LdapErr: DSID, data 52e'); bad.code = 49;
+  assert.match(ldap.explain(bad, c), /service account or its password/);
+  assert.ok(!ldap.explain(new Error('failed with secret-pw'), c, 'secret-pw').includes('secret-pw'));
+  assert.equal(ldap.explain(new Error('odd failure'), c), 'odd failure');
+});
+
+test('discover: finds the search base and the service account', async () => {
+  const seen = [];
+  ldap._useClientFactory(() => ({
+    async bind() {},
+    async search(base, opt) {
+      seen.push([base, opt.scope, opt.filter]);
+      if (base === '') return { searchEntries: [{ dn: '', defaultNamingContext: 'DC=corp,DC=local' }] };
+      return { searchEntries: [{ dn: 'CN=svc itsm,OU=Service,DC=corp,DC=local' }] };
+    },
+    async unbind() {},
+  }));
+  const r = await ldap.discover(ldap.derive({ server: 'x', domain: 'corp.local', service_user: 'CORP\\svc*)(x' }), 'pw');
+  assert.deepEqual(r, { base_dn: 'DC=corp,DC=local', user_dn: 'CN=svc itsm,OU=Service,DC=corp,DC=local' });
+  assert.ok(seen[1][2].includes('svc\\2a\\29\\28x') && !seen[1][2].includes('svc*)(x'), 'the account name is escaped in the filter');
+  ldap._useClientFactory(() => ({ async bind() {}, async search(base) { if (base === '') { const e = new Error('no'); e.code = 32; throw e; } return { searchEntries: [] }; }, async unbind() {} }));
+  assert.deepEqual(await ldap.discover(ldap.derive({ server: 'x', domain: 'corp.local', service_user: 'svc' }), 'pw'), { base_dn: 'DC=corp,DC=local', user_dn: '' });
+  ldap._useClientFactory(() => ({ async bind() { throw new Error('read ECONNRESET'); }, async unbind() {} }));
+  await assert.rejects(() => ldap.discover(ldap.derive({ server: 'x', domain: 'corp.local', service_user: 'svc' }), 'pw'), /ECONNRESET/);
+  ldap._useClientFactory(null);
+  const c = ldap.derive({ server: 'dc1', domain: 'corp.local', service_user: 'svc', security: 'none' });
+  assert.match(ldap.explain(new Error('00002028: LdapErr: DSID-0C090256, comment: The server requires binds to turn on integrity checking if SSL\\TLS are not already active'), c), /encrypted or signed/);
+  assert.match(ldap.explain(new Error('read ECONNRESET'), ldap.derive({ server: 'dc1', domain: 'c.l', service_user: 's' })), /STARTTLS/);
 });

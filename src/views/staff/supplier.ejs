@@ -1,0 +1,74 @@
+<%- include('../partials/header') %>
+<p><a href="/suppliers">← Suppliers & Contractors</a></p>
+<div class="head"><h1><%= s.name %> <span class="tag <%= s.status === 'active' ? '' : (s.status === 'on_hold' ? 'warn' : 'grey') %>"><%= Sup.STATUSES[s.status] %></span></h1>
+<% if (canLpo && s.status === 'active') { %><a class="btn" href="/lpo/new?supplier=<%= s.id %>">Raise an LPO</a><% } %></div>
+<p class="muted"><%= s.code %> · <%= Sup.KINDS[s.kind] %><%= s.services ? ' · ' + s.services : '' %></p>
+<p class="jump"><a href="#documents">Documents</a> · <a href="#work">Projects and tenders</a><% if (lpos) { %> · <a href="#lpos">Purchase orders</a><% } %> · <a href="#details">Details</a> · <a href="#history">History</a></p>
+
+<section class="card" id="documents"><h2>Documents</h2>
+<p class="muted">Their quotes, LPOs given to them, invoices, delivery notes and papers (registration, tax clearance). A quote can be turned into an LPO.</p>
+<%- include('../partials/supplier_docs', { docs: docs, showSupplier: false, canLpo: canLpo }) %>
+<% if (canUpload) { %>
+<details class="upload" <%= preset.project_id || preset.tender_id ? 'open' : '' %>><summary class="btn ghost">Upload a document</summary>
+<form method="post" action="/suppliers/<%= s.id %>/documents" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+<div class="grid2">
+<p><label for="d_kind">What is it?</label><select id="d_kind" name="kind"><% Object.keys(Sup.DOC_KINDS).forEach(function (k) { %><option value="<%= k %>" <%= preset.kind === k ? 'selected' : '' %>><%= Sup.DOC_KINDS[k] %></option><% }) %></select></p>
+<p><label for="d_ref">Their reference / number</label><input id="d_ref" name="reference" maxlength="120" placeholder="e.g. Q-2026-114"></p>
+<p><label for="d_amount">Amount <small class="muted">(optional)</small></label><span class="rowform"><select name="currency" aria-label="Currency" class="num"><% currencies.forEach(function (c) { %><option><%= c %></option><% }) %></select> <input id="d_amount" name="amount" inputmode="decimal" placeholder="0.00"></span></p>
+<p><label for="d_date">Date of the document</label><input id="d_date" name="doc_date" type="date"></p>
+<p><label for="d_valid">Valid until <small class="muted">(quotes)</small></label><input id="d_valid" name="valid_until" type="date"></p>
+<p><label for="d_project">For project</label><select id="d_project" name="project_id"><option value="">—</option><% projects.forEach(function (p) { %><option value="<%= p.id %>" <%= String(preset.project_id) === String(p.id) ? 'selected' : '' %>><%= p.ref %> · <%= p.name %></option><% }) %></select></p>
+<p><label for="d_tender">For tender</label><select id="d_tender" name="tender_id"><option value="">—</option><% tenders.forEach(function (t) { %><option value="<%= t.id %>" <%= String(preset.tender_id) === String(t.id) ? 'selected' : '' %>><%= t.ref %> · <%= t.title %></option><% }) %></select></p>
+<% if (openLpos.length) { %><p><label for="d_lpo">For LPO</label><select id="d_lpo" name="purchase_order_id"><option value="">—</option><% openLpos.forEach(function (x) { %><option value="<%= x.id %>"><%= x.ref %> · <%= x.title %></option><% }) %></select></p><% } %>
+</div>
+<p><label for="d_notes">Notes</label><input id="d_notes" name="notes" maxlength="1000"></p>
+<p><label for="d_files">File(s)</label><input id="d_files" type="file" name="files" multiple required></p>
+<% if (preset.project_id) { %><input type="hidden" name="back" value="/projects/<%= preset.project_id %>#suppliers"><% } else if (preset.tender_id) { %><input type="hidden" name="back" value="/tenders/<%= preset.tender_id %>#suppliers"><% } %>
+<button class="btn" type="submit">Upload</button></form></details>
+<% } %>
+</section>
+
+<section class="card" id="work"><h2>Projects and tenders</h2>
+<% if (links.length) { %>
+<table class="grid"><thead><tr><th>On</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
+<% links.forEach(function (l) { %><tr>
+<td><% if (l.project_id) { %>Project <a href="/projects/<%= l.project_id %>"><%= l.project_ref %></a> <%= l.project_name %><% } else { %>Tender <a href="/tenders/<%= l.tender_id %>"><%= l.tender_ref %></a> <%= l.tender_title %><% } %></td>
+<td><%= l.role || '—' %></td><td><%= fmt.date(l.created_at) %><br><small><%= l.added_by_name || '' %></small></td>
+<td><% if (canManage) { %><form method="post" action="/suppliers/links/<%= l.id %>/delete" class="inline" data-confirm="Remove <%= s.name %> from this <%= l.project_id ? 'project' : 'tender' %>?"><%- include('../partials/csrf') %><input type="hidden" name="back" value="/suppliers/<%= s.id %>#work"><button class="btn ghost small" type="submit">Remove</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">Not on any project or tender yet.</p><% } %>
+<% if (canManage && s.status !== 'inactive') { %>
+<form method="post" action="/suppliers/links" class="rowform"><%- include('../partials/csrf') %><input type="hidden" name="supplier_id" value="<%= s.id %>"><input type="hidden" name="back" value="/suppliers/<%= s.id %>#work">
+<select name="project_id" aria-label="Project"><option value="">Add to a project…</option><% projects.forEach(function (p) { %><option value="<%= p.id %>"><%= p.ref %> · <%= p.name %></option><% }) %></select>
+<select name="tender_id" aria-label="Tender"><option value="">…or a tender</option><% tenders.forEach(function (t) { %><option value="<%= t.id %>"><%= t.ref %> · <%= t.title %></option><% }) %></select>
+<input name="role" maxlength="200" placeholder="Role, e.g. civil works subcontractor" aria-label="Role"><button class="btn ghost" type="submit">Add</button></form>
+<% } %>
+</section>
+
+<% if (lpos) { %>
+<section class="card" id="lpos"><h2>Purchase orders (LPO tracker)</h2>
+<%- include('../partials/lpo_tracker', { trk: trk, base: '/lpo?supplier=' + s.id + '&', current: '', money: money }) %>
+<% if (lpos.length) { %><table class="grid"><thead><tr><th>LPO</th><th>For</th><th>Project</th><th>Status</th><th class="num">Total</th><th>Date</th><th>Deliver by</th></tr></thead><tbody>
+<% lpos.forEach(function (x) { %><tr><td><a href="/lpo/<%= x.id %>"><%= x.ref %></a></td><td><%= x.title %></td><td><% if (x.project_id) { %><a href="/projects/<%= x.project_id %>"><%= x.project_ref %></a><% } else { %>—<% } %></td><td><span class="tag <%= x.status === 'cancelled' ? 'grey' : (x.status === 'draft' ? 'warn' : (x.status === 'issued' ? 'blue' : '')) %>"><%= PO.STATUS_LABELS[x.status] %></span></td><td class="num"><%= x.currency %> <%= money(x.total) %></td><td><%= fmt.date(x.issue_date) %></td><td><%= x.delivery_date ? fmt.date(x.delivery_date) : '—' %><% if (x.late) { %> <span class="tag bad">late</span><% } %></td></tr><% }) %>
+</tbody></table>
+<p class="muted"><a href="/lpo?supplier=<%= s.id %>&status=all">Open their orders in the LPO list</a> (filter, export to Excel or PDF).</p><% } else { %><p class="empty">No purchase orders yet.</p><% } %>
+</section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (canManage) { %>
+<form method="post" action="/suppliers/<%= s.id %>"><%- include('../partials/csrf') %><%- include('../partials/supplier_fields', { form: s, Sup: Sup }) %><button class="btn ghost" type="submit">Save</button></form>
+<% } else { %>
+<table class="kv"><tbody>
+<tr><th>TIN</th><td><%= s.tin || '—' %></td></tr><tr><th>Registration no.</th><td><%= s.registration_no || '—' %></td></tr>
+<tr><th>Phone / e-mail</th><td><%= [s.phone, s.email].filter(Boolean).join(' · ') || '—' %></td></tr><tr><th>Website</th><td><%= s.website || '—' %></td></tr>
+<tr><th>Contact</th><td><%= [s.contact_name, s.contact_phone, s.contact_email].filter(Boolean).join(' · ') || '—' %></td></tr>
+<tr><th>Payment terms</th><td><%= s.payment_terms || '—' %></td></tr><tr><th>Address</th><td class="desc"><%= s.address || '—' %></td></tr>
+<% if (s.notes) { %><tr><th>Notes</th><td class="desc"><%= s.notes %></td></tr><% } %>
+</tbody></table>
+<% } %>
+</section>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.at) %></time> <%= e.text %></li><% }) %></ul></section>
+<%- include('../partials/footer') %>

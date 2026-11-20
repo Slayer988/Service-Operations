@@ -6,7 +6,7 @@
 <form method="get" class="filters wide">
   <input type="hidden" name="view" value="<%= view %>">
   <select name="type"><option value="">Incidents and requests</option><option value="incident" <%= f.type === 'incident' ? 'selected' : '' %>>Incidents</option><option value="request" <%= f.type === 'request' ? 'selected' : '' %>>Service requests</option></select>
-  <input type="search" name="q" value="<%= f.q %>" placeholder="Search subject, reference or sender">
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Search subject, reference, sender, customer, CSID or ticket text">
   <select name="customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
   <select name="priority"><option value="">Any priority</option><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= String(f.priority) === String(p) ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select>
   <% if (can('security.view')) { %><select name="queue"><option value="">All queues</option><option value="it_services" <%= f.queue === 'it_services' ? 'selected' : '' %>>IT Services</option><option value="security" <%= f.queue === 'security' ? 'selected' : '' %>>Security</option></select><% } %>

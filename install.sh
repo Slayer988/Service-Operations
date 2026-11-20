@@ -17,7 +17,7 @@ Optional
   --admin-email EMAIL     Create the first platform administrator (password printed once)
   --admin-name "Name"     Display name for that administrator
   --timezone ZONE         Default Africa/Nairobi
-  --demo                  Load demo customers and users so you can try every screen
+  --demo                  Load demo data so you can try every screen (remove it later: node scripts/demo-data.js remove)
   --skip-tests            Do not run the integration tests before starting
   --offline-bundle FILE   node_modules.tar.gz built with scripts/make-offline-bundle.sh (no internet needed)
 USAGE
@@ -206,15 +206,24 @@ fi
 
 # ---------------------------------------------------------------- services
 say "Installing systemd services, backup and health check"
-for u in itsm-web.service itsm-worker.service itsm-backup.service itsm-backup.timer itsm-healthcheck.service itsm-healthcheck.timer; do
+for u in itsm-web.service itsm-worker.service itsm-backup.service itsm-backup.timer itsm-healthcheck.service itsm-healthcheck.timer itsm-restore-test.service itsm-restore-test.timer; do
   install -m 644 "$HERE/deploy/$u" "/etc/systemd/system/$u"
 done
 install -m 755 "$HERE/deploy/itsm-backup.sh" /usr/local/sbin/itsm-backup
 install -m 755 "$HERE/deploy/itsm-healthcheck.sh" /usr/local/sbin/itsm-healthcheck
+install -m 755 "$HERE/deploy/itsm-restore-test.sh" /usr/local/sbin/itsm-restore-test
+# Backups are encrypted with a passphrase kept in /etc/itsm/backup.pass. It is created once (never replaced) and shown at the end.
+NEW_BACKUP_PASS=""
+if [ ! -s "$CONF_DIR/backup.pass" ]; then
+  umask 077; openssl rand -base64 33 > "$CONF_DIR/backup.pass"; umask 022
+  chown root:root "$CONF_DIR/backup.pass"; chmod 600 "$CONF_DIR/backup.pass"
+  NEW_BACKUP_PASS="$(cat "$CONF_DIR/backup.pass")"
+fi
+[ -f "$CONF_DIR/backup.conf" ] || { printf '%s\n' '# Optional settings for the daily backup (/usr/local/sbin/itsm-backup). Uncomment to use.' '#KEEP_DAYS=14' '# Copy every backup off this server: user@host:/path (rsync over ssh, key login) or a folder such as a mounted network share.' '#BACKUP_COPY_TO=backup@files.example.com:/srv/backups/itsm' > "$CONF_DIR/backup.conf"; chown root:root "$CONF_DIR/backup.conf"; chmod 600 "$CONF_DIR/backup.conf"; }
 chmod 700 /var/backups/itsm
 systemctl daemon-reload
 systemctl enable itsm-web.service itsm-worker.service nginx.service >/dev/null 2>&1
-systemctl enable --now itsm-backup.timer itsm-healthcheck.timer >/dev/null 2>&1
+systemctl enable --now itsm-backup.timer itsm-healthcheck.timer itsm-restore-test.timer >/dev/null 2>&1
 systemctl restart itsm-web.service
 systemctl restart itsm-worker.service
 systemctl restart nginx.service
@@ -233,10 +242,23 @@ if [ -n "$ADMIN_EMAIL" ]; then
 fi
 if [ "$DEMO" -eq 1 ]; then SUMMARY+=$'\n'"$(appnode scripts/seed-demo.js)"; fi
 
+say "Taking a first backup and testing that it can be restored"
+if /usr/local/sbin/itsm-backup >/dev/null 2>&1 && /usr/local/sbin/itsm-restore-test >/dev/null 2>&1; then
+  BACKUP_NOTE="A first backup was taken and restored into a scratch database: backups work."
+else
+  BACKUP_NOTE="The first backup or its restore test did not complete. Run  itsm-backup  then  itsm-restore-test  as root and read the messages (journalctl -t itsm-backup)."
+fi
+PASSNOTE=""
+if [ -n "$NEW_BACKUP_PASS" ]; then
+  PASSNOTE=$'\n'"BACKUP PASSPHRASE (shown once): $NEW_BACKUP_PASS"$'\n'"Backups are encrypted with it. Save it in your password vault NOW: if this server is lost, the backups cannot be opened without it."$'\n'
+fi
+
 cat <<DONE
 
 Service Operations (Ops) is installed and running at $SCHEME://$DOMAIN/
 $SUMMARY
+$PASSNOTE
+$BACKUP_NOTE
 
 Next steps
   1. DNS: point $DOMAIN at this server's IP address.
@@ -244,5 +266,6 @@ Next steps
   3. E-mail: edit $ENV_FILE (SMTP_*, MAILBOX_*_PASSWORD) then: systemctl restart itsm-web itsm-worker
      and configure the two shared mailboxes on the E-mail page.
   4. SLA targets are placeholders: replace them with your contract values on the SLA page.
-  5. Logs: journalctl -u itsm-web -f   journalctl -u itsm-worker -f      Backups: /var/backups/itsm (daily)
+  5. Logs: journalctl -u itsm-web -f   journalctl -u itsm-worker -f      Backups: /var/backups/itsm (daily, encrypted; restore test monthly)
+  6. Copy backups off this server: set BACKUP_COPY_TO in $CONF_DIR/backup.conf (see README, "Backup and restore").
 DONE

@@ -1,0 +1,31 @@
+<%- include('../partials/header') %>
+<section class="card">
+  <div class="head"><h1>Raise a request</h1>
+  <form method="post" action="/request/finish" class="inline"><%- include('../partials/csrf') %><button class="btn ghost small" type="submit">Finish</button></form></div>
+  <p class="muted">For <b><%= ctx.customer_name %></b> · CSID <b><%= ctx.csid %></b><%= ctx.description ? ' (' + ctx.description + ')' : '' %> · confirmed as <%= email %></p>
+  <h2>Your services on this CSID</h2>
+  <% if (ctx.services.length) { %>
+  <table class="grid"><thead><tr><th>Service</th><th>Type</th></tr></thead><tbody>
+  <% ctx.services.forEach(function (s) { %><tr><td><%= s.name %></td><td><%= s.service_type %></td></tr><% }) %></tbody></table>
+  <% } else { %><p class="empty">No active services are listed on this CSID. You can still raise a request.</p><% } %>
+  <h2>What do you need?</h2>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <% if (left <= 0) { %><p class="notice">You have raised the most requests allowed at a time. <a href="/request">Ask for a new code</a> to raise more.</p><% } else { %>
+  <form method="post" action="/request/new"><%- include('../partials/csrf') %>
+    <div class="grid2">
+      <p><label for="g_name">Your name</label><input id="g_name" name="name" maxlength="120" required autocomplete="name" value="<%= form.name || '' %>"></p>
+      <p><label for="g_phone">Phone <small class="muted">(optional)</small></label><input id="g_phone" name="phone" maxlength="40" autocomplete="tel" value="<%= form.phone || '' %>"></p>
+      <p><label for="g_type">What is this?</label><select id="g_type" name="type"><option value="incident" <%= form.type !== 'request' ? 'selected' : '' %>>Something is broken (incident)</option><option value="request" <%= form.type === 'request' ? 'selected' : '' %>>I need something (request)</option></select></p>
+      <p><label for="g_service">Service</label><select id="g_service" name="service_id"><option value="">Not sure / other</option><% ctx.services.forEach(function (s) { %><option value="<%= s.id %>" <%= String(form.service_id) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% }) %></select></p>
+      <p><label for="g_category">Category</label><select id="g_category" name="category"><option value="">Choose…</option><% categories.forEach(function (c) { %><option <%= form.category === c ? 'selected' : '' %>><%= c %></option><% }) %></select></p>
+      <p><label for="g_impact">How many people or systems are affected?</label><select id="g_impact" name="impact"><option value="1" <%= String(form.impact) === '1' ? 'selected' : '' %>>Many / a whole site or service</option><option value="2" <%= !form.impact || String(form.impact) === '2' ? 'selected' : '' %>>A team or several people</option><option value="3" <%= String(form.impact) === '3' ? 'selected' : '' %>>One person</option></select></p>
+      <p><label for="g_urgency">How urgent is it?</label><select id="g_urgency" name="urgency"><option value="1" <%= String(form.urgency) === '1' ? 'selected' : '' %>>Work has stopped</option><option value="2" <%= !form.urgency || String(form.urgency) === '2' ? 'selected' : '' %>>Work is slowed down</option><option value="3" <%= String(form.urgency) === '3' ? 'selected' : '' %>>Can wait</option></select></p>
+    </div>
+    <p><label for="g_subject">Subject</label><input id="g_subject" name="subject" maxlength="200" required value="<%= form.subject || '' %>"></p>
+    <p><label for="g_desc">Describe the problem or request</label><textarea id="g_desc" name="description" rows="7" data-rich data-rich-format="description_format"><%= form.description || '' %></textarea></p>
+    <p class="muted">To send screenshots or files, reply to the confirmation e-mail you will receive.</p>
+    <button class="btn" type="submit">Submit</button>
+  </form>
+  <% } %>
+</section>
+<%- include('../partials/footer') %>

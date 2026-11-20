@@ -1,5 +1,5 @@
 'use strict';
-// Background jobs: notification outbox, SLA watch, mailbox polling, renewal reminders, auto-close.
+// Background jobs: notification outbox, SLA watch, mailbox polling, renewal reminders, auto-close, retention and audit-log check.
 // Runs as its own systemd service. A PostgreSQL advisory lock keeps two copies from doing the work twice.
 const config = require('./config');
 config.validate();
@@ -12,6 +12,7 @@ const directory = require('./services/directory');
 const mailhealth = require('./services/mailhealth');
 const tenders = require('./services/tenders');
 const pipeline = require('./services/pipeline');
+const maintenance = require('./services/maintenance');
 
 const db = { query: q };
 let stopping = false;
@@ -54,6 +55,10 @@ async function tick() {
     });
   }
   await every('cleanup', 3600, async () => { await q('delete from session where expire < now()'); });
+  await every('maintenance', 86400, async () => {
+    const r = await maintenance.daily(db);
+    console.log(`[worker] maintenance: ${JSON.stringify(r)}`);
+  });
 }
 
 async function main() {

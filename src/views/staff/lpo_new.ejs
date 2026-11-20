@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<p><a href="/lpo">← Purchase Orders</a></p>
+<h1>New purchase order (LPO)</h1>
+<% if (error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><form method="post" action="/lpo"><%- include('../partials/csrf') %>
+<%- include('../partials/lpo_fields', { form: form }) %>
+<p class="muted">It is saved as a draft. You add the lines on the next page, check the PDF, then issue it.</p>
+<button class="btn" type="submit">Create the draft</button> <a class="btn ghost" href="/lpo">Cancel</a></form></section>
+<%- include('../partials/footer') %>

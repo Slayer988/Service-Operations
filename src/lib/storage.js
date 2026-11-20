@@ -63,4 +63,10 @@ async function removeTmp(files) {
   for (const f of files || []) await fsp.unlink(f.path).catch(() => {});
 }
 
-module.exports = { dirs, ensureDirs, storeFile, attachmentPath, saveRaw, readRaw, removeTmp, safeName };
+/** Remove a stored attachment or original e-mail from disk (retention). Missing files are not an error. */
+async function removeStored(name) {
+  const file = /\.eml$/.test(name) ? path.join(dirs.mail, path.basename(name)) : attachmentPath(name);
+  await fsp.unlink(file).catch(() => {});
+}
+
+module.exports = { dirs, ensureDirs, storeFile, attachmentPath, saveRaw, readRaw, removeTmp, removeStored, safeName };

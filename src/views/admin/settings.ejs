@@ -1,6 +1,25 @@
 <%- include('../partials/header') %>
 <h1>Settings</h1>
+<% var qc = s.quote_company || {}; %>
+<section class="card" id="branding"><h2>Company branding</h2>
+<p class="muted">Once a logo is uploaded it replaces the company name on the sign-in page, in the menu, on the customer portal and the request page (centred under the words Service Operations (Ops)), and at the top of every PDF report, quote and purchase order (the logo alone). The company name is used in page titles, page and PDF footers, the "From" block of quotes and LPOs and Excel titles, and in place of the logo when there is none.</p>
+<div class="brandset">
+  <div class="brandprev"><% if (brand && brand.logo) { %><img class="brandlogo-lg<%= brand.recolor ? ' tint' : '' %>" src="/branding/logo?v=<%= brand.logo.sha.slice(0, 12) %>" alt="Current logo"><small class="muted"><%= brand.logo.width %> × <%= brand.logo.height %> px</small><% } else { %><span class="muted">No logo yet: the product mark is used.</span><% } %></div>
+  <div>
+    <form method="post" action="/admin/branding/logo" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+      <p><label for="logo">Logo <small class="muted">(PNG or JPEG, at most 1 MB; a wide logo with a transparent background works best)</small></label><input id="logo" type="file" name="logo" accept="image/png,image/jpeg" required></p>
+      <button class="btn" type="submit">Upload logo</button>
+    </form>
+    <% if (brand && brand.logo) { %><form method="post" action="/admin/branding/logo/remove" class="inline"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Remove logo</button></form><% } %>
+  </div>
+</div>
+<p class="muted">The company name is set below, in the first box of the settings form.</p>
+</section>
 <form method="post" action="/admin/settings"><%- include('../partials/csrf') %>
+<section class="card"><h2>Company name</h2>
+<p><label for="quote_company_name">Company name <small class="muted">(empty = the product name, <%= appName %>)</small></label><input id="quote_company_name" name="quote_company_name" maxlength="120" value="<%= qc.name || '' %>"></p>
+<p><label class="inline"><input type="checkbox" name="branding_logo_recolor" value="1" <%= s.branding_logo_recolor === false ? '' : 'checked' %>> Recolour the logo to match each person's theme</label>
+<small>Dark parts of the logo take the theme colour (teal, green, blue or orange) and white stays white, on screen and in every PDF. Untick to always show the logo in its own colours.</small></p></section>
 <section class="card"><h2>Priority (impact × urgency)</h2>
 <table class="grid compact"><thead><tr><th>Impact \ Urgency</th><th>High</th><th>Medium</th><th>Low</th></tr></thead><tbody>
 <% [1,2,3].forEach(function (i) { %><tr><th><%= levelLabels[i] %></th><% [1,2,3].forEach(function (g) { %><td><select name="m_<%= i %>_<%= g %>"><% [1,2,3,4].forEach(function (p) { %><option value="<%= p %>" <%= (s.priority_matrix[i] || {})[g] === p ? 'selected' : '' %>><%= priorityLabels[p] %></option><% }) %></select></td><% }) %></tr><% }) %>
@@ -8,6 +27,7 @@
 <section class="card"><h2>Tickets</h2><div class="grid2">
 <p><label>Categories (one per line)</label><textarea name="categories" rows="8"><%= s.categories.join('\n') %></textarea></p>
 <p><label>Resolution codes (one per line)</label><textarea name="resolution_codes" rows="8"><%= s.resolution_codes.join('\n') %></textarea></p>
+<p><label>Requests without signing in</label><select name="guest_requests_enabled"><option value="on" <%= s.guest_requests_enabled !== false ? 'selected' : '' %>>Allowed (work e-mail on the customer's domain + CSID + e-mailed code)</option><option value="off" <%= s.guest_requests_enabled === false ? 'selected' : '' %>>Not allowed</option></select><small>Set each customer's e-mail domains on its customer page.</small></p>
 <p><label>Customers can reopen within (days)</label><input name="reopen_window_days" value="<%= s.reopen_window_days %>"></p>
 <p><label>Close resolved tickets automatically after (days)</label><input name="auto_close_days" value="<%= s.auto_close_days %>"></p>
 <p><label>Warn when this % of a target is left</label><input name="sla_warn_percent" value="<%= s.sla_warn_percent %>"></p>
@@ -22,6 +42,11 @@
 <div class="grid2"><p><label>Largest attachment (MB)</label><input name="attachment_max_mb" value="<%= s.attachment_max_mb %>"></p>
 <p><label>Blocked file types (extensions, comma separated)</label><input name="attachment_blocked_ext" value="<%= s.attachment_blocked_ext.join(', ') %>"></p>
 <p><label>Automatic replies per sender per hour (loop protection)</label><input name="email_ack_per_sender_per_hour" value="<%= s.email_ack_per_sender_per_hour %>"></p></div></section>
+<section class="card"><h2>How long records are kept</h2>
+<p class="muted">The nightly clean-up removes what is older than these limits. <b>0 means keep for ever</b>, which is the safe starting point: agree a retention period with your legal and compliance people before you set one. Removed records cannot be brought back (backups still hold them until they expire).</p>
+<div class="grid2"><p><label>Sent and failed e-mail notifications (days)</label><input name="retention_notification_days" value="<%= s.retention_notification_days === undefined ? 365 : s.retention_notification_days %>"><small>0 = keep for ever. Waiting messages are never removed.</small></p>
+<p><label>Closed and cancelled tickets, with their files (years)</label><input name="retention_ticket_years" value="<%= s.retention_ticket_years || 0 %>"><small>Counted from the day the ticket closed. 0 = keep for ever.</small></p>
+<p><label>Audit log (years)</label><input name="retention_audit_years" value="<%= s.retention_audit_years || 0 %>"><small>0 = keep for ever. The log is tamper-evident and is only ever trimmed from its oldest end.</small></p></div></section>
 <section class="card"><h2>Currencies and departments</h2>
 <div class="grid2"><p><label>Default currency</label><input name="default_currency" maxlength="8" value="<%= s.default_currency || 'UGX' %>"></p>
 <p><label>Currencies offered (comma separated)</label><input name="currencies" value="<%= (s.currencies || ['UGX', 'USD']).join(', ') %>"></p></div>
@@ -40,6 +65,24 @@
 <div class="grid2"><% Object.keys(pipelineStages).filter(function (k) { return k !== 'won' && k !== 'lost'; }).forEach(function (k) { %><p><label><%= pipelineStages[k] %> (%)</label><input name="prob_<%= k %>" type="number" min="0" max="100" value="<%= ((s.pipeline_probabilities || {})[k] !== undefined) ? s.pipeline_probabilities[k] : pipelineDefaults[k] %>"></p><% }) %></div>
 <p><label>Opportunity categories (one per line)</label><textarea name="opportunity_categories" rows="4"><%= (s.opportunity_categories || ['Service', 'Solution', 'Product', 'Other']).join('\n') %></textarea></p>
 <details><summary>Rename pipeline stages</summary><div class="grid2"><% Object.keys(pipelineStages).forEach(function (k) { %><p><label><%= pipelineStages[k] %></label><input name="plabel_<%= k %>" maxlength="40" value="<%= ((s.pipeline_stage_labels || {})[k]) || pipelineStages[k] %>"></p><% }) %></div></details></section>
+<section class="card" id="signin"><h2>Sign-in page</h2>
+<p><label>Notice <small class="muted">(optional; shown under the sign-in fields with an "I agree" box that must be ticked)</small></label>
+<textarea name="login_notice" rows="3" maxlength="1000" placeholder="WARNING: This system is restricted to authorised users only. Access is monitored and logged."><%= s.login_notice || '' %></textarea>
+<small>Leave empty for no notice.</small></p></section>
+<section class="card" id="quotes"><h2>Quotes and purchase orders</h2>
+<p class="muted">The company details are printed at the top of every quote and every LPO; the rest are the starting values of a new one.</p>
+<p class="muted">The company name is the one under Company name above.</p>
+<div class="grid2"><p><label>Tax ID / TIN</label><input name="quote_company_tax_id" maxlength="60" value="<%= qc.tax_id || '' %>"></p>
+<p><label>Phone</label><input name="quote_company_phone" maxlength="60" value="<%= qc.phone || '' %>"></p>
+<p><label>E-mail</label><input name="quote_company_email" maxlength="120" value="<%= qc.email || '' %>"></p>
+<p><label>Website</label><input name="quote_company_website" maxlength="120" value="<%= qc.website || '' %>"></p>
+<p><label>Address (as printed; several lines allowed)</label><textarea name="quote_company_address" rows="3" maxlength="500"><%= qc.address || '' %></textarea></p>
+<p><label>Tax name</label><input name="quote_tax_label" maxlength="20" value="<%= s.quote_tax_label || 'VAT' %>"></p>
+<p><label>Tax rate (%)</label><input name="quote_tax_rate" inputmode="decimal" value="<%= s.quote_tax_rate === undefined ? 18 : s.quote_tax_rate %>"><small>Use 0 for quotes without tax.</small></p>
+<p><label>A new quote is valid for (days)</label><input name="quote_validity_days" type="number" min="0" max="365" value="<%= s.quote_validity_days === undefined ? 30 : s.quote_validity_days %>"><small>0 = no date is filled in.</small></p></div>
+<p><label>Standard terms (printed below the totals; can be changed on each quote)</label><textarea name="quote_terms" rows="3" maxlength="4000"><%= s.quote_terms || '' %></textarea></p>
+<p><label>Standard LPO terms (printed on each purchase order; can be changed on each one)</label><textarea name="lpo_terms" rows="3" maxlength="4000"><%= s.lpo_terms || '' %></textarea></p>
+<p><label>Default delivery address for LPOs</label><textarea name="lpo_delivery_address" rows="2" maxlength="500"><%= s.lpo_delivery_address || '' %></textarea></p></section>
 <button class="btn" type="submit">Save settings</button>
 </form>
 <%- include('../partials/footer') %>

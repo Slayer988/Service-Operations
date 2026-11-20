@@ -7,7 +7,7 @@
 const { pool, tx } = require('../src/db');
 const demo = require('../src/services/demo');
 
-const show = (s) => `${s.customers} customers, ${s.users} people, ${s.tickets} tickets, ${s.contracts} contracts, ${s.tenders} tenders, ${s.deals} deals, ${s.projects} projects, ${s.articles} help articles`;
+const show = (s) => `${s.customers} customers, ${s.users} people, ${s.tickets} tickets, ${s.contracts} contracts, ${s.tenders} tenders, ${s.deals} deals, ${s.quotes || 0} quotes, ${s.projects} projects, ${s.articles} help articles, ${s.suppliers || 0} suppliers, ${s.lpos || 0} purchase orders`;
 
 (async () => {
   const cmd = (process.argv[2] || 'status').toLowerCase();

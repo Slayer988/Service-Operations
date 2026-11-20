@@ -24,6 +24,7 @@ router.get('/documents/:id', requireStaff, wrap(async (req, res) => {
     allowed = perms.can(req.user, 'pipeline.view');
     if (!allowed && perms.can(req.user, 'pipeline.support')) allowed = (await q('select 1 from opportunity_engineers where opportunity_id = $1 and user_id = $2', [a.opportunity_id, req.user.id])).rows.length > 0;
   } else if (a.renewal_id) allowed = perms.can(req.user, 'contract.view');
+  else if (a.supplier_id || a.purchase_order_id) allowed = perms.can(req.user, 'supplier.view') || perms.can(req.user, 'lpo.view');
   if (!allowed) return res.status(403).render('error', { title: 'Not allowed', message: 'You do not have access to this document.' });
   if (a.scan_status === 'infected') return gone();
   const file = storage.attachmentPath(a.storage_name);

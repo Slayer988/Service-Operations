@@ -9,11 +9,11 @@ const active = (g) => flat(g).filter((i) => i.on).map((i) => i.label);
 
 test('platform admin sees every module; links are never dead', () => {
   const g = nav.build({ kind: 'staff', role: 'platform_admin' }, { path: '/', query: {} }, { verification: 3 });
-  for (const l of ['Dashboard', 'Incidents', 'Operations Overview', 'Projects', 'Contracts', 'Tender Management', 'Pipeline Tracker']) assert.ok(labels(g).includes(l), l);
+  for (const l of ['Dashboard', 'Incidents', 'Knowledge Base', 'Operations Overview', 'Projects', 'Contracts', 'Tender Management', 'Pipeline Tracker']) assert.ok(labels(g).includes(l), l);
   // Settings, Users, Directory and Audit live on the Administration page, not in the menu
   assert.ok(!labels(g).includes('Business Overview'));
   for (const l of ['Settings', 'Directory', 'Audit', 'Users', 'E-mail', 'Mailboxes', 'SLA', 'Service Catalogue']) assert.ok(!labels(g).includes(l), l);
-  assert.ok(!labels(g).some((l) => /Problems|Changes|Knowledge|Assets|Approvals/.test(l)));
+  assert.ok(!labels(g).some((l) => /Problems|Changes|Assets|Approvals/.test(l)));
   assert.equal(flat(g).find((i) => i.label === 'Verification').badge, 3);
 });
 
@@ -41,7 +41,7 @@ test('exactly one place is highlighted', () => {
 
 test('customer portal menu', () => {
   const g = nav.build({ kind: 'customer', role: 'customer_user' }, { path: '/portal/tickets/INC-000001', query: {} });
-  assert.deepEqual(labels(g), ['Dashboard', 'My Requests', 'Submit Request', 'My Services', 'Service Catalogue']);
+  assert.deepEqual(labels(g), ['Dashboard', 'My Requests', 'Submit Request', 'My Services', 'Service Catalogue', 'Help Articles']);
   assert.deepEqual(active(g), ['My Requests']);
   assert.ok(labels(nav.build({ kind: 'customer', role: 'customer_admin' }, { path: '/portal' })).includes('Our Users'));
   assert.deepEqual(nav.build(null, {}), []);

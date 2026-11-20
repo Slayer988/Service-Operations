@@ -18,7 +18,7 @@ const config = {
   secureCookies: baseUrl.startsWith('https://'),
   trustProxy: int(process.env.TRUST_PROXY, 1),
   sessionSecret: process.env.SESSION_SECRET || '',
-  sessionIdleHours: int(process.env.SESSION_IDLE_HOURS, 8),
+  sessionIdleMinutes: require('./lib/session').idleMinutes(process.env.SESSION_IDLE_MINUTES), // idle sign-out (an older hours-based setting is no longer read)
   storageDir: process.env.STORAGE_DIR || path.join(process.cwd(), 'storage'),
   timezone: process.env.APP_TIMEZONE || 'Africa/Nairobi',
   smtp: {

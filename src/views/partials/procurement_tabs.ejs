@@ -1,0 +1,6 @@
+<% var onTab = typeof tab !== 'undefined' ? tab : ''; if (typeof canLpoView !== 'undefined' && canLpoView) { %>
+<nav class="tabs" aria-label="Suppliers & Contractors">
+  <a href="/suppliers" class="<%= onTab === 'register' ? 'on' : '' %>"<%- onTab === 'register' ? ' aria-current="page"' : '' %>>Register</a>
+  <a href="/lpo" class="<%= onTab === 'lpo' ? 'on' : '' %>"<%- onTab === 'lpo' ? ' aria-current="page"' : '' %>>Purchase orders (LPO)</a>
+</nav>
+<% } %>

@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const config = require('../config');
 const mailer = require('../lib/mailer');
+const outgoing = require('./outgoing');
 const perms = require('../lib/perms');
 const { URL } = require('url');
 
@@ -50,8 +51,23 @@ async function replyAddress(db, queue, mailboxId = null) {
   return r.rows[0] ? r.rows[0].address : null;
 }
 
-/** Pick up due messages, send them, record the outcome. Returns how many were attempted. */
+const HOLD_DAYS = 7;          // how long a message waits for a mail server before it is given up on
+let lastHoldNote = 0;
+
+/** Pick up due messages, send them, record the outcome. Returns how many were attempted.
+ *  With no mail server set up nothing is attempted: the messages stay waiting (and are sent once a server is saved), so they are never
+ *  recorded as sent when nobody received them. Messages that waited longer than HOLD_DAYS are marked failed. */
 async function processDue(db, limit = 20) {
+  if ((await outgoing.effective(db)).source === 'none') {
+    await db.query(`update notifications set status = 'failed', last_error = $1 where status = 'pending' and created_at < now() - ($2 || ' days')::interval`,
+      [`No mail server was set up within ${HOLD_DAYS} days, so this message was never sent.`, String(HOLD_DAYS)]);
+    if (Date.now() - lastHoldNote > 3600000) {
+      lastHoldNote = Date.now();
+      const n = (await db.query(`select count(*)::int as n from notifications where status = 'pending'`)).rows[0].n;
+      if (n) console.log(`[mail:waiting] ${n} message(s) are waiting: outgoing mail is not set up (Administration > E-mail). They are sent as soon as a mail server is saved.`);
+    }
+    return 0;
+  }
   // Claim rows first (push next_attempt_at out) so a crash cannot cause a tight retry loop, then send outside the lock.
   const claimed = await db.query(
     `update notifications set next_attempt_at = now() + interval '5 minutes'
@@ -62,7 +78,11 @@ async function processDue(db, limit = 20) {
   );
   for (const n of claimed.rows) {
     try {
-      await mailer.send({ to: n.recipient_email, subject: n.subject, text: n.body, messageId: n.message_id, inReplyTo: n.in_reply_to, replyTo: n.reply_to });
+      const out = await mailer.send({ to: n.recipient_email, subject: n.subject, text: n.body, messageId: n.message_id, inReplyTo: n.in_reply_to, replyTo: n.reply_to });
+      if (out && out.logged) {         // the mail server was removed while this ran: keep the message waiting, do not call it sent
+        await db.query(`update notifications set next_attempt_at = now() + interval '10 minutes' where id = $1`, [n.id]);
+        continue;
+      }
       await db.query(`update notifications set status = 'sent', attempts = attempts + 1, sent_at = now(), last_error = '' where id = $1`, [n.id]);
     } catch (err) {
       const attempts = n.attempts + 1;

@@ -12,6 +12,7 @@ const PJ = require('../services/projects');
 const { wrap } = require('./util');
 const { requireStaff } = require('../middleware/auth');
 
+const Sup = require('../services/suppliers');
 const router = express.Router();
 const db0 = { query: q };
 const UserError = tickets.UserError;
@@ -118,7 +119,11 @@ router.get('/projects/:id', ...guarded(null, async (req, res, a) => {
   const events = (await q('select e.*, u.name as actor_name from project_events e left join users u on u.id = e.actor_id where e.project_id = $1 order by e.id desc limit 200', [id])).rows;
   const opp = a.p.opportunity_id && perms.can(req.user, 'pipeline.view') ? (await q('select id, ref, name from opportunities where id = $1', [a.p.opportunity_id])).rows[0] : null;
   const contract = a.p.contract_id && perms.can(req.user, 'contract.view') ? (await q('select id, reference, title from contracts where id = $1', [a.p.contract_id])).rows[0] : null;
+  const swView = perms.can(req.user, 'supplier.view');
   res.render('staff/project', {
+    sw: swView ? await Sup.forEntity(db0, 'project', id) : null, swCanLink: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'project.manage'),
+    swCanUpload: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'lpo.manage'), swCanLpo: perms.can(req.user, 'lpo.manage'),
+    swSuppliers: swView ? (await q(`select id, name, kind from suppliers where status <> 'inactive' order by name`)).rows.map((r) => ({ ...r, kind_label: Sup.KINDS[r.kind] })) : [],
     title: a.p.ref, p: a.p, a, tasks, team, events, opp, contract, progress: PJ.progress(tasks), bar: (n) => charts.bar(n), money, ...fd,
     taskStatuses: PJ.TASK_STATUS_LABELS, taskKinds: PJ.TASK_KIND_LABELS, addable: fd.staff.filter((s) => !team.some((m) => m.id === s.id)),
   });

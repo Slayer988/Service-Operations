@@ -2,6 +2,8 @@
 const { q } = require('../db');
 const perms = require('../lib/perms');
 const settings = require('../lib/settings');
+const config = require('../config');
+const sessionLib = require('../lib/session');
 
 let mfaCache = { at: 0, roles: ['platform_admin'] };
 async function mfaRoles() {
@@ -26,41 +28,56 @@ async function loadUser(req, res, next) {
     }
     res.locals.user = req.user;
     res.locals.can = (p) => perms.can(req.user, p);
+    const marked = sessionLib.hasMarker(req.headers && req.headers.cookie);
+    if (req.user) {
+      res.locals.idleSeconds = config.sessionIdleMinutes * 60;                                    // the page signs the person out after this much inactivity
+      if (!marked) res.cookie(sessionLib.MARKER, '1', { httpOnly: true, sameSite: 'lax', secure: config.secureCookies, maxAge: 24 * 3600 * 1000 });
+    } else if (marked) req.sessionEnded = true;                                                   // was signed in, session is gone
     next();
   } catch (err) { next(err); }
 }
 
+const toLogin = (req, res) => res.redirect(sessionLib.loginUrl(req.originalUrl, !!req.sessionEnded));
+
 function requireLogin(req, res, next) {
-  if (!req.user) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
+  if (!req.user) return toLogin(req, res);
   return next();
+}
+
+/** A password that someone else chose (a new account, an administrator's reset) has to be replaced before anything else is used. */
+function enforcePasswordChange(req, res, next) {
+  if (!req.user || !req.user.must_change_password || req.user.auth_source === 'ldap') return next();
+  if (req.path.startsWith('/account') || req.path === '/logout' || req.path === '/manual' || req.path.startsWith('/session/') || req.path.startsWith('/static/')) return next();
+  if (req.method === 'GET' && req.flash) req.flash('error', 'Choose your own password before you continue. The one you were given is only for the first sign-in.');
+  return res.redirect('/account');
 }
 
 /** Staff must have MFA when their role requires it (IAM-003). */
 async function enforceMfaEnrolment(req, res, next) {
   try {
     if (!req.user || req.user.totp_enabled) return next();
-    if (req.path.startsWith('/account') || req.path === '/logout' || req.path === '/manual') return next();
+    if (req.path.startsWith('/account') || req.path === '/logout' || req.path === '/manual' || req.path.startsWith('/session/')) return next();
     if ((await mfaRoles()).includes(req.user.role)) return res.redirect('/account/mfa');
     return next();
   } catch (err) { return next(err); }
 }
 
 function requireStaff(req, res, next) {
-  if (!req.user) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
+  if (!req.user) return toLogin(req, res);
   if (req.user.kind !== 'staff') return res.redirect('/portal');
   return next();
 }
 function requireCustomer(req, res, next) {
-  if (!req.user) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
+  if (!req.user) return toLogin(req, res);
   if (req.user.kind !== 'customer') return res.redirect('/');
   return next();
 }
 function requirePerm(perm) {
   return (req, res, next) => {
-    if (!req.user) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
+    if (!req.user) return toLogin(req, res);
     if (!perms.can(req.user, perm)) return res.status(403).render('error', { title: 'Not allowed', message: 'Your role does not allow this action.' });
     return next();
   };
 }
 
-module.exports = { loadUser, requireLogin, requireStaff, requireCustomer, requirePerm, enforceMfaEnrolment };
+module.exports = { loadUser, requireLogin, requireStaff, requireCustomer, requirePerm, enforceMfaEnrolment, enforcePasswordChange };

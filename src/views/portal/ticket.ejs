@@ -4,12 +4,12 @@
 <section class="card main">
   <h1><%= ticket.ref %> · <%= ticket.subject %></h1>
   <p class="muted">Opened <%= fmt.dt(ticket.created_at) %> by <%= ticket.requester_name || ticket.requester_user_name %></p>
-  <% if (ticket.description) { %><div class="desc"><%= ticket.description %></div><% } %>
+  <% if (ticket.description) { %><% if (ticket.description_format === 'rich') { %><div class="desc rich"><%- fmt.rich(ticket.description, '/portal/help') %></div><% } else { %><div class="desc"><%= ticket.description %></div><% } %><% } %>
   <% if (attachments.length) { %><h2>Files</h2><ul class="plain"><% attachments.forEach(function (a) { %><li><a href="/attachments/<%= a.id %>"><%= a.filename %></a> <small><%= fmt.size(a.size_bytes) %></small></li><% }) %></ul><% } %>
   <h2>Updates</h2>
   <ol class="timeline">
   <% timeline.forEach(function (i) { %>
-    <% if (i.type === 'comment') { %><li class="comment"><header><b><%= i.c.author_label || i.c.author_name %></b> <time><%= fmt.dt(i.at) %></time></header><div class="body"><%= i.c.body %></div></li>
+    <% if (i.type === 'comment') { %><li class="comment"><header><b><%= i.c.author_label || i.c.author_name %></b> <time><%= fmt.dt(i.at) %></time></header><% if (i.c.format === 'rich') { %><div class="body rich"><%- fmt.rich(i.c.body, '/portal/help') %></div><% } else { %><div class="body"><%= i.c.body %></div><% } %></li>
     <% } else { %><li class="activity"><%= i.e.text %> <time><%= fmt.dt(i.at) %></time></li><% } %>
   <% }) %>
   </ol>
@@ -28,7 +28,7 @@
     <button class="btn ghost" type="submit">Reopen</button></form>
   <% } else if (ticket.status !== 'cancelled') { %>
   <form method="post" action="/portal/tickets/<%= ticket.ref %>/comment" enctype="multipart/form-data"><%- include('../partials/csrf') %>
-    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="4" required></textarea></p>
+    <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="5" required data-rich></textarea></p>
     <p><input name="files" type="file" multiple></p>
     <button class="btn" type="submit">Send</button></form>
   <% } %>
@@ -42,6 +42,7 @@
   <% if (!['resolved', 'closed', 'cancelled'].includes(ticket.status)) { %>
   <dt>Response target</dt><dd><%= ticket.responded_at ? 'Done' : fmt.dt(ticket.response_due) %></dd>
   <dt>Resolution target</dt><dd><%= fmt.dt(ticket.resolution_due) %></dd><% } %></dl>
+  <% if (helpArticles.length) { %><h2>Help articles</h2><ul class="plain"><% helpArticles.forEach(function (k) { %><li><a href="/portal/help/<%= k.code %>"><%= k.title %></a></li><% }) %></ul><% } %>
   <% if (ticket.status === 'new') { %><form method="post" action="/portal/tickets/<%= ticket.ref %>/cancel" data-confirm="Cancel this ticket?"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Cancel ticket</button></form><% } %>
 </aside>
 </div>

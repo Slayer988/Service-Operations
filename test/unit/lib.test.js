@@ -66,3 +66,18 @@ test('CSV escapes quotes and neutralises formulas', () => {
   const out = u.toCsv([{ a: '=SUM(1)', b: 'he said "hi"' }], [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }]);
   assert.equal(out, "A,B\r\n'=SUM(1),\"he said \"\"hi\"\"\"\r\n");
 });
+
+test('localDay: the date where the people are, not in UTC (Kampala is three hours ahead)', () => {
+  const u = require('../../src/lib/util');
+  const night = new Date('2026-11-01T21:40:00Z');                       // 00:40 on 2 November in Kampala
+  assert.equal(u.localDay('Africa/Kampala', 0, night), '2026-11-02');
+  assert.equal(night.toISOString().slice(0, 10), '2026-11-01', 'the UTC date is still the day before, which hid new tickets from the reports');
+  assert.equal(u.localDay('Africa/Kampala', -30, night), '2026-10-03');
+  assert.equal(u.localDay('UTC', 0, night), '2026-11-01');
+  assert.equal(u.localDay('America/New_York', 0, night), '2026-11-01');
+});
+
+test('report periods are days in the application time zone', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../src/services/ticket_reports.js'), 'utf8');
+  assert.ok(/::timestamp at time zone \$\{tz\}/.test(src) && !/>= \$1::date and/.test(src), 'the period is compared in the configured zone');
+});

@@ -35,23 +35,46 @@ function wrap(text, maxW, size, bold) {
   return lines;
 }
 
-const GREEN = '0.043 0.478 0.122'; const DARK = '0.027 0.373 0.090'; const LIGHT = '0.941 0.973 0.945'; const GREY = '0.365 0.42 0.38';
 
 /**
- * opts: { title, subtitle?, appName?, landscape?: true, blocks: [...] }
+ * opts: { title, subtitle?, appName?, landscape?: true, palette?: (lib/doc_theme.js; the person's theme), blocks: [...] }
+ * opts.footer: text for the page footer instead of "generated <time>".
  * block: { type:'heading', text } | { type:'p', text } | { type:'kv', rows:[[label, value]] }
+ *      | { type:'pair', left:{title, lines:[]}, right:{title, lines:[]} } | { type:'totals', rows:[[label, value, bold?]] }
  *      | { type:'table', columns:[{header,key,weight?,align?:'right'}], rows:[{...}], empty?: text } | { type:'space', h }
  */
 function document(opts) {
+  // colours from the palette of the person's theme (lib/doc_theme.js); green when none is given
+  const pal = opts.palette || require('./doc_theme').PALETTES.green; const rgb = require('./doc_theme').pdfRgb;
+  const GREEN = rgb(pal.bar); const HEAD = rgb(pal.head); const RULE = rgb(pal.rule); const DARK = rgb(pal.dark); const LIGHT = rgb(pal.light); const GREY = rgb(pal.grey);
   const landscape = opts.landscape !== false;
   const PW = landscape ? 841.89 : 595.28; const PH = landscape ? 595.28 : 841.89; const M = 40;
   const pages = []; let ops = []; let y = 0;
-  const top = PH - 52;
+  // company branding (services/branding.js): a white band above the title bar on every page with the logo alone, or the company name when there is no logo
+  const brand = opts.brand && (opts.brand.image || opts.brand.name) ? opts.brand : null;
+  const band = brand ? 48 : 0;
+  const top = PH - 52 - band;
+  let logo = null;
+  if (brand && brand.image) {
+    const maxH = 36; const maxW = 200; const k = Math.min(maxH / brand.image.height, maxW / brand.image.width);
+    logo = { w: brand.image.width * k, h: brand.image.height * k };
+  }
   function newPage() {
     ops = []; y = top;
-    ops.push(`${GREEN} rg 0 ${PH - 30} ${PW} 30 re f`);
-    text(M, PH - 20, clean(opts.title || 'Report'), 13, true, '1 1 1');
-    if (opts.subtitle) text(PW - M - width(clean(opts.subtitle), 9), PH - 19, clean(opts.subtitle), 9, false, '1 1 1');
+    if (brand) {
+      let x = M;
+      if (logo) {
+        const ly = PH - 8 - band / 2 - logo.h / 2; const box = `${M.toFixed(2)} ${ly.toFixed(2)} ${logo.w.toFixed(2)} ${logo.h.toFixed(2)} re f`;
+        ops.push(`q ${logo.w.toFixed(2)} 0 0 ${logo.h.toFixed(2)} ${M} ${ly.toFixed(2)} cm /Im1 Do Q`);
+        // recolour to the theme: first to grey (Saturation with white), then Screen with the theme colour: black becomes the colour, white stays white
+        if (brand.recolor) ops.push(`q /GSat gs 1 1 1 rg ${box} Q`, `q /GScr gs ${DARK} rg ${box} Q`);
+        x = M + logo.w + 12;
+      }
+      if (!logo && brand.name) text(x, PH - 8 - band / 2 - 4.5, clean(brand.name), 13, true, DARK);
+    }
+    ops.push(`${GREEN} rg 0 ${PH - 30 - band} ${PW} 30 re f`);
+    text(M, PH - 20 - band, clean(opts.title || 'Report'), 13, true, '1 1 1');
+    if (opts.subtitle) text(PW - M - width(clean(opts.subtitle), 9), PH - 19 - band, clean(opts.subtitle), 9, false, '1 1 1');
   }
   function text(x, yy, s, size, bold, color) { ops.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${color || '0.06 0.1 0.07'} rg ${x.toFixed(2)} ${yy.toFixed(2)} Td (${esc(s)}) Tj ET`); }
   function ensure(h) { if (y - h < M + 14) { pages.push(ops); newPage(); return true; } return false; }
@@ -60,7 +83,7 @@ function document(opts) {
     if (b.type === 'space') { y -= b.h || 10; continue; }
     if (b.type === 'heading') {
       ensure(84); y -= 8; text(M, y - 12, clean(b.text), 12.5, true, DARK); y -= 18;
-      ops.push(`${GREEN} RG 0.8 w ${M} ${y - 1} m ${PW - M} ${y - 1} l S`); y -= 8; continue;
+      ops.push(`${RULE} RG 0.8 w ${M} ${y - 1} m ${PW - M} ${y - 1} l S`); y -= 8; continue;
     }
     if (b.type === 'p') {
       for (const ln of wrap(b.text, PW - 2 * M, 10, false)) { ensure(14); text(M, y - 10, ln, 10, false); y -= 13.5; }
@@ -76,6 +99,29 @@ function document(opts) {
       }
       y -= 4; continue;
     }
+    if (b.type === 'pair') {                       // two blocks side by side: { left: { title, lines }, right: { title, lines } }
+      const colW = (PW - 2 * M - 20) / 2;
+      const side = (blk) => [blk.title ? { t: blk.title, bold: true } : null, ...(blk.lines || []).flatMap((l) => wrap(l, colW, 10, false).map((t) => ({ t, bold: false })))].filter(Boolean);
+      const L = side(b.left || {}); const R = side(b.right || {});
+      const h = Math.max(L.length, R.length) * 13.5 + 6;
+      ensure(h);
+      L.forEach((ln, i) => text(M, y - 11 - i * 13.5, clean(ln.t), ln.bold ? 11 : 10, ln.bold, ln.bold ? DARK : undefined));
+      R.forEach((ln, i) => text(M + colW + 20, y - 11 - i * 13.5, clean(ln.t), ln.bold ? 11 : 10, ln.bold, ln.bold ? DARK : undefined));
+      y -= h + 6; continue;
+    }
+    if (b.type === 'totals') {                     // right-aligned label / amount pairs; a third value true makes the row bold and boxed
+      const valueRight = PW - M - 4; const labelRight = PW - M - 150;
+      for (const [k, v, strong] of b.rows) {
+        const h = strong ? 20 : 15;
+        ensure(h);
+        if (strong) ops.push(`${LIGHT} rg ${labelRight - 120} ${y - h + 2} ${PW - M - (labelRight - 120)} ${h} re f`);
+        const size = strong ? 11 : 10; const kk = clean(k); const vv = clean(v);
+        text(labelRight - width(kk, size, !!strong), y - (strong ? 13 : 11), kk, size, !!strong, strong ? DARK : GREY);
+        text(valueRight - width(vv, size, !!strong), y - (strong ? 13 : 11), vv, size, !!strong);
+        y -= h;
+      }
+      y -= 8; continue;
+    }
     if (b.type === 'table') {
       const cols = b.columns; const total = cols.reduce((a, c) => a + (c.weight || 1), 0); const avail = PW - 2 * M;
       const xs = []; let acc = M; const ws = cols.map((c) => ((c.weight || 1) / total) * avail);
@@ -84,7 +130,7 @@ function document(opts) {
       const drawHeader = () => {
         const hl = cols.map((c, i) => wrap(c.header, ws[i] - 2 * pad, size, true)); const h = Math.max(...hl.map((l) => l.length)) * 11 + 8;
         ensure(h + 24);
-        ops.push(`${GREEN} rg ${M} ${y - h} ${avail} ${h} re f`);
+        ops.push(`${HEAD} rg ${M} ${y - h} ${avail} ${h} re f`);
         hl.forEach((lines, i) => lines.forEach((ln, k) => text(c(i).align === 'right' ? xs[i] + ws[i] - pad - width(ln, size, true) : xs[i] + pad, y - 11 - k * 11, ln, size, true, '1 1 1')));
         y -= h;
       };
@@ -108,11 +154,21 @@ function document(opts) {
   const objs = []; const add = (s) => { objs.push(s); return objs.length; };
   const catalog = add(''); const pagesObj = add(''); const f1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'); const f2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
   const generated = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  let xobj = '';
+  if (logo) {
+    const im = brand.image;
+    const smask = im.smask ? add({ stream: im.smask, dict: `/Type /XObject /Subtype /Image /Width ${im.width} /Height ${im.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${im.smask.length}` }) : null;
+    const io = add({ stream: im.data, dict: `/Type /XObject /Subtype /Image /Width ${im.width} /Height ${im.height} /ColorSpace ${im.colorSpace} /BitsPerComponent 8 /Filter ${im.filter}${smask ? ` /SMask ${smask} 0 R` : ''} /Length ${im.data.length}` });
+    xobj = ` /XObject << /Im1 ${io} 0 R >>`;
+    if (brand.recolor) xobj += ' /ExtGState << /GSat << /Type /ExtGState /BM /Saturation >> /GScr << /Type /ExtGState /BM /Screen >> >>';
+  }
   const kids = pages.map((p, i) => {
-    const footer = `BT /F1 8 Tf ${GREY} rg ${M} 22 Td (${esc(clean(`${opts.appName || 'Service Operations (Ops)'}  |  generated ${generated}`))}) Tj ET BT /F1 8 Tf ${GREY} rg ${PW - M - 50} 22 Td (Page ${i + 1} of ${pages.length}) Tj ET`;
+    const who = (brand && brand.name) || opts.appName || 'Service Operations (Ops)';
+    const foot = opts.footer ? `${who}  |  ${opts.footer}` : `${who}  |  generated ${generated}`;
+    const footer = `BT /F1 8 Tf ${GREY} rg ${M} 22 Td (${esc(clean(foot))}) Tj ET BT /F1 8 Tf ${GREY} rg ${PW - M - 50} 22 Td (Page ${i + 1} of ${pages.length}) Tj ET`;
     const content = Buffer.from(`${p.join('\n')}\n${footer}`, 'latin1'); const z = zlib.deflateSync(content);
     const cobj = add({ stream: z, dict: `/Length ${z.length} /Filter /FlateDecode` });
-    return add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${PW.toFixed(2)} ${PH.toFixed(2)}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${cobj} 0 R >>`);
+    return add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${PW.toFixed(2)} ${PH.toFixed(2)}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >>${xobj} >> /Contents ${cobj} 0 R >>`);
   });
   objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
   objs[pagesObj - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`;

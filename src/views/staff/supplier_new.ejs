@@ -1,0 +1,8 @@
+<%- include('../partials/header') %>
+<p><a href="/suppliers">← Suppliers & Contractors</a></p>
+<h1>Add a supplier or contractor</h1>
+<% if (error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><form method="post" action="/suppliers"><%- include('../partials/csrf') %>
+<%- include('../partials/supplier_fields', { form: form, Sup: Sup }) %>
+<button class="btn" type="submit">Add to the register</button> <a class="btn ghost" href="/suppliers">Cancel</a></form></section>
+<%- include('../partials/footer') %>

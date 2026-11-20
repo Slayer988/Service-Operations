@@ -5,6 +5,8 @@ const settings = require('../lib/settings');
 const tickets = require('./tickets');
 const notifications = require('./notifications');
 const priorityLib = require('../lib/priority');
+const config = require('../config');
+const util = require('../lib/util');
 
 const NEXT_TIER = { l1: 'l2', l2: 'l3', l3: 'l3' };
 const LABEL = { response: 'response', restoration: 'restoration', resolution: 'resolution' };
@@ -41,7 +43,8 @@ async function slaWatch(db) {
     }
     if (!Object.keys(newFlags).length) continue;
     touched++;
-    await db.query(`update tickets set sla_flags = sla_flags || $2::jsonb where id = $1`, [t.id, JSON.stringify(newFlags)]);
+    const breaches = sla.breachRecord(t, new Date());                      // a missed target stays on record, whatever happens to the ticket later
+    await db.query(`update tickets set sla_flags = sla_flags || $2::jsonb, sla_breaches = $3::jsonb where id = $1`, [t.id, JSON.stringify(newFlags), JSON.stringify(breaches)]);
     const recipients = new Map();
     for (const uid of [t.exec_engineer_id, t.assignee_id].filter(Boolean)) {
       const u = (await db.query('select id, email, name, kind, role from users where id = $1 and active', [uid])).rows[0];
@@ -58,7 +61,7 @@ async function slaWatch(db) {
         await notifications.enqueue(db, {
           kind: breached ? 'sla_breach' : 'sla_warning', ticketId: t.id, to: u, dedupeKey: `sla:${t.id}:${key}:${t.created_at.getTime()}:${u.id}:${t[`${target}_due`] && new Date(t[`${target}_due`]).getTime()}`,
           subject: `[${t.ref}] SLA ${LABEL[target]} ${breached ? 'BREACHED' : 'at risk'}: ${t.subject}`.slice(0, 200),
-          body: `The ${LABEL[target]} target for ${t.ref} ${breached ? 'has been missed' : 'is about to be missed'}.\n\nCustomer: ${t.customer_name || 'n/a'}\nService: ${t.service_name || 'n/a'}\nPriority: ${priorityLib.LABELS[t.priority]}\nDue: ${new Date(t[`${target}_due`]).toISOString()}\n\n${notifications.link(u, t.ref)}\n`,
+          body: `The ${LABEL[target]} target for ${t.ref} ${breached ? 'has been missed' : 'is about to be missed'}.\n\nCustomer: ${t.customer_name || 'n/a'}\nService: ${t.service_name || 'n/a'}\nPriority: ${priorityLib.LABELS[t.priority]}\nDue: ${util.localStamp(t[`${target}_due`], config.timezone)}\n\n${notifications.link(u, t.ref)}\n`,
         });
       }
       if (breached && t.tier !== 'l3') {
