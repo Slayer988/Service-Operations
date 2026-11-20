@@ -78,4 +78,10 @@
     </header>
     <main class="content">
 <% } %>
+<% if (!isBare && typeof serviceNotices !== 'undefined' && serviceNotices && serviceNotices.length) { %><div class="noticebar" role="status"><% serviceNotices.slice(0, 3).forEach(function (n) { %>
+  <a class="notice <%= n.kind === 'incident' ? (n.severity === 'outage' ? 'outage' : 'degraded') : 'maint' %>" href="/portal/status#n<%= n.id %>"><b><%= n.kind === 'incident' ? 'Service incident' : (n.status === 'in_progress' ? 'Maintenance in progress' : 'Planned maintenance') %>:</b> <%= n.title %><% if (n.kind === 'maintenance' && n.status !== 'in_progress') { %> <span>(<%= fmt.dt(n.starts_at) %>)</span><% } %> <span class="more">Details</span></a>
+<% }) %></div><% } %>
+<% if (!isBare && typeof majorIncidents !== 'undefined' && majorIncidents && majorIncidents.length) { %><div class="noticebar" role="status"><% majorIncidents.slice(0, 3).forEach(function (n) { %>
+  <a class="notice <%= n.severity === 'outage' ? 'outage' : 'degraded' %>" href="/notices/<%= n.id %>"><b>Major incident <%= n.ref %>:</b> <%= n.title %> <span>(<%= ({ investigating: 'investigating', identified: 'cause identified', monitoring: 'fixed, monitoring' })[n.status] || n.status %>)</span> <span class="more">Open</span></a>
+<% }) %></div><% } %>
 <% if (!isBare && flash && flash.length) { %><ul class="messages"><% flash.forEach(function (m) { %><li class="<%= m.type %>"><%= m.msg %></li><% }) %></ul><% } %>

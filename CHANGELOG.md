@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.25.0
+- **Problem management** (migration 024). *Problems* in the menu: the cause behind recurring incidents. Open one from a ticket (or link a ticket to an existing problem), link the incidents and equipment, record the **root cause** and **workaround** and move it to **Known error**: the workaround then shows on every linked ticket. Write the known error up as a draft **Knowledge Base article** with one button, raise the **change** that fixes it, and resolve it with the permanent fix. History on every problem; P1 to P4 priority; a closed problem can be reopened.
+- **Change management**. *Changes* in the menu: standard (pre-approved routine), normal and emergency changes, low/medium/high risk, with the impact, implementation plan, back-out plan, test plan, planned window (in the application time zone), owner, implementer, equipment affected and the problem it fixes.
+  - Normal and emergency changes are **approved before they are scheduled** through the same Approvals as quotes and LPOs (by default a service manager or department head; **high risk** also management). All changeable in *Settings, Approvals*. Editing a draft or moving a scheduled change back to draft withdraws the approval.
+  - Scheduling checks the plan, back-out plan, impact and window. *Start the work* and *Completed* / *Failed: backed out* record the actual times and the outcome (a note is required when it failed).
+  - **Change calendar**: a month view of scheduled, running and finished changes; work that overlaps on the **same customer or the same equipment** is marked in red, and listed on the change page. On a phone it becomes a list of the days with changes.
+  - The asset's history records the changes made to it.
+- **Major incidents and service notices**. *Declare a major incident* from a ticket, or *Announce the maintenance* from a change: choose the customers affected, write in plain words, and optionally **e-mail** the customers' administrators (and the person who reported the ticket). Post updates (Investigating, Cause identified, Fixed and monitoring, Resolved); resolving closes the notice.
+  - Customers see a **banner on every portal page** while an incident is open or maintenance is within 7 days, and a new **Service Status** page with the updates and the last 30 days.
+  - Staff see open major incidents in a red banner on every page and as a count on *Service Notices* in the menu. Declaring and updating notices: service managers, agents and security analysts.
+- Tickets have a *Problem and major incident* box: linked problems with their workaround, link to a problem, open a problem, raise a change, declare a major incident.
+- Who can do what: engineers, agents, service managers, security analysts and the technical team manage problems and changes; managers, auditors, SDEs and read-only users see them.
+- Demo data: two problems (one known error with its workaround, linked to tickets and equipment), six changes (completed, failed and backed out, scheduled and clashing on the calendar, a standard change, one high-risk change waiting for approval), an open major incident with updates, announced maintenance and an incident resolved last week.
+- User manual: *Problems and known errors*, *Changes and the change calendar*, *Major incidents and service notices*, and *Service status* for customers.
+
 ## 1.24.0
 - **Asset register (CMDB)** (migration 023): the equipment, licences and subscriptions at each customer site, and our own, with a tag (AST-000001), category, make, model, serial number, host name and IP address, quantity (licence seats), status (in stock, in use, under repair, retired, disposed), purchase date, **warranty end** and **expiry / end of support**, and links to the customer, site, **CSID**, **covering contract**, supplier and purchase order.
   - **Assets** in the menu: boxes for what is in use, warranties ending within 90 days, out of warranty, licences and support ending, expired, and under repair; search by tag, name, serial, host name, IP or model; filter by customer, category and status; download as Excel, PDF or CSV.

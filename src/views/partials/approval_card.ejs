@@ -1,6 +1,6 @@
 <%# Approval of a draft quote or purchase order. Locals: ap (approvals.state), entity ('quote'|'lpo'), itemId, itemOwnerId, canRequest, apDecider, roleLabels %>
 <% if (ap && ap.needed.length) {
-     var noun = entity === 'quote' ? 'quote' : 'order'; var verb = entity === 'quote' ? 'sent' : 'issued'; var base = entity === 'quote' ? '/quotes/' : '/lpo/';
+     var noun = { quote: 'quote', lpo: 'order', change: 'change' }[entity]; var verb = { quote: 'sent', lpo: 'issued', change: 'scheduled' }[entity]; var base = { quote: '/quotes/', lpo: '/lpo/', change: '/changes/' }[entity];
      var who = function (roles) { return (roles || []).map(function (r) { return roleLabels[r] || r; }).join(', ') || 'nobody (set the approvers in Settings, Approvals)'; };
      var cls = ap.complete ? 'ok' : (ap.rejected ? 'bad' : (ap.pending ? 'wait' : 'need')); %>
 <section class="card approvalcard <%= cls %>" id="approval">

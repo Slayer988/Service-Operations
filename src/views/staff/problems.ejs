@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'known_error' ? 'warn' : (s === 'resolved' || s === 'closed' ? 'grey' : (s === 'investigating' ? 'blue' : '')); }; %>
+<div class="head"><h1>Problems</h1><% if (canManage) { %><a class="btn" href="/problems/new">Open a problem</a><% } %></div>
+<p class="muted">A problem is the cause behind one or more incidents. Investigate it, record the root cause and a workaround (a <b>known error</b>), and remove the cause for good, usually with a change.</p>
+<nav class="tabs"><% [['active','Active'],['open','Open'],['investigating','Investigating'],['known_error','Known errors'],['resolved','Resolved'],['closed','Closed'],['all','All']].forEach(function (v) { %>
+<a href="?status=<%= v[0] %>" class="<%= f.status === v[0] ? 'on' : '' %>"><%= v[1] %><% if (counts[v[0]]) { %> <small>(<%= counts[v[0]] %>)</small><% } %></a><% }) %></nav>
+<form method="get" class="filters wide"><input type="hidden" name="status" value="<%= f.status %>"><input type="search" name="q" value="<%= f.q %>" placeholder="Reference, title, cause or workaround" aria-label="Search problems"><button class="btn ghost" type="submit">Search</button></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Problem</th><th>Title</th><th>Priority</th><th>Status</th><th>Incidents</th><th>Customer</th><th>Owner</th><th>Updated</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/problems/<%= r.id %>"><%= r.ref %></a></td><td><%= r.title %><% if (r.has_workaround) { %> <span class="tag">workaround</span><% } %></td>
+<td><%= P.PRIORITY_LABELS[r.priority] %></td><td><span class="tag <%= tone(r.status) %>"><%= P.STATUS_LABELS[r.status] %></span></td>
+<td><%= r.incidents %><% if (r.open_incidents) { %> <small class="muted">(<%= r.open_incidents %> open)</small><% } %></td><td><%= r.customer_name || 'Several / none' %></td><td><%= r.owner_name || '—' %></td><td><%= fmt.date(r.updated_at) %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No problems match.</p><% } %>
+<%- include('../partials/footer') %>

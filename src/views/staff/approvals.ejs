@@ -1,7 +1,7 @@
 <%- include('../partials/header') %>
 <div class="head"><h1>Approvals</h1></div>
 <% var who = function (roles) { return (roles || []).map(function (r) { return roleLabels[r] || r; }).join(', '); };
-   var what = function (a) { return (a.entity === 'quote' ? 'Quote ' : 'Purchase order ') + a.item.label; }; %>
+   var what = function (a) { return ({ quote: 'Quote ', lpo: 'Purchase order ', change: 'Change ' })[a.entity] + a.item.label; }; %>
 <% if (isApprover) { %>
 <section class="card" id="waiting"><h2>Waiting for you <span class="tag <%= waiting.length ? 'warn' : '' %>"><%= waiting.length %></span></h2>
 <% if (waiting.length) { %>
@@ -9,7 +9,7 @@
 <% waiting.forEach(function (a) { %><tr>
   <td><a href="<%= a.item.href %>#approval"><%= what(a) %></a><% if (a.level === 2) { %> <span class="tag blue">second approval</span><% } %></td>
   <td><%= a.item.title %><% if (a.item.supplier_name) { %> <span class="muted">(<%= a.item.supplier_name %>)</span><% } %></td>
-  <td class="num"><%= a.currency %> <%= Number(a.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }) %></td>
+  <td class="num"><%= a.entity === 'change' ? (a.item.risk + ' risk') : a.currency + ' ' + Number(a.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }) %></td>
   <td class="muted"><%= a.reasons %></td>
   <td><%= a.requested_by_name %><br><small class="muted"><%= fmt.dt(a.requested_at) %></small></td>
   <td><form method="post" action="/approvals/<%= a.id %>" class="apdecide compact"><%- include('../partials/csrf') %><input type="hidden" name="back" value="/approvals">

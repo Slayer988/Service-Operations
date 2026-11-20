@@ -1,0 +1,10 @@
+<%- include('../partials/header') %>
+<h1>Service status</h1>
+<% if (!active.length) { %><section class="card statusnotice ok"><h2>All services are running normally</h2><p class="muted">If something is not working for you, <a href="/portal/tickets/new">raise a request</a>.</p></section><% } %>
+<% active.forEach(function (n) { %><section class="card statusnotice <%= n.kind === 'maintenance' ? 'maint' : (n.severity === 'outage' ? 'outage' : '') %>" id="n<%= n.id %>">
+<h2><%= n.kind === 'incident' ? 'Service incident' : 'Planned maintenance' %>: <%= n.title %> <span class="tag"><%= N.label(n) %></span></h2>
+<p class="muted"><%= n.kind === 'maintenance' ? 'Window: ' + fmt.dt(n.starts_at) + ' to ' + fmt.dt(n.ends_at) : 'Since ' + fmt.dt(n.starts_at) %> · <%= n.ref %></p>
+<ul class="updates"><% (updates[n.id] || []).forEach(function (x) { %><li><div class="when"><%= fmt.dt(x.at) %> · <%= (N.STATUS[n.kind] || {})[x.status] || x.status %></div><div class="pre"><%= x.text %></div></li><% }) %></ul></section><% }) %>
+<% if (recent.length) { %><section class="card"><h2>Last 30 days</h2><ul class="updates"><% recent.forEach(function (n) { %><li><b><%= n.title %></b> <span class="tag grey"><%= N.label(n) %></span><div class="when"><%= N.KINDS[n.kind] %> · <%= fmt.dt(n.starts_at) %> to <%= fmt.dt(n.closed_at) %> · <%= n.ref %></div>
+<% var last = (updates[n.id] || [])[0]; if (last) { %><div class="pre"><%= last.text %></div><% } %></li><% }) %></ul></section><% } %>
+<%- include('../partials/footer') %>

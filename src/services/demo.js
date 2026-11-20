@@ -50,6 +50,9 @@ async function status(db) {
     suppliers: await n('select count(*)::int as n from suppliers where notes like $1', [`${TAG}%`]),
     lpos: await n('select count(*)::int as n from purchase_orders where internal_notes like $1', [`${TAG}%`]),
     assets: await n('select count(*)::int as n from assets where customer_id = any($1) or notes like $2', [cust, `${TAG}%`]),
+    problems: await n('select count(*)::int as n from problems where created_by = any($1) or customer_id = any($2)', [usr, cust]),
+    changes: await n('select count(*)::int as n from changes where created_by = any($1) or customer_id = any($2)', [usr, cust]),
+    notices: await n('select count(*)::int as n from notices where created_by = any($1)', [usr]),
   };
 }
 const isEmpty = (s) => Object.values(s).every((v) => v === 0);
@@ -326,6 +329,7 @@ async function load(db, { now = new Date() } = {}) {
   await loadProcurement(db, U, cur, now);
   await loadExtras(db, U, oppIds, cur, now);
   await loadAssets(db, U, now);
+  await loadServiceManagement(db, U, now);
   return status(db);
 }
 
@@ -334,7 +338,7 @@ async function load(db, { now = new Date() } = {}) {
 async function loadAssets(db, U, now) {
   const A = require('./assets');
   const day = (n) => ymd(addDays(now, n));
-  const eng = { id: U.engineer1, name: 'David Mugisha', kind: 'staff', role: 'engineer' };
+  const eng = { id: U.engineer1, name: 'David Mugisha', email: `engineer1@${DEMO_DOMAIN}`, kind: 'staff', role: 'engineer' };
   const dist = (await db.query(`select id from suppliers where notes like $1 and kind = 'distributor' limit 1`, [`${TAG}%`])).rows[0];
   const po = dist ? (await db.query(`select id from purchase_orders where supplier_id = $1 and status in ('issued','received','closed') order by id limit 1`, [dist.id])).rows[0] : null;
   const KIT = {
@@ -389,6 +393,76 @@ async function loadAssets(db, U, now) {
     const t = (await db.query(`select t.id, t.ref, t.customer_id from tickets t join customers c on c.id = t.customer_id where c.code = $1 and t.status in ('new','open','in_progress','pending_customer','pending_vendor') and not t.needs_verification order by t.id limit 2`, [code])).rows;
     for (const [i, tk] of t.entries()) if (list[i * 3]) await A.linkTicket(db, tk, list[i * 3].id, eng);
   }
+}
+
+/** Problems, changes and service notices: a known error with its workaround and the change that fixes it, changes at every stage
+ *  (one waiting for approval, two clashing on the calendar, one failed and backed out), an open major incident with updates,
+ *  announced maintenance, and an incident resolved last week. Nothing is e-mailed. */
+async function loadServiceManagement(db, U, now) {
+  const P = require('./problems'); const C = require('./changes'); const N = require('./notices'); const tz = require('../lib/tz');
+  const eng = { id: U.engineer1, name: 'David Mugisha', email: `engineer1@${DEMO_DOMAIN}`, kind: 'staff', role: 'engineer' };
+  const agent = { id: U.agent1, name: 'Brian Okello', email: `agent1@${DEMO_DOMAIN}`, kind: 'staff', role: 'agent' };
+  const mgr = { id: U.manager, name: 'Amina Nakato', email: `manager@${DEMO_DOMAIN}`, kind: 'staff', role: 'service_manager' };
+  const cust = async (code) => (await db.query('select id from customers where code = $1', [code])).rows[0].id;
+  const asset = async (name) => { const r = (await db.query('select tag from assets where name = $1 and notes like $2 limit 1', [name, `${TAG}%`])).rows[0]; return r ? r.tag : ''; };
+  const tickets = async (code, n) => (await db.query(`select t.id, t.ref from tickets t join customers c on c.id = t.customer_id where c.code = $1 and not t.needs_verification order by t.created_at desc limit $2`, [code, n])).rows;
+  const at = (days, hh, mm = 0) => { const d = addDays(now, days); return tz.dateToLocal(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hh - 3, mm)), 'Africa/Kampala'); };
+  const KCB = await cust('DEMO-KCB'); const LVH = await cust('DEMO-LVH'); const NLL = await cust('DEMO-NLL');
+
+  // ---- problems
+  const p1 = await P.create(db, { title: 'Entebbe branch VPN drops several times a day', priority: 2, customer_id: KCB,
+    description: 'The site-to-site VPN from the Entebbe branch drops for 2 to 5 minutes, four to six times a day, since the router was replaced. Tellers lose the core banking system each time.',
+    root_cause: 'A firmware bug in the branch router (Cisco ISR, IOS-XE 17.6.1) resets the IPsec tunnel when the ISP link renegotiates. Fixed by the vendor in 17.9.4.',
+    workaround: 'On the head-office firewall, clear the Entebbe tunnel (VPN > IPsec monitor > Entebbe > Bring up). It comes back in under a minute. Tell the branch manager the core system is back.',
+    permanent_fix: '' }, eng, '');
+  for (const t of await tickets('DEMO-KCB', 2)) await P.linkTicket(db, p1, t.ref, eng);
+  const br = await asset('Branch router, Entebbe'); if (br) await P.linkAsset(db, p1, br, eng);
+  await P.setStatus(db, await P.get(db, p1.id), 'known_error', eng, 'Root cause confirmed with the vendor.', '');
+  const p2 = await P.create(db, { title: 'Patient records server slow every morning', priority: 3, customer_id: LVH,
+    description: 'Between 07:30 and 08:30 the patient records system takes up to a minute to open a record. Reported by the wards and the outpatient clinic.' }, eng, '');
+  for (const t of await tickets('DEMO-LVH', 1)) await P.linkTicket(db, p2, t.ref, eng);
+  const emr = await asset('Patient records server'); if (emr) await P.linkAsset(db, p2, emr, eng);
+  await P.setStatus(db, await P.get(db, p2.id), 'investigating', eng, 'Collecting disk and database statistics for a week.', '');
+
+  // ---- changes
+  const mk = async (b) => C.create(db, { owner_id: eng.id, implementer_id: eng.id, ...b }, eng, '');
+  const run = async (c, moves, note = '') => { let x = await C.get(db, c.id); await approveAll(db, U, 'change', c.id, eng, 'Plan and back-out reviewed.'); for (const m of moves) x = await C.setStatus(db, await C.get(db, x.id), m, eng, m === moves[moves.length - 1] ? note : '', ''); return x; };
+  // a finished change moved into the past, at a sensible hour of that evening (local time)
+  const backdate = async (c, startDays, hh, hours) => { const start = tz.localToDate(at(startDays, hh), 'Africa/Kampala');
+    await db.query(`update changes set planned_start = $2, planned_end = $2::timestamptz + make_interval(hours => $3), actual_start = case when actual_start is null then null else $2::timestamptz + interval '4 minutes' end,
+       actual_end = case when actual_end is null then null else $2::timestamptz + make_interval(hours => $3) - interval '20 minutes' end where id = $1`, [c.id, start, hours]);
+    await db.query(`update change_events set at = $2::timestamptz - interval '2 days' + (id - (select min(id) from change_events where change_id = $1)) * interval '3 hours' where change_id = $1 and id < (select max(id) - 2 from change_events where change_id = $1)`, [c.id, start]);
+    await db.query(`update change_events set at = $2::timestamptz + (id - (select max(id) - 2 from change_events where change_id = $1)) * interval '30 minutes' where change_id = $1 and id >= (select max(id) - 2 from change_events where change_id = $1)`, [c.id, start]); };
+  const plan = { implementation_plan: '1. Take a backup of the configuration.\n2. Apply the change.\n3. Check the service with the customer.', backout_plan: 'Restore the saved configuration and reboot (10 minutes).', test_plan: 'Users at the site can log in and open the core system.' };
+  const c1 = await mk({ title: 'Replace the UPS batteries, KCB server room', type: 'normal', risk: 'low', customer_id: KCB, impact: 'None expected: the UPS runs on bypass for 20 minutes.', planned_start: at(3, 20), planned_end: at(3, 22), assets: await asset('UPS, server room'), ...plan });
+  await run(c1, ['scheduled', 'in_progress', 'completed'], 'Batteries replaced, self-test passed, runtime 38 minutes at current load.'); await backdate(c1, -6, 20, 2);
+  const c2 = await mk({ title: 'Upgrade the depot firewall firmware', type: 'normal', risk: 'medium', customer_id: NLL, impact: 'Internet and VPN down for up to 15 minutes at the depot.', planned_start: at(4, 21), planned_end: at(4, 22), assets: await asset('Firewall, depot'), ...plan });
+  await run(c2, ['scheduled', 'in_progress', 'failed'], 'After the upgrade the dispatch VPN would not come up. Rolled back to 7.2.8 within 12 minutes; service restored. Vendor case opened.'); await backdate(c2, -10, 21, 1);
+  const c3 = await mk({ title: 'Upgrade the Entebbe branch router firmware (fixes PRB-000001)', type: 'normal', risk: 'medium', customer_id: KCB, problem_id: p1.id,
+    impact: 'The Entebbe branch is offline for about 15 minutes, after banking hours.', planned_start: at(3, 22), planned_end: at(3, 23, 30), assets: br, ...plan });
+  await run(c3, ['scheduled']);
+  const c6 = await mk({ title: 'Core switch configuration backup and reboot', type: 'normal', risk: 'low', customer_id: KCB, impact: 'Head office network down for 5 minutes.', planned_start: at(3, 23), planned_end: at(4, 0, 30), assets: await asset('Core switch A, server room'), ...plan });
+  await run(c6, ['scheduled']);
+  await mk({ title: 'Add 20 Microsoft 365 E3 licences', type: 'standard', risk: 'low', customer_id: KCB, impact: 'None.', planned_start: at(1, 10), planned_end: at(1, 11),
+    implementation_plan: 'Buy 20 more seats in the admin centre and assign them to the new staff list.', backout_plan: '', test_plan: 'New staff can sign in.' }).then(async (c) => C.setStatus(db, c, 'scheduled', eng, '', ''));
+  const c4 = await mk({ title: 'Move patient records to the new server', type: 'normal', risk: 'high', customer_id: LVH,
+    impact: 'Patient records unavailable for up to 2 hours overnight; wards use the paper procedure.', planned_start: at(9, 22), planned_end: at(10, 0), assets: emr, ...plan });
+  await require('./approvals').request(db, 'change', c4.id, eng, '');        // waiting for the change approvers
+
+  // ---- service notices: an open major incident, announced maintenance, and one resolved last week
+  const t = (await tickets('DEMO-KCB', 1))[0];
+  const n1 = (await N.create(db, { kind: 'incident', title: 'Internet access down at the Entebbe branch', severity: 'outage', customer_ids: [KCB], ticket_id: t ? t.id : null,
+    text: 'The Entebbe branch has no internet or core banking access. Our engineers are working with the internet provider. Next update within 30 minutes.' }, agent, '')).notice;
+  await N.addUpdate(db, n1, { status: 'identified', text: 'The provider has found a fibre cut near Kajjansi and a repair team is on site; they expect about 3 hours. Meanwhile the branch can use the 4G backup link for the core system.' }, agent, '');
+  // the incident began 2 hours before the demo was loaded, with the second update an hour later
+  await db.query(`update notices set starts_at = now() - interval '2 hours' where id = $1`, [n1.id]);
+  await db.query(`update notice_updates set at = now() - interval '115 minutes' + (id - (select min(id) from notice_updates where notice_id = $1)) * interval '60 minutes' where notice_id = $1`, [n1.id]);
+  await N.create(db, { kind: 'maintenance', title: 'Branch router upgrade, Entebbe', customer_ids: [KCB], change_id: c3.id, starts_at: at(3, 22), ends_at: at(3, 23, 30),
+    text: 'We will upgrade the Entebbe branch router to fix the VPN drops. The branch will be offline for about 15 minutes after banking hours.' }, mgr, '');
+  const n3 = (await N.create(db, { kind: 'incident', title: 'E-mail delays', severity: 'degraded', customer_ids: [NLL], text: 'Some e-mails are arriving up to 30 minutes late. We are investigating.', starts_at: at(-5, 9) }, agent, '')).notice;
+  await N.addUpdate(db, n3, { status: 'resolved', text: 'The mail relay queue was cleared and the cause (a full disk) fixed. All delayed e-mails have been delivered.' }, agent, '');
+  await db.query(`update notices set closed_at = $2 where id = $1`, [n3.id, addDays(now, -5)]);
+  await db.query(`update notice_updates set at = $2::timestamptz + (id - (select min(id) from notice_updates where notice_id = $1)) * interval '90 minutes' where notice_id = $1`, [n3.id, addDays(now, -5)]);
 }
 
 /** The rest of every module, so each screen and tab has something in it: contract obligations, payments, SLA performance, reviews and
@@ -517,7 +591,10 @@ async function approveAll(db, U, entity, id, requester, comment = 'Checked again
     if (!st.needed.length || st.complete) return;
     if (!st.pending) await A.request(db, entity, id, requester, '');
     const p = (await A.state(db, entity, await A.load(db, entity, id))).pending;
-    await A.decide(db, p.record.id, who[p.level] || who[1], 'approved', comment, '');
+    // the first demo person whose role may decide this request (and who did not ask for it)
+    const pool = [who[1], who[2], { id: U.manager, name: 'Amina Nakato', email: `manager@${DEMO_DOMAIN}`, kind: 'staff', role: 'service_manager' }, { id: U.depthead, name: 'Moses Byaruhanga', email: `depthead@${DEMO_DOMAIN}`, kind: 'staff', role: 'dept_head' }];
+    const decider = pool.find((x) => p.record.roles.includes(x.role) && x.id !== requester.id) || who[p.level] || who[1];
+    await A.decide(db, p.record.id, decider, 'approved', comment, '');
   }
 }
 
@@ -652,6 +729,10 @@ async function remove(db) {
   const files = (await db.query(`select storage_name from attachments where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or customer_id = any($5)
                                     or supplier_id in (select id from suppliers where notes like $6)`, [tix, opps, tends, cons, cust, like])).rows.map((r) => r.storage_name);
   await run('delete from kb_votes where user_id = any($1)', [usr]);
+  await run('delete from notices where created_by = any($1) or ticket_id = any($2)', [usr, tix]);
+  await run(`delete from approvals where entity = 'change' and entity_id in (select id from changes where created_by = any($1) or customer_id = any($2))`, [usr, cust]);
+  await run('delete from changes where created_by = any($1) or customer_id = any($2)', [usr, cust]);
+  await run('delete from problems where created_by = any($1) or customer_id = any($2)', [usr, cust]);
   await run('delete from assets where customer_id = any($1) or notes like $2 or created_by = any($3)', [cust, like, usr]);
   await run('delete from asset_events where actor_id = any($1)', [usr]);
   await run('delete from notifications where ticket_id = any($1) or opportunity_id = any($2) or tender_id = any($3) or contract_id = any($4) or recipient_user_id = any($5) or recipient_email like $6', [tix, opps, tends, cons, usr, `%@${DEMO_DOMAIN}`]);

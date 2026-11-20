@@ -2276,3 +2276,89 @@ test('1.24.0 asset register: add, change, link to a ticket, import a spreadsheet
     assert.ok((await q('select 1 from customers where id = $1', [D.c.id])).rowCount, 'still there: it has equipment');
   });
 });
+
+test('1.25.0 problems, changes and service notices through the real app', async () => {
+  const { A, B } = ctx;
+  const db = { query: q };
+  const settingsLib = require('../../src/lib/settings');
+  for (const k of approvalsSvc.KEYS) await settingsLib.set(db, k, approvalsSvc.DEFAULTS[k]);
+  const eng = new Client(); await eng.login(ctx.eng.email);
+  const mgr = new Client(); await mgr.login(ctx.manager.email);
+  const agent = new Client(); await agent.login(ctx.agent.email);
+  const t1 = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'VPN dropped again', description: 'x', requester: ctx.aUser });
+  const t2 = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'VPN down at the branch', description: 'x', requester: ctx.aUser });
+
+  // ---- a problem from a ticket; the known error needs cause and workaround; the workaround shows on every linked ticket
+  let r = await eng.post('/problems', { title: 'Branch VPN drops', ticket: t1.ref, priority: '2', customer_id: String(A.c.id) });
+  const pid = Number(/\/problems\/(\d+)/.exec(r.location)[1]);
+  await eng.post('/problems/link-ticket', { ticket: t2.ref, problem: (await q('select ref from problems where id = $1', [pid])).rows[0].ref });
+  assert.equal((await q('select count(*)::int as n from problem_tickets where problem_id = $1', [pid])).rows[0].n, 2);
+  await eng.post(`/problems/${pid}/status`, { status: 'known_error' });
+  assert.equal((await q('select status from problems where id = $1', [pid])).rows[0].status, 'open', 'refused without cause and workaround');
+  await eng.post(`/problems/${pid}`, { title: 'Branch VPN drops', priority: '2', customer_id: String(A.c.id), owner_id: String(ctx.eng.id), root_cause: 'Router firmware bug', workaround: 'Clear the tunnel on the firewall', permanent_fix: '' });
+  await eng.post(`/problems/${pid}/status`, { status: 'known_error' });
+  assert.equal((await q('select status from problems where id = $1', [pid])).rows[0].status, 'known_error');
+  assert.ok((await eng.get(`/tickets/${t2.ref}`)).text.includes('Clear the tunnel on the firewall'), 'the agent on the ticket sees the workaround');
+  await eng.post(`/problems/${pid}/status`, { status: 'resolved' });
+  assert.equal((await q('select status from problems where id = $1', [pid])).rows[0].status, 'known_error', 'resolving needs the permanent fix');
+
+  // ---- a change to fix it: approval before scheduling; the engineer cannot approve their own; a clash is shown
+  const asset = (await tx((db2) => require('../../src/services/assets').create(db2, { name: 'Branch router', category: 'network', customer_id: A.c.id }, staffActor(ctx.admin))));
+  const day = (n, hh) => { const d = new Date(Date.now() + n * 86400000); return `${d.toISOString().slice(0, 10)}T${hh}`; };
+  r = await eng.post('/changes', { title: 'Upgrade branch router firmware', type: 'normal', risk: 'medium', customer_id: String(A.c.id), problem_id: String(pid), assets: asset.tag,
+    planned_start: day(3, '22:00'), planned_end: day(3, '23:00'), impact: 'Branch offline 15 minutes', implementation_plan: 'Upgrade', backout_plan: '', test_plan: '' });
+  const cid = Number(/\/changes\/(\d+)/.exec(r.location)[1]);
+  await eng.post(`/changes/${cid}/status`, { status: 'scheduled' });
+  assert.equal((await q('select status from changes where id = $1', [cid])).rows[0].status, 'draft');
+  assert.match((await eng.get(`/changes/${cid}`)).text, /Before it is scheduled, write the back-out plan|needs approval/);
+  const chg = (await q('select * from changes where id = $1', [cid])).rows[0];
+  await eng.post(`/changes/${cid}`, { ...chg, customer_id: String(A.c.id), problem_id: String(pid), owner_id: String(ctx.eng.id), implementer_id: '', planned_start: day(3, '22:00'), planned_end: day(3, '23:00'), backout_plan: 'Boot the old image' });
+  let page = (await eng.get(`/changes/${cid}`)).text;
+  assert.ok(page.includes('id="approval"') && !page.includes('<option value="scheduled">'), 'Schedule is not offered before approval');
+  await eng.post(`/changes/${cid}/approval`, {});
+  const ap = (await q(`select id from approvals where entity = 'change' and entity_id = $1 and status = 'pending'`, [cid])).rows[0];
+  await eng.post(`/approvals/${ap.id}`, { decision: 'approve' });
+  assert.equal((await q('select status from approvals where id = $1', [ap.id])).rows[0].status, 'pending', 'not their own');
+  await mgr.post(`/approvals/${ap.id}`, { decision: 'approve' });
+  await eng.post(`/changes/${cid}/status`, { status: 'scheduled' });
+  assert.equal((await q('select status from changes where id = $1', [cid])).rows[0].status, 'scheduled');
+  // a second change on the same customer in the same window: both are marked as clashing
+  r = await eng.post('/changes', { title: 'Reboot core switch', type: 'standard', risk: 'low', customer_id: String(A.c.id), planned_start: day(3, '22:30'), planned_end: day(3, '23:30'), implementation_plan: 'Reboot' });
+  const cid2 = Number(/\/changes\/(\d+)/.exec(r.location)[1]);
+  await eng.post(`/changes/${cid2}/status`, { status: 'scheduled' });
+  assert.equal((await q('select status from changes where id = $1', [cid2])).rows[0].status, 'scheduled', 'a standard change needs no approval');
+  assert.ok((await eng.get(`/changes/${cid2}`)).text.includes('Overlapping work'));
+  const cal = (await eng.get(`/changes/calendar?month=${day(3, '').slice(0, 7)}`)).text;
+  assert.ok(/class="chg scheduled clash/.test(cal), 'the calendar marks the clash');
+  // carry it out: failing needs a note
+  await eng.post(`/changes/${cid}/status`, { status: 'in_progress' });
+  await eng.post(`/changes/${cid}/status`, { status: 'failed', note: '' });
+  assert.equal((await q('select status from changes where id = $1', [cid])).rows[0].status, 'in_progress');
+  await eng.post(`/changes/${cid}/status`, { status: 'completed', note: 'Upgraded to 17.9.4' });
+  const done = (await q('select status, actual_start, actual_end, outcome from changes where id = $1', [cid])).rows[0];
+  assert.equal(done.status, 'completed'); assert.ok(done.actual_start && done.actual_end); assert.equal(done.outcome, 'Upgraded to 17.9.4');
+  assert.ok((await eng.get(`/assets/${asset.id}`)).text.includes('included it in change'), 'the asset history mentions the change');
+
+  // ---- a major incident from the ticket: customer A sees the banner and status page, customer B does not; updates are e-mailed
+  assert.equal((await eng.get(`/notices/new?ticket=${t1.ref}`)).status, 403, 'engineers do not publish to customers');
+  r = await agent.post('/notices', { kind: 'incident', ticket_id: String(t1.id), title: 'Branch VPN down', severity: 'outage', customer_ids: [String(A.c.id)], text: 'We are working on it.', email: '1' });
+  const nid = Number(/\/notices\/(\d+)/.exec(r.location)[1]);
+  const mails = (await q(`select recipient_email from notifications where kind = 'service_notice'`)).rows.map((x) => x.recipient_email);
+  assert.ok(mails.includes(ctx.aAdmin.email) && mails.includes(ctx.aUser.email) && !mails.includes(ctx.bUser.email), 'the customer admin and the reporter, nobody at B');
+  const ca = new Client(); await ca.login(ctx.aUser.email);
+  const portal = (await ca.get('/portal')).text;
+  assert.ok(portal.includes('class="noticebar"') && portal.includes('Branch VPN down'), 'customer A sees the banner');
+  assert.ok((await ca.get('/portal/status')).text.includes('We are working on it.'));
+  const cb = new Client(); await cb.login(ctx.bUser.email);
+  assert.ok(!(await cb.get('/portal')).text.includes('Branch VPN down') && (await cb.get('/portal/status')).text.includes('All services are running normally'), 'customer B does not');
+  assert.ok((await eng.get('/tickets')).text.includes('Major incident'), 'staff see the major-incident banner');
+  assert.ok((await eng.get(`/tickets/${t1.ref}`)).text.includes((await q('select ref from notices where id = $1', [nid])).rows[0].ref));
+  await agent.post(`/notices/${nid}/updates`, { status: 'resolved', text: 'Fixed by the provider.', email: '' });
+  assert.ok((await q('select closed_at from notices where id = $1', [nid])).rows[0].closed_at, 'resolved closes it');
+  assert.ok(!(await ca.get('/portal')).text.includes('class="noticebar"'), 'and the banner goes');
+  assert.ok((await ca.get('/portal/status')).text.includes('Last 30 days'));
+  // maintenance announced from the change
+  r = await agent.post('/notices', { kind: 'maintenance', change_id: String(cid2), title: 'Core switch reboot', customer_ids: [String(A.c.id)], starts_at: day(3, '22:30'), ends_at: day(3, '23:30'), text: 'Five minutes offline.' });
+  assert.equal(r.status, 302);
+  assert.ok((await ca.get('/portal')).text.includes('Planned maintenance'), 'announced maintenance within 7 days shows in the banner');
+});

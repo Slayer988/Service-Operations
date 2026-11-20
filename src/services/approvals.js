@@ -17,9 +17,13 @@ const DEFAULTS = {
   approvals_lpo_roles: ['finance', 'dept_head'],
   approvals_lpo_l2_limits: { UGX: 50000000, USD: 13000 },
   approvals_lpo_l2_roles: ['management'],
+  approvals_change_enabled: true,
+  approvals_change_roles: ['service_manager', 'dept_head'],
+  approvals_change_l2_roles: ['management'],
 };
 const KEYS = Object.keys(DEFAULTS);
-const ENTITY_LABEL = { quote: 'quote', lpo: 'purchase order' };
+const ENTITY_LABEL = { quote: 'quote', lpo: 'purchase order', change: 'change' };
+const DONE_VERB = { quote: 'sent', lpo: 'issued', change: 'scheduled' };
 const STATUS_LABELS = { pending: 'Waiting', approved: 'Approved', rejected: 'Not approved', withdrawn: 'Withdrawn' };
 const APPROVER_ROLES = ['finance', 'management', 'dept_head', 'service_manager', 'contract_manager', 'bd_manager', 'procurement'];
 
@@ -44,6 +48,7 @@ async function rules(db) {
   return {
     quote: { enabled: r.approvals_quote_enabled !== false, limits: r.approvals_quote_limits || {}, discountPct: Number(r.approvals_quote_discount_pct) || 0, roles: roles(r.approvals_quote_roles) },
     lpo: { enabled: r.approvals_lpo_enabled !== false, roles: roles(r.approvals_lpo_roles), l2Limits: r.approvals_lpo_l2_limits || {}, l2Roles: roles(r.approvals_lpo_l2_roles) },
+    change: { enabled: r.approvals_change_enabled !== false, roles: roles(r.approvals_change_roles), l2Roles: roles(r.approvals_change_l2_roles) },
   };
 }
 
@@ -54,6 +59,10 @@ async function load(db, entity, id) {
     if (!d) return null;
     const l = (await db.query(`select coalesce(sum(quantity * unit_price), 0) as gross, coalesce(sum(line_total), 0) as net from quote_lines where quote_id = $1`, [id])).rows[0];
     return { ...d, label: d.revision > 1 ? `${d.ref} R${d.revision}` : d.ref, gross: Number(l.gross), net: Number(l.net), href: `/quotes/${d.id}` };
+  }
+  if (entity === 'change') {
+    const c = (await db.query(`select id, ref, title, status, type, risk, owner_id, customer_id from changes where id = $1`, [id])).rows[0];
+    return c ? { ...c, label: c.ref, currency: '', total: 0, href: `/changes/${c.id}` } : null;
   }
   const d = (await db.query(`select po.id, po.ref, po.title, po.status, po.currency, po.total, po.subtotal, po.owner_id, s.name as supplier_name from purchase_orders po join suppliers s on s.id = po.supplier_id where po.id = $1`, [id])).rows[0];
   return d ? { ...d, label: d.ref, href: `/lpo/${d.id}` } : null;
@@ -71,6 +80,12 @@ function required(r, entity, d) {
     const pct = d.gross > 0 ? ((d.gross - d.net) / d.gross) * 100 : 0;
     if (r.quote.discountPct > 0 && pct >= r.quote.discountPct - 1e-9) reasons.push(`the discount, ${pct.toFixed(1)}%, is at or above ${r.quote.discountPct}%`);
     if (reasons.length) out.push({ level: 1, roles: r.quote.roles, reasons });
+    return out;
+  }
+  if (entity === 'change') {
+    if (!r.change.enabled || d.type === 'standard') return out;
+    out.push({ level: 1, roles: r.change.roles, reasons: [d.type === 'emergency' ? 'an emergency change is approved before the work starts' : 'every normal change is approved before it is scheduled'] });
+    if (d.risk === 'high' && r.change.l2Roles.length) out.push({ level: 2, roles: r.change.l2Roles, reasons: ['it is a high-risk change'] });
     return out;
   }
   if (!r.lpo.enabled) return out;
@@ -105,6 +120,7 @@ async function state(db, entity, d, r = null) {
 
 async function event(db, entity, d, actor, text) {
   if (entity === 'quote') await db.query('insert into quote_events (quote_id, actor_id, text) values ($1,$2,$3)', [d.id, actor.id, text]);
+  else if (entity === 'change') await db.query('insert into change_events (change_id, actor_id, text) values ($1,$2,$3)', [d.id, actor.id, text]);
   else await db.query('insert into purchase_order_events (purchase_order_id, actor_id, text) values ($1,$2,$3)', [d.id, actor.id, text]);
 }
 
@@ -113,7 +129,7 @@ async function request(db, entity, id, actor, ip = '') {
   const d = await load(db, entity, id);
   if (!d) throw new UserError(`That ${ENTITY_LABEL[entity]} does not exist.`);
   if (d.status !== 'draft') throw new UserError(`Only a draft ${ENTITY_LABEL[entity]} is sent for approval.`);
-  if (!Number(d.total)) throw new UserError('Add the lines first: there is nothing to approve yet.');
+  if (entity !== 'change' && !Number(d.total)) throw new UserError('Add the lines first: there is nothing to approve yet.');
   const st = await state(db, entity, d);
   if (!st.needed.length) throw new UserError(`This ${ENTITY_LABEL[entity]} does not need approval.`);
   if (st.complete) throw new UserError('It is already approved.');
@@ -171,7 +187,7 @@ async function assertApproved(db, entity, id) {
   const d = await load(db, entity, id);
   const st = await state(db, entity, d);
   if (st.complete) return;
-  const what = entity === 'quote' ? 'sent' : 'issued';
+  const what = DONE_VERB[entity];
   if (st.pending) throw new UserError(`This ${ENTITY_LABEL[entity]} is waiting for approval and cannot be ${what} yet.`);
   if (st.rejected) throw new UserError(`This ${ENTITY_LABEL[entity]} was not approved${st.rejected.record.comment ? ` (${st.rejected.record.comment})` : ''}. Change it and ask again.`);
   throw new UserError(`This ${ENTITY_LABEL[entity]} needs approval before it is ${what}: ${st.next.reasons.join('; ')}. Press "Ask for approval".`);
@@ -199,4 +215,4 @@ async function isApprover(db, user) {
   return [...r.quote.roles, ...r.lpo.roles, ...r.lpo.l2Roles].includes(user.role);
 }
 
-module.exports = { DEFAULTS, KEYS, APPROVER_ROLES, STATUS_LABELS, ENTITY_LABEL, parseLimits, formatLimits, rules, required, state, load, request, decide, withdraw, assertApproved, waitingFor, isApprover, canDecide };
+module.exports = { DONE_VERB, DEFAULTS, KEYS, APPROVER_ROLES, STATUS_LABELS, ENTITY_LABEL, parseLimits, formatLimits, rules, required, state, load, request, decide, withdraw, assertApproved, waitingFor, isApprover, canDecide };

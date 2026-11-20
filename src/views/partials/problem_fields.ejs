@@ -1,0 +1,12 @@
+<%# Problem fields. Locals: form, P, people, customers %>
+<% var sel = function (a, b) { return String(a || '') === String(b) ? 'selected' : ''; }; %>
+<p><label for="pf_title">Title</label><input id="pf_title" name="title" maxlength="200" required value="<%= form.title || '' %>" placeholder="Branch VPN drops several times a day"></p>
+<div class="grid2">
+<p><label for="pf_pri">Priority</label><select id="pf_pri" name="priority"><% [1,2,3,4].forEach(function (n) { %><option value="<%= n %>" <%= sel(form.priority || 3, n) %>><%= P.PRIORITY_LABELS[n] %></option><% }) %></select></p>
+<p><label for="pf_cust">Customer <small class="muted">(empty when several are affected)</small></label><select id="pf_cust" name="customer_id"><option value="">Several or none</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(form.customer_id, c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="pf_owner">Owner</label><select id="pf_owner" name="owner_id"><option value="">Me</option><% people.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.owner_id, p.id) %>><%= p.name %></option><% }) %></select></p>
+</div>
+<p><label for="pf_desc">What is happening <small class="muted">(the symptoms, how often, since when)</small></label><textarea id="pf_desc" name="description" rows="4" maxlength="8000"><%= form.description || '' %></textarea></p>
+<p><label for="pf_cause">Root cause</label><textarea id="pf_cause" name="root_cause" rows="3" maxlength="8000"><%= form.root_cause || '' %></textarea></p>
+<p><label for="pf_work">Workaround <small class="muted">(what the service desk can do until it is fixed)</small></label><textarea id="pf_work" name="workaround" rows="3" maxlength="8000"><%= form.workaround || '' %></textarea></p>
+<p><label for="pf_fix">Permanent fix</label><textarea id="pf_fix" name="permanent_fix" rows="2" maxlength="8000"><%= form.permanent_fix || '' %></textarea></p>

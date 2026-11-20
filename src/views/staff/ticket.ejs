@@ -86,6 +86,20 @@
   </section>
 
 
+  <% if (problems.length || canProblem || canNotice || ticketNotices.length) { %>
+  <section class="card" id="problem">
+    <h2>Problem and major incident</h2>
+    <% problems.forEach(function (p) { %><p><a href="/problems/<%= p.id %>"><%= p.ref %></a> <%= p.title %> <span class="tag <%= p.status === 'known_error' ? 'warn' : '' %>"><%= p.status.replace(/_/g, ' ') %></span></p>
+      <% if (p.workaround) { %><div class="workaround"><b>Workaround:</b> <span class="pre"><%= p.workaround %></span></div><% } %><% }) %>
+    <% ticketNotices.forEach(function (n) { %><p>Major incident <a href="/notices/<%= n.id %>"><%= n.ref %></a> <span class="tag <%= n.closed_at ? 'grey' : 'bad' %>"><%= n.closed_at ? 'closed' : n.status %></span></p><% }) %>
+    <% if (canProblem && !ticket.needs_verification) { %>
+      <form method="post" action="/problems/link-ticket" class="filters"><%- include('../partials/csrf') %><input type="hidden" name="ticket" value="<%= ticket.ref %>"><input name="problem" maxlength="20" placeholder="PRB-000001" aria-label="Problem reference" required><button class="btn ghost" type="submit">Link to a problem</button></form>
+      <p><a href="/problems/new?ticket=<%= ticket.ref %>">Open a new problem from this ticket</a><% if (canChange) { %> · <a href="/changes/new?ticket=<%= ticket.ref %><%= linkedAssets.length ? '&asset=' + linkedAssets[0].tag : '' %><%= ticket.customer_id ? '&customer=' + ticket.customer_id : '' %>">Raise a change</a><% } %></p>
+    <% } %>
+    <% if (canNotice && !ticket.needs_verification && !ticketNotices.some(function (n) { return !n.closed_at; })) { %><p><a class="btn ghost danger" href="/notices/new?ticket=<%= ticket.ref %>">Declare a major incident</a></p><% } %>
+  </section>
+  <% } %>
+
   <% if (canAssets && ticket.customer_id) { %>
   <section class="card" id="assets">
     <h2>Equipment</h2>

@@ -25,6 +25,12 @@ const GRANTS = {
   // asset register (1.24.0): those who work on customer equipment keep it up to date; managers and auditors read it
   'asset.view': ['platform_admin', 'service_manager', 'agent', 'engineer', 'security_analyst', 'contract_manager', 'technical_team', 'sde', 'procurement', 'management', 'dept_head', 'auditor', 'readonly'],
   'asset.manage': ['platform_admin', 'service_manager', 'agent', 'engineer', 'security_analyst', 'technical_team', 'procurement'],
+  // problem and change management, service notices (1.25.0)
+  'problem.view': [...TICKET_VIEW, 'technical_team', 'sde'],
+  'problem.manage': [...OPS, 'technical_team'],
+  'change.view': [...TICKET_VIEW, 'technical_team', 'sde', 'dept_head'],
+  'change.manage': [...OPS, 'technical_team'],
+  'notice.manage': ['platform_admin', 'service_manager', 'agent', 'security_analyst'],
   'catalogue.manage': ['platform_admin', 'service_manager'],
   'sla.configure': ['platform_admin', 'contract_manager'],
   'engineer.assign': ['platform_admin', 'service_manager', 'contract_manager'],

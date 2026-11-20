@@ -1,0 +1,21 @@
+<%- include('../partials/header') %>
+<p><a href="/notices">← Service notices</a></p>
+<div class="head"><h1><%= n.ref %> <%= n.title %></h1><span class="tag <%= n.closed_at ? 'grey' : (n.kind === 'maintenance' ? 'blue' : (n.severity === 'outage' ? 'bad' : 'warn')) %>"><%= N.label(n) %></span></div>
+<div class="cols"><div>
+<section class="card statusnotice <%= n.kind === 'maintenance' ? 'maint' : (n.severity === 'outage' ? 'outage' : '') %>"><h2>Updates</h2>
+<ul class="updates"><% n.updates.forEach(function (x) { %><li><div class="when"><%= fmt.dt(x.at) %> · <%= (N.STATUS[n.kind] || {})[x.status] || x.status %> · <%= x.by_name || '' %><%= x.emailed ? ' · e-mailed to ' + x.emailed : '' %></div><div class="pre"><%= x.text %></div></li><% }) %></ul></section>
+<% if (canManage && !n.closed_at) { %><section class="card"><h2>Post an update</h2><form method="post" action="/notices/<%= n.id %>/updates"><%- include('../partials/csrf') %>
+<p><label for="nu_status">Status</label><select id="nu_status" name="status"><% Object.keys(N.STATUS[n.kind]).forEach(function (k) { %><option value="<%= k %>" <%= n.status === k ? 'selected' : '' %>><%= N.STATUS[n.kind][k] %></option><% }) %></select></p>
+<p><label for="nu_text">Message</label><textarea id="nu_text" name="text" rows="3" maxlength="4000" required></textarea></p>
+<p><label class="check"><input type="checkbox" name="email" value="1" checked> E-mail it to the <%= recipients %> contact<%= recipients === 1 ? '' : 's' %></label></p>
+<button class="btn" type="submit">Publish the update</button> <span class="muted"><%= n.kind === 'incident' ? 'Resolved' : 'Completed or Cancelled' %> closes the notice and removes the banner.</span></form></section><% } %>
+</div><div>
+<section class="card"><h2>About</h2><dl class="facts">
+<dt>Kind</dt><dd><%= N.KINDS[n.kind] %><%= n.kind === 'incident' ? ', ' + N.SEVERITIES[n.severity].toLowerCase() : '' %></dd>
+<dt>Customers</dt><dd><%= n.all_customers ? 'All customers' : n.customers.map(function (c) { return c.name; }).join(', ') %></dd>
+<dt><%= n.kind === 'maintenance' ? 'Window' : 'Since' %></dt><dd><%= fmt.dt(n.starts_at) %><%= n.ends_at ? ' to ' + fmt.dt(n.ends_at) : '' %></dd>
+<% if (n.ticket_ref) { %><dt>Ticket</dt><dd><a href="/tickets/<%= n.ticket_ref %>"><%= n.ticket_ref %></a></dd><% } %>
+<% if (n.change_ref) { %><dt>Change</dt><dd><a href="/changes/<%= n.change_id %>"><%= n.change_ref %></a></dd><% } %>
+<dt>Opened by</dt><dd><%= n.created_by_name || '—' %></dd><% if (n.closed_at) { %><dt>Closed</dt><dd><%= fmt.dt(n.closed_at) %></dd><% } %>
+</dl></section></div></div>
+<%- include('../partials/footer') %>

@@ -1,0 +1,9 @@
+<%- include('../partials/header') %>
+<p><a href="/problems">← Problems</a></p>
+<h1>Open a problem</h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<section class="card"><form method="post" action="/problems"><%- include('../partials/csrf') %>
+<% if (form.ticket) { %><input type="hidden" name="ticket" value="<%= form.ticket %>"><p class="muted">Started from ticket <b><%= form.ticket %></b>, which will be linked.</p><% } %>
+<%- include('../partials/problem_fields', { form: form, P: P, people: people, customers: customers }) %>
+<button class="btn" type="submit">Open the problem</button></form></section>
+<%- include('../partials/footer') %>

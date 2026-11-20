@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Service notices</h1><% if (canManage) { %><div><a class="btn ghost" href="/notices/new?kind=maintenance">Announce maintenance</a> <a class="btn" href="/notices/new">Declare a major incident</a></div><% } %></div>
+<p class="muted">What customers see on their Service status page and in the banner at the top of the portal. Declare a major incident from its ticket, and announce maintenance from its change, to link them.</p>
+<% var who = function (n) { return n.all_customers ? 'All customers' : n.customer_ids.map(function (id) { return names[id] || '?'; }).join(', '); };
+   var cls = function (n) { return n.kind === 'maintenance' ? 'maint' : (n.severity === 'outage' ? 'outage' : ''); }; %>
+<section class="card"><h2>Open <span class="tag <%= open.length ? 'warn' : '' %>"><%= open.length %></span></h2>
+<% if (open.length) { %><table class="grid"><thead><tr><th>Notice</th><th>Kind</th><th>Title</th><th>Status</th><th>Customers</th><th>Since / window</th></tr></thead><tbody>
+<% open.forEach(function (n) { %><tr><td><a href="/notices/<%= n.id %>"><%= n.ref %></a></td><td><span class="tag <%= n.kind === 'incident' ? (n.severity === 'outage' ? 'bad' : 'warn') : 'blue' %>"><%= N.KINDS[n.kind] %></span></td><td><%= n.title %></td>
+<td><%= N.label(n) %></td><td><%= who(n) %></td><td><%= fmt.dt(n.starts_at) %><%= n.ends_at ? ' to ' + fmt.dt(n.ends_at) : '' %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">Nothing open. Customers see "All services running normally".</p><% } %></section>
+<section class="card"><h2>Closed recently</h2>
+<% if (closed.length) { %><table class="grid"><thead><tr><th>Notice</th><th>Kind</th><th>Title</th><th>Customers</th><th>Closed</th></tr></thead><tbody>
+<% closed.forEach(function (n) { %><tr><td><a href="/notices/<%= n.id %>"><%= n.ref %></a></td><td><%= N.KINDS[n.kind] %></td><td><%= n.title %></td><td><%= who(n) %></td><td><%= fmt.dt(n.closed_at) %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">None.</p><% } %></section>
+<%- include('../partials/footer') %>

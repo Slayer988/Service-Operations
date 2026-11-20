@@ -118,7 +118,9 @@ router.post('/admin/settings', requireStaff, requirePerm('settings.manage'), wra
       approvals_quote_discount_pct: u.intIn(b.approvals_quote_discount_pct, 0, 100) ?? 0, approvals_quote_roles: pick(b.approvals_quote_roles),
       approvals_lpo_enabled: b.approvals_lpo_enabled === '1', approvals_lpo_roles: pick(b.approvals_lpo_roles),
       approvals_lpo_l2_limits: A.parseLimits(b.approvals_lpo_l2_limits), approvals_lpo_l2_roles: pick(b.approvals_lpo_l2_roles),
+      approvals_change_enabled: b.approvals_change_enabled === '1', approvals_change_roles: pick(b.approvals_change_roles), approvals_change_l2_roles: pick(b.approvals_change_l2_roles),
     };
+    if (ap.approvals_change_enabled && !ap.approvals_change_roles.length) throw new tickets.UserError('Choose at least one role that approves changes, or turn change approval off.');
     if (ap.approvals_quote_enabled && !ap.approvals_quote_roles.length) throw new tickets.UserError('Choose at least one role that approves quotes, or turn quote approval off.');
     if (ap.approvals_lpo_enabled && !ap.approvals_lpo_roles.length) throw new tickets.UserError('Choose at least one role that approves purchase orders, or turn LPO approval off.');
     if (ap.approvals_lpo_enabled && Object.keys(ap.approvals_lpo_l2_limits).length && !ap.approvals_lpo_l2_roles.length) throw new tickets.UserError('Choose who gives the second approval of large purchase orders, or leave its limits empty.');

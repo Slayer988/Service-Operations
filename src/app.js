@@ -168,7 +168,11 @@ function createApp() {
             if (ending) { alerts.items.push({ text: `${ending} warrant${ending === 1 ? 'y or licence ends' : 'ies or licences end'} within 30 days`, href: '/assets?cover=warranty_soon' }); alerts.count = alerts.items.length; }
           }
         }
-        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0, approver, approvals: waiting });
+        // service notices: customers see what affects them on every page; staff see open major incidents
+        const N = require('./services/notices');
+        if (req.user.kind === 'customer') res.locals.serviceNotices = await N.activeFor({ query: q }, req.user.customer_id);
+        else if (perms.can(req.user, 'ticket.view')) res.locals.majorIncidents = await N.openIncidents({ query: q });
+        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0, approver, approvals: waiting, incidents: (res.locals.majorIncidents || []).length });
       }
       next();
     } catch (err) { next(err); }
@@ -194,6 +198,9 @@ function createApp() {
   app.use(require('./routes/lpo'));
   app.use(require('./routes/approvals'));
   app.use(require('./routes/assets'));
+  app.use(require('./routes/problems'));
+  app.use(require('./routes/changes'));
+  app.use(require('./routes/notices'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

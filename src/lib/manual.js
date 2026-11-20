@@ -128,6 +128,13 @@ function sections(user) {
       ],
     },
     {
+      id: 'c-status', title: 'Service status', who: 'customer',
+      blocks: [
+        { p: 'When something affects your services, a banner appears at the top of every page of the portal: a **service incident** we are working on, or **planned maintenance** in the next 7 days. Press **Details**, or open **Service Status** in the menu, for the latest updates and what to do meanwhile.' },
+        { tip: 'Service Status also lists what happened in the last 30 days. If you are affected by something not shown there, raise a request.' },
+      ],
+    },
+    {
       id: 'c-help', title: 'Help Articles', who: 'customer',
       blocks: [
         { p: 'Many questions already have an answer. Open **Help Articles**, type a few words and read the steps. Press **Yes, it helped** or **No** at the end: it tells us which articles to improve.' },
@@ -368,6 +375,56 @@ function sections(user) {
           'Customers see their own equipment (not other customers\', and not our notes or IP addresses) under **Our Equipment** in the portal, with warranty and renewal dates, and can mention the tag when they raise a request.',
           'Who can do what: engineers, agents, service managers, security analysts, the technical team and procurement add and change equipment; contract managers, management, department heads, SDEs, auditors and read-only users can see it.',
         ] },
+      ],
+    },
+    {
+      id: 'problems', title: 'Problems and known errors', who: 'staff', perm: 'problem.view',
+      intro: 'An incident is fixed for the customer; a problem is the cause behind one or more incidents, found and removed so they stop coming back.',
+      blocks: [
+        { steps: [
+          'On a ticket that keeps recurring, in the **Problem and major incident** box, press **Open a new problem from this ticket** (or link the ticket to an existing problem by its reference, PRB-000001). Link the other incidents and the equipment involved.',
+          'While investigating, write what is happening, then the **root cause** and a **workaround** when you find them, and move it to **Known error**. The workaround then shows on every linked ticket, so whoever picks up the next one can apply it at once.',
+          'Press **Write it up as a Knowledge Base article** to turn the known error into a draft article (symptoms, cause, workaround) for review and publishing.',
+          'Remove the cause with a change (**Raise a change to fix it** on the problem). When it is done, write the **permanent fix** and move the problem to **Resolved**, then **Closed**. A closed problem can be reopened if it comes back.',
+        ] },
+        { tip: 'Problems are listed under **Problems** in the menu; Active shows open, investigating and known errors, with how many incidents each has caused.' },
+      ],
+    },
+    {
+      id: 'changes', title: 'Changes and the change calendar', who: 'staff', perm: 'change.view',
+      intro: 'Any planned work on a live service (an upgrade, a reboot, a move, a new licence) is recorded as a change, approved, scheduled and its outcome kept.',
+      blocks: [
+        { h: 'Types of change' },
+        { list: [
+          '**Standard**: routine, low-risk work done the same way every time (adding licences, a scheduled reboot). Pre-approved: it is scheduled without asking.',
+          '**Normal**: everything else. It is approved before it is scheduled; a **high-risk** change needs a second approval.',
+          '**Emergency**: urgent work to restore or protect a service. Still approved (by any one approver) before the work starts; its window may already have begun.',
+        ] },
+        { h: 'From draft to done' },
+        { steps: [
+          'Press **Raise a change** (or from a ticket, a problem or an asset). Write what and why, the **impact on the service**, the **implementation plan**, the **back-out plan** and how you will check it worked; set the planned window and add the equipment affected (asset tags).',
+          'Press **Ask for approval** in the Approval box. The approvers (by default a service manager or a department head, and management for high risk) see it under **Approvals** and on their bell.',
+          'When approved, choose **Schedule it**. Editing a draft withdraws its approval; to re-plan a scheduled change, move it **Back to draft**.',
+          'At the start of the window choose **Start the work**; at the end **Completed successfully**, or **Failed: backed out** with what went wrong and how the service was restored (a note is required). Actual start and end times are recorded.',
+        ] },
+        { h: 'The calendar' },
+        { list: [
+          '**Changes**, **Change calendar** shows a month of scheduled, running and finished changes. Changes in **red** overlap other work on the same customer or the same equipment: move one, or make sure the two teams know. The change page lists the overlapping work too.',
+          'Use **Announce the maintenance** on a scheduled change to tell the customers (see Service notices).',
+        ] },
+      ],
+    },
+    {
+      id: 'notices', title: 'Major incidents and service notices', who: 'staff',
+      intro: 'A service notice tells the customers affected about a major incident or planned maintenance: on every page of their portal, on their Service status page, and by e-mail if you choose.',
+      blocks: [
+        { steps: [
+          'On a serious ticket (an outage affecting a customer or many users), press **Declare a major incident** in the Problem and major incident box. Choose the customers affected, how bad it is, and write the first message in plain words: what is happening and what they should do.',
+          'Tick **E-mail it** to send it to the customers\' administrators and the person who reported the ticket.',
+          'Post an **update** at least every 30 to 60 minutes, choosing the status: Investigating, Cause identified, Fixed and monitoring. **Resolved** closes the notice and removes the banner.',
+          'For planned work, use **Announce the maintenance** on the change (or Service notices, Announce maintenance): customers see it from 7 days before the window.',
+        ] },
+        { tip: 'Open major incidents show in a red banner at the top of every staff page and as a count on **Service Notices** in the menu. Declaring and updating notices is for service managers, agents and security analysts.' },
       ],
     },
     {

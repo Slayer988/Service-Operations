@@ -605,3 +605,42 @@ ul.errors li{margin:4px 0;color:var(--bad)}
 ul.assets{list-style:none;margin:0 0 10px;padding:0}
 ul.assets li{padding:6px 0;border-bottom:1px solid var(--line)}
 ul.assets li:last-child{border-bottom:0}
+/* service notices (1.25.0) */
+.noticebar{display:flex;flex-direction:column;gap:6px;margin:0 0 14px}
+.noticebar .notice{display:block;margin:0;padding:10px 14px;border-radius:8px;border:1px solid var(--line);border-left:5px solid var(--warn);background:var(--warn-l);color:var(--fg);text-decoration:none;line-height:1.4}
+.noticebar .notice.outage{border-left-color:var(--bad);background:var(--bad-l)}
+.noticebar .notice.maint{border-left-color:var(--blue);background:var(--blue-l)}
+.noticebar .notice span{color:var(--mut)}
+.noticebar .notice .more{float:right;color:var(--acc);text-decoration:underline}
+.noticebar .notice:hover{border-color:var(--acc)}
+.updates{list-style:none;margin:0;padding:0}
+.updates li{padding:10px 0;border-bottom:1px solid var(--line)}
+.updates li:last-child{border-bottom:0}
+.updates .when{color:var(--mut);font-size:13px}
+.statusnotice{border-left:5px solid var(--warn)}
+.statusnotice.outage{border-left-color:var(--bad)}
+.statusnotice.maint{border-left-color:var(--blue)}
+.statusnotice.ok{border-left-color:var(--ok)}
+/* change calendar */
+.calnav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.calnav h2{margin:0 8px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal .dow{font-size:12px;color:var(--mut);text-align:center;padding:4px 0}
+.cal .day{min-height:96px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px;font-size:12px;overflow:hidden}
+.cal .day.out{opacity:.45}
+.cal .day.today{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.cal .day .n{font-weight:600;color:var(--mut);display:block;margin-bottom:3px}
+.cal .chg{display:block;padding:2px 4px;margin-bottom:3px;border-radius:4px;background:var(--acc-l);color:var(--fg);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid var(--acc)}
+.cal .chg.cont{opacity:.7}
+.cal .chg.in_progress{border-left-color:var(--blue);background:var(--blue-l)}
+.cal .chg.completed{border-left-color:var(--ok);opacity:.7}
+.cal .chg.failed{border-left-color:var(--bad)}
+.cal .chg.clash{border-left-color:var(--bad);background:var(--bad-l)}
+.cal .chg.emergency::before{content:'! ';color:var(--bad);font-weight:700}
+@media (max-width:760px){.cal{grid-template-columns:1fr}.cal .dow{display:none}.cal .day{min-height:0}.cal .day:not(.has){display:none}}
+.cal .mobile-only{display:none}
+@media (max-width:760px){.cal .mobile-only{display:inline}}
+.checkcols{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:8px 14px;margin:0 0 14px}
+legend{padding:0 6px;color:var(--mut);font-size:13px}
+.workaround{background:var(--warn-l);border-left:3px solid var(--warn);padding:8px 10px;border-radius:6px;margin:0 0 10px;font-size:14px}

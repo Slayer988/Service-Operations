@@ -13,8 +13,7 @@ test('platform admin sees every module; links are never dead', () => {
   // Settings, Users, Directory and Audit live on the Administration page, not in the menu
   assert.ok(!labels(g).includes('Business Overview'));
   for (const l of ['Settings', 'Directory', 'Audit', 'Users', 'E-mail', 'Mailboxes', 'SLA', 'Service Catalogue']) assert.ok(!labels(g).includes(l), l);
-  assert.ok(!labels(g).some((l) => /Problems|Changes/.test(l)));
-  assert.ok(labels(g).includes('Assets'), 'the asset register (1.24.0)');
+  for (const l of ['Assets', 'Problems', 'Changes', 'Service Notices']) assert.ok(labels(g).includes(l), `${l} (1.24-1.25)`);
   assert.ok(labels(g).includes('Approvals'), 'administrators approve quotes and orders (1.23.0)');
   assert.equal(flat(g).find((i) => i.label === 'Verification').badge, 3);
 });
@@ -43,7 +42,7 @@ test('exactly one place is highlighted', () => {
 
 test('customer portal menu', () => {
   const g = nav.build({ kind: 'customer', role: 'customer_user' }, { path: '/portal/tickets/INC-000001', query: {} });
-  assert.deepEqual(labels(g), ['Dashboard', 'My Requests', 'Submit Request', 'My Services', 'Our Equipment', 'Service Catalogue', 'Help Articles']);
+  assert.deepEqual(labels(g), ['Dashboard', 'My Requests', 'Submit Request', 'My Services', 'Our Equipment', 'Service Status', 'Service Catalogue', 'Help Articles']);
   assert.deepEqual(active(g), ['My Requests']);
   assert.ok(labels(nav.build({ kind: 'customer', role: 'customer_admin' }, { path: '/portal' })).includes('Our Users'));
   assert.deepEqual(nav.build(null, {}), []);

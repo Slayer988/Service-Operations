@@ -99,6 +99,10 @@
 <p><label for="all2">Second approval needed at or above this total <small class="muted">(one currency per line; leave empty for no second approval; an order in a currency not listed needs it)</small></label>
 <textarea id="all2" name="approvals_lpo_l2_limits" rows="3"><%= limitsText(apRules.lpo.l2Limits) %></textarea></p>
 <p><b>Second approval</b> (any one of them)<br><%- roleBoxes('approvals_lpo_l2_roles', apRules.lpo.l2Roles) %></p>
+<h3>Changes</h3>
+<p><label class="check"><input type="checkbox" name="approvals_change_enabled" value="1" <%= apRules.change.enabled ? 'checked' : '' %>> Normal and emergency changes are approved before they are scheduled (standard changes are pre-approved)</label></p>
+<p><b>Change approval</b> (the change advisory board; any one of them)<br><%- roleBoxes('approvals_change_roles', apRules.change.roles) %></p>
+<p><b>Second approval of high-risk changes</b> (any one of them; none ticked = no second approval)<br><%- roleBoxes('approvals_change_l2_roles', apRules.change.l2Roles) %></p>
 </section>
 <button class="btn" type="submit">Save settings</button>
 </form>

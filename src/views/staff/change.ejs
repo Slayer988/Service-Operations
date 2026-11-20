@@ -1,0 +1,36 @@
+<%- include('../partials/header') %>
+<% var tone = { draft: 'warn', scheduled: 'blue', in_progress: 'blue', completed: '', failed: 'bad', cancelled: 'grey' }; %>
+<p><a href="/changes">← Changes</a> · <a href="/changes/calendar?month=<%= c.planned_start ? C.forInput(c.planned_start).slice(0, 7) : '' %>">Calendar</a></p>
+<div class="head"><h1><%= c.ref %> <%= c.title %></h1><span class="tag <%= tone[c.status] %>"><%= C.STATUS_LABELS[c.status] %></span></div>
+<% if (conflicts.length && ['draft','scheduled','in_progress'].includes(c.status)) { %><section class="card bad" role="alert"><h2>Overlapping work</h2>
+<p>These changes overlap this window on the same customer or the same equipment:</p><ul><% conflicts.forEach(function (o) { %><li><a href="/changes/<%= o.id %>"><%= o.ref %></a> <%= o.title %>, <%= fmt.dt(o.planned_start) %> to <%= fmt.dt(o.planned_end) %> <small class="muted">(<%= o.same_asset ? 'same equipment' : 'same customer' %>)</small></li><% }) %></ul></section><% } %>
+<div class="cols"><div>
+<section class="card"><h2>The change</h2><dl class="facts">
+  <dt>Type / risk</dt><dd><%= C.TYPES[c.type] %>, <%= c.risk %> risk</dd>
+  <dt>Customer</dt><dd><%= c.customer_name || 'Internal / several' %></dd>
+  <dt>Window</dt><dd><%= c.planned_start ? fmt.dt(c.planned_start) + ' to ' + fmt.dt(c.planned_end) : 'not planned yet' %></dd>
+  <% if (c.actual_start) { %><dt>Actual</dt><dd><%= fmt.dt(c.actual_start) %><%= c.actual_end ? ' to ' + fmt.dt(c.actual_end) : ', still running' %></dd><% } %>
+  <dt>Owner / by</dt><dd><%= c.owner_name || '—' %> / <%= c.implementer_name || '—' %></dd>
+  <% if (c.problem_ref) { %><dt>Fixes</dt><dd><a href="/problems/<%= c.problem_id %>"><%= c.problem_ref %></a> <%= c.problem_title %></dd><% } %>
+  <dt>What and why</dt><dd class="pre"><%= c.description || '—' %></dd><dt>Impact</dt><dd class="pre"><%= c.impact || '—' %></dd>
+  <dt>Plan</dt><dd class="pre"><%= c.implementation_plan || '—' %></dd><dt>Back-out</dt><dd class="pre"><%= c.backout_plan || '—' %></dd><dt>Check</dt><dd class="pre"><%= c.test_plan || '—' %></dd>
+  <% if (c.outcome) { %><dt>Outcome</dt><dd class="pre"><%= c.outcome %></dd><% } %>
+</dl></section>
+<%- include('../partials/approval_card', { ap: ap, entity: 'change', itemId: c.id, itemOwnerId: c.owner_id, canRequest: canManage, apDecider: apDecider, roleLabels: roleLabels }) %>
+<section class="card" id="assets"><h2>Equipment affected</h2>
+<% if (assets.length) { %><ul class="plain"><% assets.forEach(function (a) { %><li><a href="/assets/<%= a.id %>"><%= a.tag %></a> <%= a.name %><% if (editable) { %> <form method="post" action="/changes/<%= c.id %>/assets/<%= a.id %>/unlink" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit">Remove</button></form><% } %></li><% }) %></ul><% } else { %><p class="muted">None listed.</p><% } %>
+<% if (editable) { %><form method="post" action="/changes/<%= c.id %>/assets" class="filters"><%- include('../partials/csrf') %><input name="tag" maxlength="20" placeholder="AST-000012" aria-label="Asset tag" required><button class="btn ghost" type="submit">Add equipment</button></form><% } %>
+<% if (linkedTickets.length) { %><p>Tickets: <% linkedTickets.forEach(function (t) { %><a href="/tickets/<%= t.ref %>"><%= t.ref %></a> <% }) %></p><% } %></section>
+<% if (editable) { %><section class="card"><h2>Change the plan</h2><form method="post" action="/changes/<%= c.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/change_fields', { form: c, C: C, people: people, customers: customers, problems: problems }) %><button class="btn" type="submit">Save</button> <span class="muted">Saving withdraws an approval already given.</span></form></section><% } %>
+</div><div>
+<% if (moves.length) { %><section class="card" id="status"><h2>Next step</h2><form method="post" action="/changes/<%= c.id %>/status"><%- include('../partials/csrf') %>
+<p><select name="status" aria-label="Next step"><% moves.forEach(function (m) { %><option value="<%= m %>"><%= C.MOVE_LABELS[m] %></option><% }) %></select></p>
+<p><label for="cnote">Note <small class="muted">(required when it failed: what went wrong and how it was backed out)</small></label><textarea id="cnote" name="note" rows="2" maxlength="2000"></textarea></p>
+<button class="btn" type="submit">Update</button></form></section><% } %>
+<% if (canNotice && ['draft','scheduled'].includes(c.status) && c.planned_start) { %><section class="card"><h2>Tell the customers</h2>
+<% if (notices.length) { %><p><% notices.forEach(function (n) { %><a href="/notices/<%= n.id %>"><%= n.ref %></a> (<%= n.status.replace(/_/g, ' ') %>) <% }) %></p><% } %>
+<p><a class="btn ghost" href="/notices/new?change=<%= c.id %>">Announce the maintenance</a></p><p class="muted">Shows on the customers' Service status page and can be e-mailed to them.</p></section><% } %>
+<section class="card"><h2>History</h2><ul class="timeline compact"><% events.forEach(function (e) { %><li><small class="muted"><%= fmt.dt(e.at) %></small><br><%= e.text %></li><% }) %></ul></section>
+</div></div>
+<%- include('../partials/footer') %>

@@ -1,0 +1,18 @@
+<%# Change fields. Locals: form, C, people, customers, problems %>
+<% var sel = function (a, b) { return String(a || '') === String(b) ? 'selected' : ''; }; var dt = function (v) { return v instanceof Date || (v && String(v).length > 16) ? C.forInput(v) : (v || ''); }; %>
+<p><label for="cf_title">Title</label><input id="cf_title" name="title" maxlength="200" required value="<%= form.title || '' %>" placeholder="Upgrade the core switch firmware"></p>
+<div class="grid2">
+<p><label for="cf_type">Type</label><select id="cf_type" name="type"><% Object.keys(C.TYPES).forEach(function (k) { %><option value="<%= k %>" <%= sel(form.type || 'normal', k) %>><%= C.TYPES[k] %></option><% }) %></select></p>
+<p><label for="cf_risk">Risk</label><select id="cf_risk" name="risk"><% Object.keys(C.RISKS).forEach(function (k) { %><option value="<%= k %>" <%= sel(form.risk || 'medium', k) %>><%= C.RISKS[k] %></option><% }) %></select></p>
+<p><label for="cf_cust">Customer <small class="muted">(empty for internal or several)</small></label><select id="cf_cust" name="customer_id"><option value="">Internal / several</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(form.customer_id, c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="cf_prob">Fixes problem</label><select id="cf_prob" name="problem_id"><option value="">—</option><% problems.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.problem_id, p.id) %>><%= p.ref %> <%= p.title %></option><% }) %></select></p>
+<p><label for="cf_owner">Owner</label><select id="cf_owner" name="owner_id"><option value="">Me</option><% people.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.owner_id, p.id) %>><%= p.name %></option><% }) %></select></p>
+<p><label for="cf_impl">Carried out by</label><select id="cf_impl" name="implementer_id"><option value="">—</option><% people.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.implementer_id, p.id) %>><%= p.name %></option><% }) %></select></p>
+<p><label for="cf_start">Planned start <small class="muted">(<%= timezone %>)</small></label><input id="cf_start" name="planned_start" type="datetime-local" value="<%= dt(form.planned_start) %>"></p>
+<p><label for="cf_end">Planned end</label><input id="cf_end" name="planned_end" type="datetime-local" value="<%= dt(form.planned_end) %>"></p>
+</div>
+<p><label for="cf_desc">What and why</label><textarea id="cf_desc" name="description" rows="3" maxlength="8000"><%= form.description || '' %></textarea></p>
+<p><label for="cf_impact">Impact on the service <small class="muted">(who notices what, and for how long)</small></label><textarea id="cf_impact" name="impact" rows="2" maxlength="4000"><%= form.impact || '' %></textarea></p>
+<p><label for="cf_plan">Implementation plan <small class="muted">(the steps)</small></label><textarea id="cf_plan" name="implementation_plan" rows="4" maxlength="12000"><%= form.implementation_plan || '' %></textarea></p>
+<p><label for="cf_back">Back-out plan <small class="muted">(how to put it back if it goes wrong)</small></label><textarea id="cf_back" name="backout_plan" rows="3" maxlength="8000"><%= form.backout_plan || '' %></textarea></p>
+<p><label for="cf_test">How we check it worked</label><textarea id="cf_test" name="test_plan" rows="2" maxlength="8000"><%= form.test_plan || '' %></textarea></p>

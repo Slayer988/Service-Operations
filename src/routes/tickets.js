@@ -145,7 +145,10 @@ router.get('/tickets/:ref', requireStaff, requirePerm('ticket.view'), wrap(async
   const assetChoices = canAssets && ticket.customer_id ? (await q(`select a.id, a.tag, a.name from assets a where a.customer_id = $1 and a.status in ('in_stock','active','under_repair')
                                                 and not exists (select 1 from ticket_assets ta where ta.ticket_id = $2 and ta.asset_id = a.id)
                                               order by (a.csid_id is not distinct from $3::bigint) desc, a.name limit 300`, [ticket.customer_id, ticket.id, ticket.csid_id || null])).rows : [];
-  res.render('staff/ticket', { canAssets, linkedAssets, assetChoices, assetSvc: require('../services/assets'), today: u.localDay(require('../config').timezone), title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
+  const problems = perms.can(req.user, 'problem.view') ? (await q(`select p.id, p.ref, p.title, p.status, p.workaround from problem_tickets pt join problems p on p.id = pt.problem_id where pt.ticket_id = $1 order by p.id`, [ticket.id])).rows : [];
+  const ticketNotices = (await q(`select id, ref, status, closed_at from notices where ticket_id = $1 order by id desc`, [ticket.id])).rows;
+  res.render('staff/ticket', { problems, ticketNotices, canProblem: perms.can(req.user, 'problem.manage'), canChange: perms.can(req.user, 'change.manage'), canNotice: perms.can(req.user, 'notice.manage'),
+    canAssets, linkedAssets, assetChoices, assetSvc: require('../services/assets'), today: u.localDay(require('../config').timezone), title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
     kbArticles: await kb.forTicket(q, req.user, ticket.id), canKbWrite: perms.can(req.user, 'kb.write'), canWork: perms.can(req.user, 'ticket.work'), canVerify: perms.can(req.user, 'ticket.verify'), canSla: perms.can(req.user, 'ticket.sla_note') });
 }));
 

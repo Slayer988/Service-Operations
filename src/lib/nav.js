@@ -16,6 +16,7 @@ function build(user, ctx, counts = {}) {
       { label: 'Submit Request', href: '/portal/tickets/new', icon: 'plus', on: path === '/portal/tickets/new' },
       { label: 'My Services', href: '/portal/services', icon: 'grid', on: path === '/portal/services' },
       { label: 'Our Equipment', href: '/portal/assets', icon: 'server', on: path === '/portal/assets' },
+      { label: 'Service Status', href: '/portal/status', icon: 'pulse', on: path === '/portal/status' },
       { label: 'Service Catalogue', href: '/portal/catalogue', icon: 'clipboard', on: path === '/portal/catalogue' },
       { label: 'Help Articles', href: '/portal/help', icon: 'book', on: starts('/portal/help') },
     ];
@@ -37,6 +38,9 @@ function build(user, ctx, counts = {}) {
     can('ticket.view') && { label: 'All Tickets', href: '/tickets', icon: 'list', on: starts('/tickets') && path !== '/tickets/new' && !mine && !inc && !req },
     can('customer.view') && { label: 'Customers', href: '/customers', icon: 'building', on: starts('/customers', '/services', '/customer-contracts') },
     can('asset.view') && { label: 'Assets', href: '/assets', icon: 'server', on: starts('/assets') },
+    can('problem.view') && { label: 'Problems', href: '/problems', icon: 'search', on: starts('/problems') },
+    can('change.view') && { label: 'Changes', href: '/changes', icon: 'refresh', on: starts('/changes') },
+    can('ticket.view') && { label: 'Service Notices', href: '/notices', icon: 'bell', on: starts('/notices'), badge: counts.incidents || 0 },
     can('kb.view') && { label: 'Knowledge Base', href: '/kb', icon: 'book', on: starts('/kb') },
     { label: 'Reports', href: '/reports', icon: 'chart', on: starts('/reports') },
   ].filter(Boolean);

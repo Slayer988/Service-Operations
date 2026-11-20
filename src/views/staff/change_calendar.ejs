@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Change calendar</h1><% if (canManage) { %><a class="btn" href="/changes/new">Raise a change</a><% } %></div>
+<div class="calnav"><a class="btn ghost" href="?month=<%= prev %>">← Previous</a><h2><%= monthLabel %></h2><a class="btn ghost" href="?month=<%= next %>">Next →</a> <a href="/changes/calendar">This month</a>
+<span class="muted">Scheduled, running and finished changes. <% if (clashes) { %><span class="tag bad"><%= clashes %> clash<%= clashes === 1 ? '' : 'es' %></span> overlapping work on the same customer or equipment.<% } %></span></div>
+<div class="cal" role="grid">
+<% ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(function (d) { %><div class="dow"><%= d %></div><% }) %>
+<% days.forEach(function (d) { %><div class="day<%= d.inMonth ? '' : ' out' %><%= d.today ? ' today' : '' %><%= d.items.length ? ' has' : '' %>"><span class="n"><%= Number(d.day.slice(8)) %><span class="mobile-only"> <%= d.day %></span></span>
+<% d.items.forEach(function (i) { %><a class="chg <%= i.status %><%= i.clash ? ' clash' : '' %><%= i.type === 'emergency' ? ' emergency' : '' %><%= i.startsHere ? '' : ' cont' %>" href="/changes/<%= i.id %>" title="<%= i.ref %> <%= i.title %>, <%= fmt.dt(i.planned_start) %> to <%= fmt.dt(i.planned_end) %>"><%= i.startsHere ? C.forInput(i.planned_start).slice(11) + ' ' : '… ' %><%= i.ref %> <%= i.title %></a><% }) %>
+</div><% }) %>
+</div>
+<p class="muted">Times in <%= timezone %>. Red: overlaps other work on the same customer or equipment. "!" marks an emergency change.</p>
+<%- include('../partials/footer') %>

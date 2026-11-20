@@ -1,0 +1,34 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'known_error' ? 'warn' : (s === 'resolved' || s === 'closed' ? 'grey' : (s === 'investigating' ? 'blue' : '')); }; %>
+<p><a href="/problems">← Problems</a></p>
+<div class="head"><h1><%= p.ref %> <%= p.title %></h1><span class="tag <%= tone(p.status) %>"><%= P.STATUS_LABELS[p.status] %></span></div>
+<div class="cols"><div>
+<% if (p.workaround) { %><section class="card statusnotice" id="workaround"><h2>Workaround</h2><p class="pre"><%= p.workaround %></p>
+  <% if (p.kb_code) { %><p>Knowledge Base: <a href="/kb/<%= p.kb_code %>"><%= p.kb_code %></a> <%= p.kb_title %></p><% } else if (canManage && can('kb.write')) { %>
+  <form method="post" action="/problems/<%= p.id %>/article" class="inline"><%- include('../partials/csrf') %><button class="btn ghost" type="submit">Write it up as a Knowledge Base article</button></form> <span class="muted">A draft internal article from the symptoms, cause and workaround.</span><% } %></section><% } %>
+<section class="card"><h2>Details</h2><dl class="facts">
+  <dt>Priority</dt><dd><%= P.PRIORITY_LABELS[p.priority] %></dd><dt>Customer</dt><dd><%= p.customer_name || 'Several or none' %></dd><dt>Owner</dt><dd><%= p.owner_name || '—' %></dd>
+  <dt>Symptoms</dt><dd class="pre"><%= p.description || '—' %></dd><dt>Root cause</dt><dd class="pre"><%= p.root_cause || 'Not yet known' %></dd><dt>Permanent fix</dt><dd class="pre"><%= p.permanent_fix || '—' %></dd>
+</dl></section>
+<section class="card" id="incidents"><h2>Incidents <span class="tag"><%= incidents.length %></span></h2>
+<% if (incidents.length) { %><table class="grid"><thead><tr><th>Ticket</th><th>Subject</th><th>Customer</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>
+<% incidents.forEach(function (t) { %><tr><td><a href="/tickets/<%= t.ref %>"><%= t.ref %></a></td><td><%= t.subject %></td><td><%= t.customer_name || '—' %></td><td><%= statusLabels[t.status] %></td><td><%= fmt.date(t.created_at) %></td>
+<td><% if (canManage) { %><form method="post" action="/problems/<%= p.id %>/tickets/<%= t.id %>/unlink" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit">Unlink</button></form><% } %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No incident is linked yet.</p><% } %>
+<% if (canManage) { %><form method="post" action="/problems/<%= p.id %>/tickets" class="filters"><%- include('../partials/csrf') %><input name="ref" maxlength="20" placeholder="INC-000123" aria-label="Ticket reference" required><button class="btn ghost" type="submit">Link a ticket</button></form><% } %></section>
+<section class="card" id="assets"><h2>Equipment involved</h2>
+<% if (assets.length) { %><ul class="plain"><% assets.forEach(function (a) { %><li><a href="/assets/<%= a.id %>"><%= a.tag %></a> <%= a.name %></li><% }) %></ul><% } else { %><p class="muted">None linked.</p><% } %>
+<% if (canManage) { %><form method="post" action="/problems/<%= p.id %>/assets" class="filters"><%- include('../partials/csrf') %><input name="tag" maxlength="20" placeholder="AST-000012" aria-label="Asset tag" required><button class="btn ghost" type="submit">Link equipment</button></form><% } %></section>
+<section class="card" id="changes"><h2>Changes for the permanent fix</h2>
+<% if (changes.length) { %><ul class="plain"><% changes.forEach(function (c) { %><li><a href="/changes/<%= c.id %>"><%= c.ref %></a> <%= c.title %> <span class="tag"><%= c.status.replace(/_/g, ' ') %></span></li><% }) %></ul><% } else { %><p class="muted">No change yet.</p><% } %>
+<% if (canChange && !['resolved','closed'].includes(p.status)) { %><p><a class="btn ghost" href="/changes/new?problem=<%= p.id %>">Raise a change to fix it</a></p><% } %></section>
+<% if (canManage) { %><section class="card"><h2>Change the details</h2><form method="post" action="/problems/<%= p.id %>"><%- include('../partials/csrf') %>
+<%- include('../partials/problem_fields', { form: p, P: P, people: people, customers: customers }) %><button class="btn" type="submit">Save</button></form></section><% } %>
+</div><div>
+<% if (canManage && P.MOVES[p.status].length) { %><section class="card" id="status"><h2>Next step</h2><form method="post" action="/problems/<%= p.id %>/status"><%- include('../partials/csrf') %>
+<p><select name="status" aria-label="New status"><% P.MOVES[p.status].forEach(function (m) { %><option value="<%= m %>"><%= P.STATUS_LABELS[m] %></option><% }) %></select></p>
+<p><label for="pnote">Note</label><input id="pnote" name="note" maxlength="1000"></p><button class="btn" type="submit">Update</button>
+<p class="muted">A known error needs its root cause and workaround; resolving needs the permanent fix.</p></form></section><% } %>
+<section class="card"><h2>History</h2><ul class="timeline compact"><% events.forEach(function (e) { %><li><small class="muted"><%= fmt.dt(e.at) %></small><br><%= e.text %></li><% }) %></ul></section>
+</div></div>
+<%- include('../partials/footer') %>

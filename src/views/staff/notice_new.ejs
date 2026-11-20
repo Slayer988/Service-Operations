@@ -1,0 +1,22 @@
+<%- include('../partials/header') %>
+<p><a href="/notices">← Service notices</a></p>
+<h1><%= form.kind === 'maintenance' ? 'Announce planned maintenance' : 'Declare a major incident' %></h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<% var chosen = (form.customer_ids || []).map(String); %>
+<section class="card"><form method="post" action="/notices"><%- include('../partials/csrf') %>
+<input type="hidden" name="kind" value="<%= form.kind %>">
+<% if (form.ticket_id) { %><input type="hidden" name="ticket_id" value="<%= form.ticket_id %>"><p class="muted">From ticket <b><%= form.ticket_ref %></b>, which is linked.</p><% } %>
+<% if (form.change_id) { %><input type="hidden" name="change_id" value="<%= form.change_id %>"><p class="muted">From change <b><%= form.change_ref %></b>.</p><% } %>
+<p><label for="nt_title">Title <small class="muted">(what customers see: plain words, no internal references)</small></label><input id="nt_title" name="title" maxlength="200" required value="<%= form.title || '' %>"></p>
+<div class="grid2">
+<% if (form.kind === 'incident') { %><p><label for="nt_sev">How bad</label><select id="nt_sev" name="severity"><% Object.keys(N.SEVERITIES).forEach(function (k) { %><option value="<%= k %>" <%= (form.severity || 'outage') === k ? 'selected' : '' %>><%= N.SEVERITIES[k] %></option><% }) %></select></p><% } %>
+<p><label for="nt_start"><%= form.kind === 'maintenance' ? 'Starts' : 'Started' %> <small class="muted">(<%= timezone %>; empty = now)</small></label><input id="nt_start" name="starts_at" type="datetime-local" value="<%= form.starts_at || '' %>"></p>
+<p><label for="nt_end"><%= form.kind === 'maintenance' ? 'Ends' : 'Expected to be fixed by (optional)' %></label><input id="nt_end" name="ends_at" type="datetime-local" value="<%= form.ends_at || '' %>"></p>
+</div>
+<fieldset><legend>Customers affected</legend>
+<p><label class="check"><input type="checkbox" name="all_customers" value="1" <%= form.all_customers === '1' ? 'checked' : '' %>> All customers</label></p>
+<div class="checkcols"><% customers.forEach(function (c) { %><label class="check"><input type="checkbox" name="customer_ids" value="<%= c.id %>" <%= chosen.includes(String(c.id)) ? 'checked' : '' %>> <%= c.name %></label><% }) %></div></fieldset>
+<p><label for="nt_text">First message</label><textarea id="nt_text" name="text" rows="4" maxlength="4000" required><%= form.text || '' %></textarea></p>
+<p><label class="check"><input type="checkbox" name="email" value="1" <%= form.email === '1' ? 'checked' : '' %>> E-mail it to the customers' administrators<%= form.ticket_id ? ' and the person who reported the ticket' : '' %></label></p>
+<button class="btn" type="submit">Publish</button> <span class="muted">It appears at once on the customers' portal.</span></form></section>
+<%- include('../partials/footer') %>

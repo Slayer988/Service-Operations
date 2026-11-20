@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return { draft: 'warn', scheduled: 'blue', in_progress: 'blue', completed: '', failed: 'bad', cancelled: 'grey' }[s]; }; %>
+<div class="head"><h1>Changes</h1><div><a class="btn ghost" href="/changes/calendar">Change calendar</a><% if (canManage) { %> <a class="btn" href="/changes/new">Raise a change</a><% } %></div></div>
+<nav class="tabs"><% [['active','Active'],['draft','Draft'],['scheduled','Scheduled'],['in_progress','In progress'],['completed','Completed'],['failed','Failed'],['cancelled','Cancelled'],['all','All']].forEach(function (v) { %>
+<a href="?status=<%= v[0] %>" class="<%= f.status === v[0] ? 'on' : '' %>"><%= v[1] %></a><% }) %></nav>
+<form method="get" class="filters wide"><input type="hidden" name="status" value="<%= f.status %>"><input type="search" name="q" value="<%= f.q %>" placeholder="Reference or title" aria-label="Search changes"><button class="btn ghost" type="submit">Search</button></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Change</th><th>Title</th><th>Type / risk</th><th>Status</th><th>Approval</th><th>Window</th><th>Customer</th><th>Owner</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/changes/<%= r.id %>"><%= r.ref %></a></td><td><%= r.title %></td>
+<td><%= r.type %><br><small class="muted"><%= r.risk %> risk</small></td><td><span class="tag <%= tone(r.status) %>"><%= C.STATUS_LABELS[r.status] %></span></td>
+<td><%= r.type === 'standard' ? 'pre-approved' : (r.approval ? { pending: 'waiting', approved: 'approved', rejected: 'not approved' }[r.approval] || r.approval : (r.status === 'draft' ? 'not asked' : '—')) %></td>
+<td><%= r.planned_start ? fmt.dt(r.planned_start) : '—' %><% if (r.planned_end) { %><br><small class="muted">to <%= fmt.dt(r.planned_end) %></small><% } %></td><td><%= r.customer_name || 'Several / internal' %></td><td><%= r.owner_name || '—' %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No changes match.</p><% } %>
+<%- include('../partials/footer') %>

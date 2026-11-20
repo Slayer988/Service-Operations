@@ -12,7 +12,7 @@ const { requireStaff, requirePerm } = require('../middleware/auth');
 const router = express.Router();
 const db0 = { query: q };
 
-const back = (req, fallback) => (typeof req.body.back === 'string' && /^\/(approvals|quotes\/\d+|lpo\/\d+)(#[a-z]+)?$/.test(req.body.back) ? req.body.back : fallback);
+const back = (req, fallback) => (typeof req.body.back === 'string' && /^\/(approvals|quotes\/\d+|lpo\/\d+|changes\/\d+)(#[a-z]+)?$/.test(req.body.back) ? req.body.back : fallback);
 const userError = (req, res, err, to) => { if (!(err instanceof tickets.UserError)) throw err; req.flash('error', err.userMessage); return res.redirect(to); };
 
 router.get('/approvals', requireStaff, wrap(async (req, res) => {
@@ -39,7 +39,7 @@ router.post('/approvals/:id(\\d+)', requireStaff, wrap(async (req, res) => {
   } catch (err) { return userError(req, res, err, back(req, '/approvals')); }
 }));
 
-for (const [entity, base, perm] of [['quote', '/quotes', 'quote.manage'], ['lpo', '/lpo', 'lpo.manage']]) {
+for (const [entity, base, perm] of [['quote', '/quotes', 'quote.manage'], ['lpo', '/lpo', 'lpo.manage'], ['change', '/changes', 'change.manage']]) {
   router.post(`${base}/:id(\\d+)/approval`, requireStaff, requirePerm(perm), wrap(async (req, res) => {
     const id = u.id(req.params.id);
     try {

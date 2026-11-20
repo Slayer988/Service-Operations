@@ -1,0 +1,10 @@
+<%- include('../partials/header') %>
+<p><a href="/changes">← Changes</a></p>
+<h1>Raise a change</h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<section class="card"><form method="post" action="/changes"><%- include('../partials/csrf') %>
+<%- include('../partials/change_fields', { form: form, C: C, people: people, customers: customers, problems: problems }) %>
+<p><label for="cf_assets">Equipment affected <small class="muted">(asset tags, separated by spaces)</small></label><input id="cf_assets" name="assets" maxlength="400" value="<%= form.assets || '' %>" placeholder="AST-000001 AST-000002"></p>
+<% if (form.ticket) { %><input type="hidden" name="ticket" value="<%= form.ticket %>"><% } %>
+<button class="btn" type="submit">Raise as a draft</button> <span class="muted">Then ask for approval (normal and emergency changes) and schedule it.</span></form></section>
+<%- include('../partials/footer') %>
