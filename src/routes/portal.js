@@ -117,7 +117,7 @@ router.post('/tickets/:ref/confirm', requireCustomer, wrap(async (req, res) => {
     if (ticket.status !== 'resolved') throw new tickets.UserError('Only a resolved ticket can be confirmed.');
     const rating = u.intIn(req.body.rating, 1, 5);
     const t = await tickets.setStatus(db, ticket, 'closed', req.user);
-    if (rating) await db.query('update tickets set satisfaction = $2, satisfaction_comment = $3 where id = $1', [t.id, rating, u.str(req.body.feedback, 1000)]);
+    if (rating) await require('../services/satisfaction').rate(db, t, rating, req.body.feedback, 'portal', req.user);
     req.flash('success', 'Thank you. The ticket is closed.');
   });
 }));

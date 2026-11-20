@@ -1,0 +1,11 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Reply templates</h1><a class="btn" href="/templates/new">New template</a></div>
+<p class="muted">Answers you write often. On a ticket, choose one above the reply box: it is filled in for that ticket (the requester's name, the reference…) and inserted for you to edit before sending. <% if (canShared) { %>Shared templates are for the whole desk; you can share them.<% } else { %>Shared templates are made by service managers; yours are personal.<% } %></p>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Title</th><th>Category</th><th>For</th><th>Used</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (t) { var mine = t.owner_id === me; %><tr><td><%= t.title %><br><small class="muted"><%= t.body.slice(0, 120) %><%= t.body.length > 120 ? '…' : '' %></small></td><td><%= t.category || 'General' %></td>
+<td><%= t.shared ? 'Everyone' : 'Me' %></td><td><%= t.use_count %>×</td>
+<td><% if (TPL.canEdit({ id: me }, t, canShared)) { %><a href="/templates/<%= t.id %>">Edit</a> <form method="post" action="/templates/<%= t.id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit">Delete</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No templates yet.</p><% } %>
+<%- include('../partials/footer') %>

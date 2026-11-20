@@ -109,6 +109,7 @@ function sections(user) {
         { h: 'When we say it is resolved' },
         { list: [
           '**Confirm** if it is fixed. You can rate the service from 1 to 5 and leave a comment. The ticket is then closed.',
+          'The e-mail telling you a ticket is resolved also has **rating links**: click one (no sign-in needed), add a comment if you like, and press Send. Ratings are taken for 30 days.',
           '**Reopen** if it is not. Say what is still wrong and the ticket goes back to the team.',
           '**Cancel** a request you no longer need, while it is still new. After work has started, add a comment asking us to cancel it.',
         ] },
@@ -374,6 +375,58 @@ function sections(user) {
           'The **bell** tells those who manage assets when warranties or licences end within 30 days.',
           'Customers see their own equipment (not other customers\', and not our notes or IP addresses) under **Our Equipment** in the portal, with warranty and renewal dates, and can mention the tag when they raise a request.',
           'Who can do what: engineers, agents, service managers, security analysts, the technical team and procurement add and change equipment; contract managers, management, department heads, SDEs, auditors and read-only users can see it.',
+        ] },
+      ],
+    },
+    {
+      id: 'time', title: 'Time on tickets and timesheets', who: 'staff', perm: 'ticket.work',
+      intro: 'Logging the time spent on each ticket shows where the effort goes, and the chargeable time is what support is invoiced on.',
+      blocks: [
+        { list: [
+          'With a reply: fill in **Time spent** under the reply box (20, 1h 30m, 1:30 or 1.5h all work).',
+          'Or in the ticket\'s **Time** box: the time, the day (today, or up to 60 days back), what was done, and whether it is **chargeable** (ticked unless the ticket is marked non-chargeable).',
+          'The Time box shows the total and the chargeable part. You can remove your own entries within 7 days; service managers can remove any.',
+          '**Timesheet** in the menu shows your week, day by day and per customer; service managers, finance and management can see anyone\'s, or everyone\'s. **Download** gives the entries as Excel.',
+          'The report **Time spent per customer** (Reports, Customers and services) adds it up for any period.',
+        ] },
+      ],
+    },
+    {
+      id: 'templates', title: 'Reply templates', who: 'staff', perm: 'ticket.work',
+      blocks: [
+        { steps: [
+          'Open **Reply Templates** in the menu and press **New template**. Give it a title and a category, and write the text with the formatting toolbar.',
+          'Use placeholders where the details differ: **{{requester_name}}** (first name), **{{customer_name}}**, **{{ticket_ref}}**, **{{ticket_subject}}**, **{{csid}}**, **{{agent_name}}**.',
+          'On a ticket, choose a template above the reply box: it is filled in for that ticket and inserted where your cursor is. Change what you need, then send.',
+        ] },
+        { tip: 'Your templates are personal. Service managers can share templates with the whole desk, so everyone answers common questions the same way.' },
+      ],
+    },
+    {
+      id: 'automation', title: 'Automation rules', who: 'staff', perm: 'automation.manage',
+      intro: 'Rules applied to every new ticket, from every channel, before anyone looks at it.',
+      blocks: [
+        { steps: [
+          'Open **Administration**, **Automation rules**, **New rule**.',
+          'Choose the conditions (all must match): the channel it came in by, incident or request, the customer, the category, the priority, words in the subject or description, the sender\'s e-mail domain.',
+          'Choose what happens: set the impact and urgency (the priority and SLA targets follow), move it to the Security queue or another tier, assign it to someone, add an internal note.',
+          'Press **Check against recent tickets** to see how many of the last 200 tickets it would have matched, then **Save the rule**.',
+        ] },
+        { list: [
+          'Rules run in the order of the list (move them with the arrows). **Stop here** means later rules are not tried for that ticket.',
+          'What a rule did is written in the ticket\'s history, and the list shows how often each rule has run. Untick **Active** to pause a rule.',
+          'Rules apply to new tickets only, from the moment they are saved.',
+        ] },
+      ],
+    },
+    {
+      id: 'satisfaction', title: 'Customer satisfaction', who: 'staff',
+      blocks: [
+        { list: [
+          'When a ticket is resolved, the e-mail to the customer has **one-click rating links** (5 Excellent to 1 Very poor). The customer does not need to sign in; the page lets them add a comment and press Send. They can also rate when they confirm the ticket in the portal.',
+          'Each link is signed for that ticket and that person, so it cannot be guessed or used for another ticket. Ratings are taken for 30 days after the ticket is resolved.',
+          'A rating of **1 or 2** is e-mailed to the service managers at once, with the customer\'s words, so someone can call them back.',
+          'The rating is on the ticket (Details) and in its history. The reports **Customer satisfaction** (per customer) and **Satisfaction by engineer** show the trend.',
         ] },
       ],
     },

@@ -41,6 +41,8 @@ function build(user, ctx, counts = {}) {
     can('problem.view') && { label: 'Problems', href: '/problems', icon: 'search', on: starts('/problems') },
     can('change.view') && { label: 'Changes', href: '/changes', icon: 'refresh', on: starts('/changes') },
     can('ticket.view') && { label: 'Service Notices', href: '/notices', icon: 'bell', on: starts('/notices'), badge: counts.incidents || 0 },
+    can('ticket.work') && { label: 'Timesheet', href: '/time', icon: 'clock', on: starts('/time') },
+    can('ticket.work') && { label: 'Reply Templates', href: '/templates', icon: 'file', on: starts('/templates') },
     can('kb.view') && { label: 'Knowledge Base', href: '/kb', icon: 'book', on: starts('/kb') },
     { label: 'Reports', href: '/reports', icon: 'chart', on: starts('/reports') },
   ].filter(Boolean);

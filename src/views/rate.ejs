@@ -1,0 +1,18 @@
+<%- include('partials/header') %>
+<section class="card ratecard">
+<% if (!t) { %><h1>Rate our service</h1><p><%= error %></p>
+<% } else if (done) { %><h1>Thank you</h1><p>Your rating of <b><%= score %>/5 (<%= S.LABELS[score] %>)</b> for <%= t.ref %> has been recorded.<%= score <= 2 ? ' We are sorry it was not better: a manager will look at it and may contact you.' : '' %></p>
+<% } else { %>
+<h1>How did we do?</h1>
+<p class="muted"><%= t.ref %>: <%= t.subject %></p>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<% if (!error || /Choose a rating/.test(error)) { %>
+<form method="post" action="/rate/<%= t.ref %>/<%= S.sign(t) %>"><%- include('partials/csrf') %>
+<fieldset class="stars"><legend>Your rating</legend>
+<% [5,4,3,2,1].forEach(function (n) { %><label class="star"><input type="radio" name="score" value="<%= n %>" <%= Number(score) === n ? 'checked' : '' %> required> <b><%= n %></b> <%= S.LABELS[n] %></label><% }) %></fieldset>
+<p><label for="rc">Anything you would like to tell us? <small class="muted">(optional)</small></label><textarea id="rc" name="comment" rows="3" maxlength="1000"><%= t.satisfaction_comment || '' %></textarea></p>
+<button class="btn" type="submit">Send</button><% if (t.satisfaction) { %> <span class="muted">You rated it <%= t.satisfaction %>/5 before; sending replaces that rating.</span><% } %></form>
+<% } %>
+<% } %>
+</section>
+<%- include('partials/footer') %>

@@ -1,0 +1,12 @@
+<%- include('../partials/header') %>
+<p><a href="/templates">← Reply templates</a></p>
+<h1><%= typeof id !== 'undefined' && id ? 'Edit template' : 'New reply template' %></h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<section class="card"><form method="post" action="/templates<%= typeof id !== 'undefined' && id ? '/' + id : '' %>"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label for="tf_title">Title</label><input id="tf_title" name="title" maxlength="120" required value="<%= form.title || '' %>" placeholder="Asking for a screenshot"></p>
+<p><label for="tf_cat">Category <small class="muted">(groups the list)</small></label><input id="tf_cat" name="category" maxlength="60" value="<%= form.category || '' %>" placeholder="Passwords, Printers, Closing…"></p></div>
+<p><label for="tf_body">Text</label><textarea id="tf_body" name="body" rows="8" maxlength="8000" required data-rich data-rich-format="body_format"><%= form.body || '' %></textarea></p>
+<p class="muted">Placeholders, filled in from the ticket: <% Object.keys(TPL.PLACEHOLDERS).forEach(function (k) { %><code>{{<%= k %>}}</code> <%= TPL.PLACEHOLDERS[k] %>; <% }) %></p>
+<% if (canShared) { %><p><label class="check"><input type="checkbox" name="shared" value="1" <%= form.shared === '1' || form.shared === true ? 'checked' : '' %>> Share with the whole service desk</label></p><% } %>
+<button class="btn" type="submit">Save</button></form></section>
+<%- include('../partials/footer') %>

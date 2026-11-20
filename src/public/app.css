@@ -644,3 +644,19 @@ ul.assets li:last-child{border-bottom:0}
 fieldset{border:1px solid var(--line);border-radius:8px;padding:8px 14px;margin:0 0 14px}
 legend{padding:0 6px;color:var(--mut);font-size:13px}
 .workaround{background:var(--warn-l);border-left:3px solid var(--warn);padding:8px 10px;border-radius:6px;margin:0 0 10px;font-size:14px}
+/* rating page and time (1.26.0) */
+.ratecard{max-width:560px;margin:24px auto}
+.stars{display:flex;flex-direction:column;gap:6px}
+.star{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.star:has(input:checked){border-color:var(--acc);background:var(--acc-l)}
+.star input{width:auto;margin:0}
+.timesum{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 8px}
+.timesum b{font-size:18px}
+.timeform{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;align-items:end}
+.timeform .wide{grid-column:1/-1}
+.timesheet td.num,.timesheet th.num{text-align:right}
+.timesheet tr.total td{font-weight:700;border-top:2px solid var(--line)}
+.tplpick{display:flex;gap:6px;align-items:center;margin:0 0 6px}
+.tplpick select{flex:1;min-width:0}
+.rulelist td{vertical-align:top}
+.rulelist .when,.rulelist .then{font-size:13px}

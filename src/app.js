@@ -180,6 +180,7 @@ function createApp() {
 
   app.use(require('./routes/auth'));
   app.use(require('./routes/guest'));
+  app.use(require('./routes/rate'));
   app.use('/portal', require('./routes/portal'));
   app.use(require('./routes/search'));
   app.use(require('./routes/tickets'));
@@ -201,6 +202,7 @@ function createApp() {
   app.use(require('./routes/problems'));
   app.use(require('./routes/changes'));
   app.use(require('./routes/notices'));
+  app.use(require('./routes/desk'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

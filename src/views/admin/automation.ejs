@@ -1,0 +1,13 @@
+<%- include('../partials/header') %>
+<p><a href="/admin">← Administration</a></p>
+<div class="head"><h1>Automation rules</h1><a class="btn" href="/admin/automation/new">New rule</a></div>
+<p class="muted">Applied, in this order, to every new ticket from every channel (e-mail, portal, staff, requests without signing in). A rule acts when all its conditions match; "stop" means later rules are not tried. What a rule did is written in the ticket's history.</p>
+<% if (rows.length) { %>
+<table class="grid rulelist"><thead><tr><th>#</th><th>Rule</th><th>When a new ticket is…</th><th>…then</th><th>Used</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (r, i) { %><tr class="<%= r.active ? '' : 'muted' %>"><td><%= i + 1 %></td><td><a href="/admin/automation/<%= r.id %>"><%= r.name %></a><% if (!r.active) { %> <span class="tag grey">off</span><% } %><% if (r.stop) { %> <span class="tag">stop</span><% } %></td>
+<td class="when"><%= r.text.when %></td><td class="then"><%= r.text.then %></td><td><%= r.run_count %>×<% if (r.last_run_at) { %><br><small class="muted"><%= fmt.dt(r.last_run_at) %></small><% } %></td>
+<td><% if (i > 0) { %><form method="post" action="/admin/automation/<%= r.id %>/move" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="dir" value="up"><button class="link" type="submit" aria-label="Move up">↑</button></form><% } %>
+<% if (i < rows.length - 1) { %><form method="post" action="/admin/automation/<%= r.id %>/move" class="inline"><%- include('../partials/csrf') %><input type="hidden" name="dir" value="down"><button class="link" type="submit" aria-label="Move down">↓</button></form><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No rules yet. For example: tickets mentioning "firewall" or "phishing" go to the Security queue; e-mails from a VIP customer get high urgency and go to a senior engineer.</p><% } %>
+<%- include('../partials/footer') %>

@@ -31,6 +31,10 @@ const GRANTS = {
   'change.view': [...TICKET_VIEW, 'technical_team', 'sde', 'dept_head'],
   'change.manage': [...OPS, 'technical_team'],
   'notice.manage': ['platform_admin', 'service_manager', 'agent', 'security_analyst'],
+  // 1.26.0: time on tickets, reply templates, automation rules
+  'time.view_all': ['platform_admin', 'service_manager', 'management', 'finance', 'dept_head', 'auditor'],
+  'template.manage': ['platform_admin', 'service_manager'],
+  'automation.manage': ['platform_admin', 'service_manager'],
   'catalogue.manage': ['platform_admin', 'service_manager'],
   'sla.configure': ['platform_admin', 'contract_manager'],
   'engineer.assign': ['platform_admin', 'service_manager', 'contract_manager'],

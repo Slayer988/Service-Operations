@@ -154,10 +154,17 @@ async function createTicket(db, input) {
   const subject = String(input.subject || '').trim();
   if (!subject) throw new UserError('Enter a subject.');
   const type = input.type === 'request' ? 'request' : 'incident';
-  const impact = [1, 2, 3].includes(input.impact) ? input.impact : 2;
-  const urgency = [1, 2, 3].includes(input.urgency) ? input.urgency : 2;
+  let impact = [1, 2, 3].includes(input.impact) ? input.impact : 2;
+  let urgency = [1, 2, 3].includes(input.urgency) ? input.urgency : 2;
   const st = await settings.getAll(db, ['priority_matrix', 'default_sla_policy']);
-  const priority = input.priority || priorityLib.compute(st.priority_matrix, impact, urgency);
+  let priority = input.priority || priorityLib.compute(st.priority_matrix, impact, urgency);
+  // automation rules (Settings, Automation): may set the priority, queue and tier before the SLA targets are worked out
+  const req0 = input.requester || {};
+  const auto = await require('./automation').beforeCreate(db, { source: input.source, type, queue: input.queue || 'it_services', category: input.category || '', customer_id: input.customerId || null,
+    priority, subject, description: input.description || '', requester_email: req0.email || '' });
+  if (auto.set.impact) { impact = auto.set.impact; urgency = auto.set.urgency; priority = priorityLib.compute(st.priority_matrix, impact, urgency); }
+  if (auto.set.queue) input = { ...input, queue: auto.set.queue };
+  if (auto.set.tier) input = { ...input, tier: auto.set.tier };
 
   const { contractId, contractPolicyId, service } = await validateRelations(db, {
     customerId: input.customerId, csidId: input.csidId, serviceId: input.serviceId, siteId: input.siteId, enforceActive: input.enforceActive,
@@ -194,6 +201,7 @@ async function createTicket(db, input) {
   }
   let ticket = await summary(db, id);
   if (!input.needsVerification) ticket = (await routeEngineer(db, ticket)).ticket;
+  ticket = await require('./automation').afterCreate(db, ticket, auto.hit);
   await acknowledge(db, ticket);
   return ticket;
 }
@@ -392,7 +400,7 @@ async function notifyStatus(db, t, newStatus, actor) {
     const to = { id: t.requester_id, email: t.requester_email, name: t.requester_name, kind: 'customer' };
     let text;
     if (newStatus === 'resolved') {
-      text = `Your ticket has been marked as resolved. If it is fixed, please confirm. If not, you can reopen it within the allowed period.\n\nResolution: ${t.resolution_note || t.resolution_code || ''}`;
+      text = `Your ticket has been marked as resolved. If it is fixed, please confirm. If not, you can reopen it within the allowed period.\n\nResolution: ${t.resolution_note || t.resolution_code || ''}\n${require('./satisfaction').emailBlock(t)}`;
     } else if (newStatus === 'restored') {
       text = 'The service affected by your ticket has been restored. We will keep the ticket open while we make sure everything works for you. If anything is still wrong, please reply to this message.';
     } else if (newStatus === 'closed') {
@@ -401,7 +409,8 @@ async function notifyStatus(db, t, newStatus, actor) {
       text = 'Your ticket has been closed because we did not hear back after it was resolved. '
         + (until && until > new Date()
           ? `If it is not fixed, reply to this message or reopen it in the portal before ${util.localStamp(until, config.timezone)}.`
-          : `If it is not fixed, please create a new ticket and mention ${t.ref}.`);
+          : `If it is not fixed, please create a new ticket and mention ${t.ref}.`)
+        + (t.satisfaction ? '' : `\n${require('./satisfaction').emailBlock(t)}`);
     } else {
       text = 'We need more information from you before we can continue. Please reply to this message or add a comment in the portal.';
     }

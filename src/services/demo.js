@@ -53,6 +53,9 @@ async function status(db) {
     problems: await n('select count(*)::int as n from problems where created_by = any($1) or customer_id = any($2)', [usr, cust]),
     changes: await n('select count(*)::int as n from changes where created_by = any($1) or customer_id = any($2)', [usr, cust]),
     notices: await n('select count(*)::int as n from notices where created_by = any($1)', [usr]),
+    templates: await n('select count(*)::int as n from reply_templates where owner_id = any($1)', [usr]),
+    rules: await n('select count(*)::int as n from automation_rules where created_by = any($1)', [usr]),
+    time_entries: await n('select count(*)::int as n from ticket_time where user_id = any($1)', [usr]),
   };
 }
 const isEmpty = (s) => Object.values(s).every((v) => v === 0);
@@ -330,6 +333,7 @@ async function load(db, { now = new Date() } = {}) {
   await loadExtras(db, U, oppIds, cur, now);
   await loadAssets(db, U, now);
   await loadServiceManagement(db, U, now);
+  await loadDeskTools(db, U, now);
   return status(db);
 }
 
@@ -393,6 +397,47 @@ async function loadAssets(db, U, now) {
     const t = (await db.query(`select t.id, t.ref, t.customer_id from tickets t join customers c on c.id = t.customer_id where c.code = $1 and t.status in ('new','open','in_progress','pending_customer','pending_vendor') and not t.needs_verification order by t.id limit 2`, [code])).rows;
     for (const [i, tk] of t.entries()) if (list[i * 3]) await A.linkTicket(db, tk, list[i * 3].id, eng);
   }
+}
+
+/** Reply templates (shared and personal), automation rules, time logged on tickets over the last two weeks, and when ratings were given. */
+async function loadDeskTools(db, U, now) {
+  const tpl = [
+    ['Asking for a screenshot', 'Asking for details', 'Hello {{requester_name}},\n\nThank you for reporting this. To help us find the cause quickly, could you send us:\n\n- a **screenshot** of the error message\n- the **time** it happened\n- whether it affects **only you or colleagues too**\n\nYou can reply to this e-mail or add it to {{ticket_ref}} in the portal.\n\nKind regards,\n{{agent_name}}'],
+    ['Password reset done', 'Accounts', 'Hello {{requester_name}},\n\nYour password has been reset. You will receive the temporary password by SMS. You must change it when you first sign in.\n\nIf you did not ask for this, call us at once.\n\nKind regards,\n{{agent_name}}'],
+    ['Escalated to an engineer', 'Updates', 'Hello {{requester_name}},\n\nWe have passed {{ticket_ref}} to one of our engineers, who will contact you shortly. Thank you for your patience.\n\n{{agent_name}}'],
+    ['Resolved: please confirm', 'Closing', 'Hello {{requester_name}},\n\nWe believe **{{ticket_subject}}** is now fixed. Please check and confirm in the portal, or reply if anything is still wrong.\n\nKind regards,\n{{agent_name}}'],
+    ['Waiting for your reply', 'Closing', 'Hello {{requester_name}},\n\nWe are still waiting for the information we asked for on {{ticket_ref}}. If we do not hear from you within 3 working days we will close the ticket; you can reopen it at any time.\n\n{{agent_name}}'],
+  ];
+  for (const [title, category, body] of tpl) await db.query('insert into reply_templates (title, category, body, shared, owner_id, use_count) values ($1,$2,$3,true,$4,$5)', [title, category, body, U.manager, 3 + title.length % 17]);
+  await db.query(`insert into reply_templates (title, category, body, shared, owner_id) values ('My printer checklist', 'Printers', $1, false, $2)`,
+    ['Hello {{requester_name}},\n\nCould you check: 1. the printer is on and shows no error; 2. there is paper and toner; 3. you chose the right printer. Then try again and tell us.\n\n{{agent_name}}', U.agent1]);
+  const kcb = (await db.query(`select id from customers where code = 'DEMO-KCB'`)).rows[0];
+  const rules = [
+    ['Security words go to the Security queue', { words: ['phishing', 'ransomware', 'malware', 'virus', 'suspicious e-mail'] }, { queue: 'security', tier: 'l2', note: 'Possible security incident: do not forward the e-mail or open attachments.' }, true, 7],
+    ['Bank P1/P2 to the senior engineer', { customer_id: kcb ? kcb.id : null, priority_max: 2 }, { assignee_id: U.engineer2, note: 'Bank priority ticket: call the IT manager within 15 minutes.' }, false, 4],
+    ['Printer requests: first checks', { words: ['printer', 'printing', 'toner'] }, { note: 'Ask for the printer name and whether others can print (template "My printer checklist").' }, false, 11],
+  ];
+  for (const [i, [name, c, a, stop, n]] of rules.entries()) {
+    if (c.customer_id === null) continue;
+    await db.query('insert into automation_rules (name, conditions, actions, stop, position, created_by, run_count, last_run_at) values ($1,$2,$3,$4,$5,$6,$7,$8)', [name, c, a, stop, (i + 1) * 10, U.manager, n, addDays(now, -(i + 1))]);
+  }
+  // time on demo tickets: one to three entries by whoever worked on it, in the last two weeks
+  const tix = (await db.query(`select t.id, t.assignee_id, t.non_chargeable, t.status, t.created_at from tickets t join customers c on c.id = t.customer_id
+                                where c.code like 'DEMO%' and t.assignee_id is not null and not t.needs_verification order by t.id`)).rows;
+  const notes = ['Remote session with the user', 'Checked the logs', 'Site visit', 'Replaced the cable', 'Configured and tested', 'Called the vendor', ''];
+  for (const [i, t] of tix.entries()) {
+    if (i % 4 === 3) continue;
+    const entries = 1 + (i % 3);
+    for (let k = 0; k < entries; k++) {
+      const back = Math.min(13, (i + k * 2) % 14);
+      const day = ymd(addDays(now, -back));
+      if (new Date(`${day}T23:59:59Z`) < new Date(t.created_at)) continue;
+      await db.query('insert into ticket_time (ticket_id, user_id, work_date, minutes, billable, note) values ($1,$2,$3,$4,$5,$6)', [t.id, t.assignee_id, day, [15, 30, 45, 60, 90, 120, 20][(i + k) % 7], !t.non_chargeable, notes[(i + k) % notes.length]]);
+    }
+  }
+  // ratings: given when the ticket was resolved, half in the portal and half from the e-mail link
+  await db.query(`update tickets set satisfaction_at = coalesce(resolved_at, closed_at, updated_at) + interval '3 hours', satisfaction_via = case when id % 2 = 0 then 'email' else 'portal' end
+                   where satisfaction is not null and customer_id in (select id from customers where code like 'DEMO%')`);
 }
 
 /** Problems, changes and service notices: a known error with its workaround and the change that fixes it, changes at every stage
@@ -730,6 +775,9 @@ async function remove(db) {
                                     or supplier_id in (select id from suppliers where notes like $6)`, [tix, opps, tends, cons, cust, like])).rows.map((r) => r.storage_name);
   await run('delete from kb_votes where user_id = any($1)', [usr]);
   await run('delete from notices where created_by = any($1) or ticket_id = any($2)', [usr, tix]);
+  await run('delete from automation_rules where created_by = any($1)', [usr]);
+  await run('delete from reply_templates where owner_id = any($1)', [usr]);
+  await run('delete from ticket_time where user_id = any($1) or ticket_id = any($2)', [usr, tix]);
   await run(`delete from approvals where entity = 'change' and entity_id in (select id from changes where created_by = any($1) or customer_id = any($2))`, [usr, cust]);
   await run('delete from changes where created_by = any($1) or customer_id = any($2)', [usr, cust]);
   await run('delete from problems where created_by = any($1) or customer_id = any($2)', [usr, cust]);

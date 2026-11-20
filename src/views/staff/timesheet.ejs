@@ -1,0 +1,17 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Timesheet</h1><a class="btn ghost" href="/time/export?week=<%= week %>&user=<%= who %>&format=xlsx">Download (Excel)</a></div>
+<div class="calnav"><a class="btn ghost" href="?week=<%= prev %>&user=<%= who %>">← Previous week</a><h2>Week of <%= fmt.date(week) %></h2><a class="btn ghost" href="?week=<%= next %>&user=<%= who %>">Next week →</a> <a href="/time?user=<%= who %>">This week</a>
+<% if (all) { %><form method="get" class="inline"><input type="hidden" name="week" value="<%= week %>"><select name="user" aria-label="Whose time"><option value="all" <%= who === 'all' ? 'selected' : '' %>>Everyone</option><% people.forEach(function (p) { %><option value="<%= p.id %>" <%= String(who) === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }) %></select> <button class="btn ghost" type="submit">Show</button></form><% } %></div>
+<div class="tiles">
+<% days.forEach(function (d) { %><div class="tile"><b><%= byDay[d] ? T.show(byDay[d]) : '—' %></b><span><%= new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) %></span></div><% }) %>
+<div class="tile"><b><%= T.show(total) %></b><span>week total, <%= T.show(billable) %> chargeable</span></div>
+</div>
+<% if (rows.length) { %>
+<section class="card"><h2>By customer</h2><table class="grid timesheet"><thead><tr><th>Customer</th><th class="num">Time</th><th class="num">Chargeable</th></tr></thead><tbody>
+<% Object.keys(byCustomer).sort().forEach(function (k) { %><tr><td><%= k %></td><td class="num"><%= T.show(byCustomer[k].total) %></td><td class="num"><%= T.show(byCustomer[k].billable) %></td></tr><% }) %>
+<tr class="total"><td>Total</td><td class="num"><%= T.show(total) %></td><td class="num"><%= T.show(billable) %></td></tr></tbody></table></section>
+<section class="card"><h2>Entries</h2><table class="grid timesheet"><thead><tr><th>Date</th><% if (who === 'all') { %><th>Person</th><% } %><th>Ticket</th><th>Customer</th><th class="num">Time</th><th>Chargeable</th><th>Note</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><%= fmt.date(r.work_date) %></td><% if (who === 'all') { %><td><%= r.user_name %></td><% } %><td><a href="/tickets/<%= r.ref %>#time"><%= r.ref %></a> <small class="muted"><%= r.subject %></small></td><td><%= r.customer_name || '—' %></td><td class="num"><%= T.show(r.minutes) %></td><td><%= r.billable ? 'Yes' : 'No' %></td><td><%= r.note %></td></tr><% }) %>
+</tbody></table></section>
+<% } else { %><p class="empty">No time logged this week. Log time on a ticket, in its Time box or with a reply.</p><% } %>
+<%- include('../partials/footer') %>

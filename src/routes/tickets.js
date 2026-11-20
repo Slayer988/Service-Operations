@@ -147,7 +147,9 @@ router.get('/tickets/:ref', requireStaff, requirePerm('ticket.view'), wrap(async
                                               order by (a.csid_id is not distinct from $3::bigint) desc, a.name limit 300`, [ticket.customer_id, ticket.id, ticket.csid_id || null])).rows : [];
   const problems = perms.can(req.user, 'problem.view') ? (await q(`select p.id, p.ref, p.title, p.status, p.workaround from problem_tickets pt join problems p on p.id = pt.problem_id where pt.ticket_id = $1 order by p.id`, [ticket.id])).rows : [];
   const ticketNotices = (await q(`select id, ref, status, closed_at from notices where ticket_id = $1 order by id desc`, [ticket.id])).rows;
-  res.render('staff/ticket', { problems, ticketNotices, canProblem: perms.can(req.user, 'problem.manage'), canChange: perms.can(req.user, 'change.manage'), canNotice: perms.can(req.user, 'notice.manage'),
+  const timeT = require('../services/time');
+  res.render('staff/ticket', { timeLog: await timeT.forTicket({ query: q }, ticket.id), timeT, replyTemplates: perms.can(req.user, 'ticket.work') ? await require('../services/templates').usable({ query: q }, req.user) : [],
+    problems, ticketNotices, canProblem: perms.can(req.user, 'problem.manage'), canChange: perms.can(req.user, 'change.manage'), canNotice: perms.can(req.user, 'notice.manage'),
     canAssets, linkedAssets, assetChoices, assetSvc: require('../services/assets'), today: u.localDay(require('../config').timezone), title: ticket.ref, ticket, timeline, attachments, staff, customers, resolutionCodes: st.resolution_codes || [], nextStatuses: tickets.nextStatuses(ticket.status),
     kbArticles: await kb.forTicket(q, req.user, ticket.id), canKbWrite: perms.can(req.user, 'kb.write'), canWork: perms.can(req.user, 'ticket.work'), canVerify: perms.can(req.user, 'ticket.verify'), canSla: perms.can(req.user, 'ticket.sla_note') });
 }));
@@ -165,6 +167,7 @@ router.post('/tickets/:ref/comment', requireStaff, upload.array('files', 5), csr
     const st = await settings.getAll({ query: q }, ['attachment_blocked_ext', 'attachment_max_mb']);
     await act(req, res, 'ticket.work', async (db, ticket) => {
       const t = await tickets.addComment(db, ticket, { author: req.user, body: req.body.body, internal: req.body.internal === 'on', source: 'agent', format: req.body.format === 'rich' ? 'rich' : 'text' });
+      if (String(req.body.time_spent || '').trim()) await require('../services/time').log(db, t, req.user, { duration: req.body.time_spent, note: 'with a reply' }, u.localDay(require('../config').timezone));
       const rejected = await saveUploads(db, req, t, req.user, st);
       if (rejected.length) req.flash('error', 'Some files were not attached: ' + rejected.join('; '));
       req.flash('success', 'Comment added.');

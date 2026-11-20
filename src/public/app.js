@@ -223,6 +223,14 @@
       });
       var required = ta.required; ta.required = false;
       ed.innerHTML = toHtml(ta.value);
+      // other scripts (reply templates) insert formatted text where the cursor is, or at the end
+      ta.richInsert = function (markup) {
+        ed.focus();
+        var sel = window.getSelection();
+        if (!sel.rangeCount || !ed.contains(sel.anchorNode)) { var r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
+        document.execCommand('insertHTML', false, toHtml(markup));
+        ed.dispatchEvent(new Event('input', { bubbles: true }));
+      };
       ta.hidden = true;
       ta.parentNode.insertBefore(box, ta); box.appendChild(bar); box.appendChild(ed); box.appendChild(ta); box.appendChild(hidden);
       var sync = function () { ta.value = toMarkup(ed); box.classList.toggle('empty', !ed.textContent.trim() && !ed.querySelector('li,hr')); };
@@ -358,4 +366,21 @@
     window.setInterval(tick, 1000);
     mark(false);
   })();
+})();
+
+// Reply templates: choosing one fills it in for this ticket (names, reference) and inserts it into the reply, to be edited before sending.
+(function () {
+  document.addEventListener('change', function (e) {
+    var sel = e.target;
+    if (!sel.classList || !sel.classList.contains('js-template') || !sel.value) return;
+    var ta = document.getElementById(sel.dataset.target);
+    fetch('/api/templates/' + encodeURIComponent(sel.value) + '/fill?ticket=' + encodeURIComponent(sel.dataset.ticket), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('template'); return r.json(); })
+      .then(function (d) {
+        if (ta && typeof ta.richInsert === 'function') ta.richInsert(d.text);
+        else if (ta) { ta.value = (ta.value ? ta.value.replace(/\s+$/, '') + '\n\n' : '') + d.text; ta.focus(); }
+        sel.value = '';
+      })
+      .catch(function () { sel.value = ''; });
+  });
 })();

@@ -267,6 +267,31 @@ const REPORTS = {
     },
   },
 
+  satisfaction_people: {
+    category: 'quality', title: 'Satisfaction by engineer', description: 'Customer ratings per person who handled the ticket: how many, the average, and the unhappy ones to follow up.', period: true,
+    async run(q, user, p) {
+      const s = scope(user, p);
+      const rows = num((await q(`select coalesce(a.name, '(nobody)') as person, count(t.satisfaction) as rated, round(avg(t.satisfaction)::numeric, 2) as rating,
+          count(*) filter (where t.satisfaction <= 2) as unhappy, count(*) filter (where t.satisfaction >= 4) as happy,
+          count(*) filter (where t.satisfaction_via = 'email') as by_email
+        from tickets t left join users a on a.id = t.assignee_id where ${s.where} group by a.name having count(t.satisfaction) > 0 order by rating, 1`, s.params)).rows, ['rated', 'rating', 'unhappy', 'happy', 'by_email']);
+      return { subtitle: `Tickets created ${p.from} to ${p.to}. 1 is worst, 5 is best.`, summary: [['People rated', rows.length]], rows,
+        columns: [{ key: 'person', header: 'Handled by', width: 22, weight: 2 }, C.int('rated', 'Ratings'), { key: 'rating', header: 'Average', type: 'number', width: 10 }, C.int('unhappy', '1 to 2 stars'), C.int('happy', '4 to 5 stars'), C.int('by_email', 'From the e-mail link')] };
+    },
+  },
+  time_customers: {
+    category: 'customers', title: 'Time spent per customer', description: 'Time logged on tickets in the period, per customer, chargeable and not: the basis for invoicing support time.', period: true,
+    async run(q, user, p) {
+      const s = scope(user, p, { col: 'tt.work_date' });
+      const rows = num((await q(`select coalesce(c.name, '(no customer)') as customer, count(distinct t.id) as tickets, round(sum(tt.minutes) / 60.0, 2) as hours,
+          round(sum(tt.minutes) filter (where tt.billable) / 60.0, 2) as chargeable, round(coalesce(sum(tt.minutes) filter (where not tt.billable), 0) / 60.0, 2) as not_chargeable
+        from ticket_time tt join tickets t on t.id = tt.ticket_id left join customers c on c.id = t.customer_id where ${s.where} group by c.name order by hours desc nulls last`, s.params)).rows, ['tickets', 'hours', 'chargeable', 'not_chargeable']);
+      const tot = rows.reduce((a, r) => ({ h: a.h + Number(r.hours || 0), c: a.c + Number(r.chargeable || 0) }), { h: 0, c: 0 });
+      return { subtitle: `Time logged ${p.from} to ${p.to}`, summary: [['Hours', Math.round(tot.h * 100) / 100], ['Chargeable hours', Math.round(tot.c * 100) / 100]], rows,
+        columns: [C.customer, C.int('tickets', 'Tickets'), { key: 'hours', header: 'Hours', type: 'number', width: 10 }, { key: 'chargeable', header: 'Chargeable', type: 'number', width: 11 }, { key: 'not_chargeable', header: 'Not chargeable', type: 'number', width: 13 }] };
+    },
+  },
+
   // ------------------------------------------------------------------ security (security.view only)
   security: {
     category: 'security', title: 'Security queue tickets', description: 'Tickets in the Security queue in the period.', period: true, perm: 'security.view',

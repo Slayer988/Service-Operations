@@ -2362,3 +2362,93 @@ test('1.25.0 problems, changes and service notices through the real app', async 
   assert.equal(r.status, 302);
   assert.ok((await ca.get('/portal')).text.includes('Planned maintenance'), 'announced maintenance within 7 days shows in the banner');
 });
+
+test('1.26.0 time, reply templates, automation rules and one-click ratings through the real app', async () => {
+  const { A } = ctx;
+  const eng = new Client(); await eng.login(ctx.eng.email);
+  const mgr = new Client(); await mgr.login(ctx.manager.email);
+  const agent = new Client(); await agent.login(ctx.agent.email);
+
+  // ---- automation: a manager writes two rules; a portal ticket mentioning phishing goes to Security with a note; a P1/P2 for A is assigned
+  let r = await mgr.post('/admin/automation', { name: 'Security words', c_words: 'phishing, ransomware', a_queue: 'security', a_tier: 'l2', a_note: 'Do not open attachments', active: '1', stop: '1' });
+  assert.equal(r.status, 302);
+  await mgr.post('/admin/automation', { name: 'Alpha urgent to backup', c_customer_id: String(A.c.id), c_priority_max: '2', a_assignee_id: String(ctx.backup.id), active: '1' });
+  assert.equal((await eng.post('/admin/automation', { name: 'x', c_words: 'a', a_note: 'b' })).status, 403, 'engineers do not write rules');
+  const pv = await mgr.post('/admin/automation', { name: 'Preview', c_words: 'VPN', a_note: 'x', preview: '1' });
+  assert.match(pv.text, /Would have matched \d+ of the last \d+ tickets/); assert.equal((await q(`select 1 from automation_rules where name = 'Preview'`)).rowCount, 0, 'a preview saves nothing');
+  const cu = new Client(); await cu.login(ctx.aUser.email);
+  r = await cu.post('/portal/tickets/new', { csid_id: String(A.cs.id), service_id: String(A.sv.id), subject: 'Suspicious phishing mail', description: 'Got a strange e-mail', impact: '3', urgency: '3', type: 'incident', category: 'Security' });
+  const sec = (await q(`select id, ref, queue, tier, assignee_id from tickets where subject = 'Suspicious phishing mail'`)).rows[0];
+  assert.equal(sec.queue, 'security'); assert.equal(sec.tier, 'l2');
+  assert.notEqual(Number(sec.assignee_id), Number(ctx.backup.id), '"stop": the second rule was not tried');
+  const evs = (await q(`select text from ticket_events where ticket_id = $1 and kind = 'automation'`, [sec.id])).rows.map((x) => x.text).join(' | ');
+  assert.ok(/Do not open attachments/.test(evs) && /Automation rule "Security words" applied/.test(evs));
+  const urgent = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'Core switch down', description: 'x', requester: ctx.aUser, impact: 1, urgency: 1, source: 'agent' });
+  assert.equal(Number((await q('select assignee_id from tickets where id = $1', [urgent.id])).rows[0].assignee_id), Number(ctx.backup.id), 'assigned by the rule');
+  const calm = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'New mouse please', description: 'x', requester: ctx.aUser, impact: 3, urgency: 3, source: 'agent' });
+  assert.notEqual(Number((await q('select assignee_id from tickets where id = $1', [calm.id])).rows[0].assignee_id), Number(ctx.backup.id), 'a P4 is not');
+  assert.ok((await mgr.get('/admin/automation')).text.includes('Alpha urgent to backup'));
+  await q(`update automation_rules set active = false`);
+
+  // ---- time: logged with a reply and in the Time box; timesheet and export; removing
+  const t = urgent;
+  const fd = new FormData(); fd.append('_csrf', eng.token); fd.append('body', 'Rebooted the switch'); fd.append('time_spent', '1h 30m');
+  assert.equal((await fetch(`${base}/tickets/${t.ref}/comment`, { method: 'POST', body: fd, headers: { cookie: eng.cookie() }, redirect: 'manual' })).status, 302);
+  await eng.post(`/tickets/${t.ref}/time`, { duration: '20', note: 'Follow-up call', billable: '' });
+  await eng.post(`/tickets/${t.ref}/time`, { duration: 'a while' });
+  const rows = (await q('select minutes, billable from ticket_time where ticket_id = $1 order by id', [t.id])).rows;
+  assert.deepEqual(rows.map((x) => [x.minutes, x.billable]), [[90, true], [20, false]], 'with the reply (chargeable by default) and a non-chargeable call; "a while" refused');
+  const tp = (await eng.get(`/tickets/${t.ref}`)).text;
+  assert.ok(tp.includes('1h 50m') && tp.includes('1h 30m chargeable'));
+  const sheet = (await eng.get('/time')).text;
+  assert.ok(sheet.includes(t.ref) && sheet.includes('Alpha Bank') && sheet.includes('1h 50m'));
+  const xl = await fetch(`${base}/time/export?format=xlsx`, { headers: { cookie: eng.cookie() } });
+  assert.equal(xl.status, 200); assert.match(xl.headers.get('content-type'), /spreadsheetml/);
+  const other = (await q('select id from ticket_time where ticket_id = $1 and minutes = 20', [t.id])).rows[0].id;
+  await agent.post(`/tickets/${t.ref}/time/${other}/delete`, {});
+  assert.equal((await q('select count(*)::int as n from ticket_time where id = $1', [other])).rows[0].n, 1, 'not someone else\'s');
+  await mgr.post(`/tickets/${t.ref}/time/${other}/delete`, {});
+  assert.equal((await q('select count(*)::int as n from ticket_time where id = $1', [other])).rows[0].n, 0, 'a manager can');
+  assert.ok(!(await agent.get('/time?user=all')).text.includes('Everyone'), 'agents see only their own sheet');
+
+  // ---- templates: personal, shared only by managers; filled in for the ticket
+  r = await agent.post('/templates', { title: 'Mine', body: 'Hi {{requester_name}}, about {{ticket_ref}}. {{agent_name}}', shared: '1' });
+  assert.equal(r.status, 400, 'an agent cannot share'); assert.match(r.text, /Only service managers share/);
+  await agent.post('/templates', { title: 'Mine', body: 'Hi {{requester_name}}, about {{ticket_ref}}. {{agent_name}}' });
+  await mgr.post('/templates', { title: 'Shared one', body: '**Thanks** {{requester_name}}', shared: '1', category: 'General' });
+  const mine = (await q(`select id from reply_templates where title = 'Mine'`)).rows[0].id;
+  const fill = await agent.get(`/api/templates/${mine}/fill?ticket=${t.ref}`);
+  assert.equal(fill.status, 200);
+  const j = JSON.parse(fill.text);
+  assert.equal(j.text, `Hi Alpha, about ${t.ref}. Agent`); assert.match(j.html, /<p>Hi Alpha/);
+  assert.equal((await eng.get(`/api/templates/${mine}/fill?ticket=${t.ref}`)).status, 404, 'a personal template is not visible to others');
+  const pick = (await eng.get(`/tickets/${t.ref}`)).text;
+  assert.ok(pick.includes('js-template') && pick.includes('Shared one') && !pick.includes('>Mine'), 'the shared one is offered to everyone, the personal one only to its owner');
+
+  // ---- ratings from the e-mail: the link is in the resolution e-mail; opening it records nothing; sending does; poor ratings alert managers
+  const rt = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'Printer jam', description: 'x', requester: ctx.aUser, source: 'agent' });
+  await eng.post(`/tickets/${rt.ref}/status`, { status: 'in_progress' });
+  await eng.post(`/tickets/${rt.ref}/status`, { status: 'resolved', resolution_code: 'fixed', resolution_note: 'Cleared the jam' });
+  const mail = (await q(`select body from notifications where ticket_id = $1 and kind = 'ticket_update' and subject like '%Resolved%' order by id desc limit 1`, [rt.id])).rows[0];
+  assert.ok(mail, 'the resolution e-mail was queued');
+  const m = /\/rate\/([A-Z]+-\d+)\/([A-Za-z0-9_-]{32})\?score=2/.exec(mail.body);
+  assert.ok(m, 'with one-click rating links');
+  const anon = new Client();
+  const page = await anon.get(`/rate/${m[1]}/${m[2]}?score=2`);
+  assert.equal(page.status, 200); assert.match(page.text, /How did we do\?/);
+  anon.token = /name="_csrf" value="([^"]+)"/.exec(page.text)[1];                 // as a browser would, from the form
+  assert.equal((await q('select satisfaction from tickets where id = $1', [rt.id])).rows[0].satisfaction, null, 'opening the link (or a mail scanner) records nothing');
+  r = await anon.post(`/rate/${m[1]}/${m[2]}`, { score: '2', comment: 'Took two days' });
+  assert.equal(r.status, 200); assert.match(r.text, /Thank you/);
+  const rated = (await q('select satisfaction, satisfaction_comment, satisfaction_via, satisfaction_at from tickets where id = $1', [rt.id])).rows[0];
+  assert.deepEqual([rated.satisfaction, rated.satisfaction_comment, rated.satisfaction_via], [2, 'Took two days', 'email']); assert.ok(rated.satisfaction_at);
+  assert.ok((await q(`select 1 from notifications where kind = 'poor_rating' and ticket_id = $1`, [rt.id])).rowCount, 'the managers are told');
+  assert.equal((await anon.get(`/rate/${m[1]}/${'x'.repeat(32)}`)).status, 404, 'a forged link is refused');
+  assert.equal((await anon.get(`/rate/${t.ref}/${m[2]}`)).status, 404, 'and cannot be used for another ticket');
+  // the reports: satisfaction per engineer, time per customer
+  const today = new Date().toISOString().slice(0, 10);
+  const r1 = await mgr.get(`/reports/satisfaction_people?from=2020-01-01&to=${today}`);
+  assert.equal(r1.status, 200); assert.ok(r1.text.includes('Engineer') && r1.text.includes('From the e-mail link'));
+  const r2 = await mgr.get(`/reports/time_customers?from=2020-01-01&to=${today}`);
+  assert.equal(r2.status, 200); assert.ok(r2.text.includes('Alpha Bank') && r2.text.includes('Chargeable hours'));
+});

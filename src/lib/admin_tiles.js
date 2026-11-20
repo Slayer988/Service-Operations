@@ -11,6 +11,7 @@ function tiles(user) {
     can('audit.view') && { label: 'Audit log', href: '/audit', icon: 'log', text: 'Who did what, when, and from where.' },
     can('mail.view') && { label: 'E-mail', href: '/mail', icon: 'mail', text: 'Shared mailboxes that turn e-mail into tickets, their health, and the outgoing mail log.' },
     can('customer.view') && { label: 'Service catalogue', href: '/catalogue', icon: 'grid', text: can('catalogue.manage') ? 'The services you offer: add, edit, retire.' : 'The services we offer (view).' },
+    can('automation.manage') && { label: 'Automation rules', href: '/admin/automation', icon: 'refresh', text: 'Rules applied to every new ticket: priority, queue, tier, who it is assigned to, a note.' },
     can('ticket.view') && { label: 'SLA policies', href: '/sla', icon: 'clock', text: can('sla.configure') ? 'Response and resolution targets, calendars and holidays.' : 'Response and resolution targets, calendars and holidays (view).' },
   ].filter(Boolean);
 }

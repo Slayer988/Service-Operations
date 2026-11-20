@@ -43,8 +43,12 @@
 
   <% if (canWork) { %>
   <form method="post" action="/tickets/<%= ticket.ref %>/comment" enctype="multipart/form-data"><%- include('../partials/csrf') %>
+    <% if (replyTemplates.length) { %><div class="tplpick"><select class="js-template" data-target="body" data-ticket="<%= ticket.ref %>" aria-label="Insert a reply template"><option value="">Insert a reply template…</option>
+      <% var cat = null; replyTemplates.forEach(function (t) { if (t.category !== cat) { if (cat !== null) { %></optgroup><% } cat = t.category; %><optgroup label="<%= cat || 'General' %>"><% } %><option value="<%= t.id %>"><%= t.title %><%= t.shared ? '' : ' (mine)' %></option><% }); if (cat !== null) { %></optgroup><% } %></select>
+      <a href="/templates" class="muted">Templates</a></div><% } else { %><p class="muted"><a href="/templates/new">Create a reply template</a> for answers you write often.</p><% } %>
     <p><label for="body">Add a comment</label><textarea id="body" name="body" rows="5" required data-rich></textarea></p>
     <p><label class="inline"><input type="checkbox" name="internal"> Internal note (staff only, not shown to the customer)</label></p>
+    <p><label for="time_spent">Time spent <small class="muted">(optional: 20, 1h 30m, 1:30)</small></label><input id="time_spent" name="time_spent" maxlength="12" inputmode="text" class="short" placeholder="e.g. 30"></p>
     <p><input name="files" type="file" multiple></p>
     <button class="btn" type="submit">Add</button>
   </form>
@@ -85,6 +89,20 @@
     </dl>
   </section>
 
+
+  <section class="card" id="time">
+    <h2>Time</h2>
+    <div class="timesum"><span><b><%= timeLog.total ? timeT.show(timeLog.total) : '0m' %></b> logged</span><% if (timeLog.total) { %><span class="muted"><%= timeT.show(timeLog.billable) %> chargeable</span><% } %></div>
+    <% if (timeLog.rows.length) { %><ul class="assets"><% timeLog.rows.slice(0, 8).forEach(function (e) { %><li><b><%= timeT.show(e.minutes) %></b> <%= e.user_name %>, <%= fmt.date(e.work_date) %><%= e.billable ? '' : ' (non-chargeable)' %><% if (e.note) { %><br><small class="muted"><%= e.note %></small><% } %>
+      <% if (canWork && (e.user_id === user.id || can('time.view_all'))) { %><form method="post" action="/tickets/<%= ticket.ref %>/time/<%= e.id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit" data-confirm="Remove this time entry?">Remove</button></form><% } %></li><% }) %></ul>
+      <% if (timeLog.rows.length > 8) { %><p class="muted">…and <%= timeLog.rows.length - 8 %> earlier entries.</p><% } %><% } %>
+    <% if (canWork) { %><form method="post" action="/tickets/<%= ticket.ref %>/time" class="timeform"><%- include('../partials/csrf') %>
+      <p><label for="t_dur">Time</label><input id="t_dur" name="duration" maxlength="12" required placeholder="45 or 1h 30m"></p>
+      <p><label for="t_day">Date</label><input id="t_day" name="work_date" type="date" value="<%= today %>" max="<%= today %>"></p>
+      <p class="wide"><input name="note" maxlength="500" placeholder="What was done (optional)" aria-label="What was done"></p>
+      <p class="wide"><label class="check"><input type="checkbox" name="billable" value="1" <%= ticket.non_chargeable ? '' : 'checked' %>> Chargeable</label></p>
+      <p class="wide"><button class="btn ghost" type="submit">Log time</button> <a href="/time">My timesheet</a></p></form><% } %>
+  </section>
 
   <% if (problems.length || canProblem || canNotice || ticketNotices.length) { %>
   <section class="card" id="problem">

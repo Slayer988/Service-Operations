@@ -1,0 +1,34 @@
+<%- include('../partials/header') %>
+<p><a href="/admin/automation">← Automation rules</a></p>
+<h1><%= id ? 'Edit rule' : 'New automation rule' %></h1>
+<% if (error) { %><div class="flash error" role="alert"><%= error %></div><% } %>
+<% var sel = function (a, b) { return String(a || '') === String(b) ? 'selected' : ''; }; %>
+<% if (preview) { %><section class="card statusnotice <%= preview.matched ? '' : 'ok' %>"><h2>Would have matched <%= preview.matched %> of the last <%= preview.checked %> tickets</h2>
+<% if (preview.examples.length) { %><ul><% preview.examples.forEach(function (e) { %><li><%= e %></li><% }) %></ul><% } else { %><p class="muted">None: check the conditions are not too narrow.</p><% } %></section><% } %>
+<section class="card"><form method="post" action="/admin/automation<%= id ? '/' + id : '' %>"><%- include('../partials/csrf') %>
+<p><label for="ar_name">Name</label><input id="ar_name" name="name" maxlength="120" required value="<%= form.name || '' %>" placeholder="Security words go to the Security queue"></p>
+<h2>When a new ticket… <small class="muted">(all the conditions you fill in must match)</small></h2>
+<div class="grid2">
+<p><label for="c_source">Comes in by</label><select id="c_source" name="c_source"><option value="">Any channel</option><% Object.keys(AU.SOURCES).forEach(function (k) { %><option value="<%= k %>" <%= sel(form.c_source, k) %>><%= AU.SOURCES[k] %></option><% }) %></select></p>
+<p><label for="c_type">Is</label><select id="c_type" name="c_type"><option value="">An incident or a request</option><option value="incident" <%= sel(form.c_type, 'incident') %>>An incident</option><option value="request" <%= sel(form.c_type, 'request') %>>A service request</option></select></p>
+<p><label for="c_customer">For customer</label><select id="c_customer" name="c_customer_id"><option value="">Any customer</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= sel(form.c_customer_id, c.id) %>><%= c.name %></option><% }) %></select></p>
+<p><label for="c_cat">Category</label><input id="c_cat" name="c_category" list="cats" maxlength="80" value="<%= form.c_category || '' %>" placeholder="Any"><datalist id="cats"><% categories.forEach(function (c) { %><option value="<%= c %>"><% }) %></datalist></p>
+<p><label for="c_pri">Priority</label><select id="c_pri" name="c_priority_max"><option value="">Any</option><% [1,2,3].forEach(function (n) { %><option value="<%= n %>" <%= sel(form.c_priority_max, n) %>>P<%= n %><%= n > 1 ? ' or higher' : '' %></option><% }) %></select></p>
+<p><label for="c_queue">Queue</label><select id="c_queue" name="c_queue"><option value="">Any</option><option value="it_services" <%= sel(form.c_queue, 'it_services') %>>IT Services</option><option value="security" <%= sel(form.c_queue, 'security') %>>Security</option></select></p>
+<p><label for="c_words">Mentions any of these words <small class="muted">(subject or description; separate with commas)</small></label><input id="c_words" name="c_words" maxlength="600" value="<%= form.c_words || '' %>" placeholder="firewall, phishing, ransomware"></p>
+<p><label for="c_domain">Sent from the e-mail domain</label><input id="c_domain" name="c_domain" maxlength="120" value="<%= form.c_domain || '' %>" placeholder="bank.co.ug"></p>
+</div>
+<h2>…then</h2>
+<div class="grid2">
+<p><label for="a_imp">Set the impact</label><select id="a_imp" name="a_impact"><option value="">Leave it</option><% [1,2,3].forEach(function (n) { %><option value="<%= n %>" <%= sel(form.a_impact, n) %>><%= levelLabels[n] %></option><% }) %></select></p>
+<p><label for="a_urg">and the urgency <small class="muted">(both: the priority and SLA follow)</small></label><select id="a_urg" name="a_urgency"><option value="">Leave it</option><% [1,2,3].forEach(function (n) { %><option value="<%= n %>" <%= sel(form.a_urgency, n) %>><%= levelLabels[n] %></option><% }) %></select></p>
+<p><label for="a_queue">Move it to the queue</label><select id="a_queue" name="a_queue"><option value="">Leave it</option><option value="it_services" <%= sel(form.a_queue, 'it_services') %>>IT Services</option><option value="security" <%= sel(form.a_queue, 'security') %>>Security</option></select></p>
+<p><label for="a_tier">Tier</label><select id="a_tier" name="a_tier"><option value="">Leave it</option><% ['l1','l2','l3'].forEach(function (t) { %><option value="<%= t %>" <%= sel(form.a_tier, t) %>><%= t.toUpperCase() %></option><% }) %></select></p>
+<p><label for="a_who">Assign it to</label><select id="a_who" name="a_assignee_id"><option value="">Leave it (the service's engineer)</option><% people.forEach(function (p) { %><option value="<%= p.id %>" <%= sel(form.a_assignee_id, p.id) %>><%= p.name %></option><% }) %></select></p>
+<p><label for="a_note">Add an internal note</label><input id="a_note" name="a_note" maxlength="1000" value="<%= form.a_note || '' %>" placeholder="VIP customer: call them within 15 minutes"></p>
+</div>
+<p><label class="check"><input type="checkbox" name="stop" value="1" <%= form.stop === '1' ? 'checked' : '' %>> Stop here: do not try the later rules when this one matches</label></p>
+<p><label class="check"><input type="hidden" name="active" value="0"><input type="checkbox" name="active" value="1" <%= form.active !== '0' ? 'checked' : '' %>> Active</label></p>
+<button class="btn" type="submit">Save the rule</button> <button class="btn ghost" type="submit" name="preview" value="1">Check against recent tickets</button>
+<% if (id) { %></form><form method="post" action="/admin/automation/<%= id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="btn ghost danger" type="submit">Delete</button><% } %></form></section>
+<%- include('../partials/footer') %>
