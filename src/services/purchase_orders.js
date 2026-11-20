@@ -123,6 +123,7 @@ function mustBeDraft(po) {
 
 async function updateHeader(db, po, input, actor) {
   mustBeDraft(po);
+  await require('./approvals').withdraw(db, 'lpo', po.id, actor, 'its details were changed');
   const h = { ...input }; for (const k of ['supplier_doc_id', 'contract_id', 'project_id', 'tender_id', 'customer_quote_id']) h[k] = h[k] || null;
   await checkLinks(db, h);
   await db.query(`update purchase_orders set ${HEAD.map((k, i) => (k === 'issue_date' ? `issue_date = coalesce($${i + 2}::date, issue_date)` : `${k} = $${i + 2}`)).join(', ')}, updated_at = now() where id = $1`,
@@ -141,6 +142,7 @@ async function recalc(db, id) {
 
 async function saveLines(db, po, rows, actor) {
   mustBeDraft(po);
+  await require('./approvals').withdraw(db, 'lpo', po.id, actor, 'its lines were changed');
   await db.query('delete from purchase_order_lines where purchase_order_id = $1', [po.id]);
   let pos = 0;
   for (const l of rows) {
@@ -162,6 +164,7 @@ async function setStatus(db, po, to, actor, opts = {}, ip = '') {
     if (!n) throw new UserError('Add at least one line before issuing the order.');
     const s = (await db.query('select name, status from suppliers where id = $1', [po.supplier_id])).rows[0];
     if (s.status !== 'active') throw new UserError(`${s.name} is no longer active in the register. The order cannot be issued.`);
+    await require('./approvals').assertApproved(db, 'lpo', po.id);
   }
   if (to === 'cancelled' && po.status === 'issued' && !note) throw new UserError('Say why an issued order is cancelled (the supplier has a copy).');
   await db.query(

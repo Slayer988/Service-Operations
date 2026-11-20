@@ -1,12 +1,21 @@
 # Changelog
 
-## 1.23.0 (in progress)
+## 1.23.0
+- **Approval of quotes and purchase orders** (migration 022). A quote above a set amount, or with a large discount, must be approved before it can be sent; every purchase order before it is issued, and a large order by a second approver as well.
+  - **Defaults** (all changeable in *Settings, Approvals*): quotes at **UGX 20,000,000 / USD 5,000** and above, or with a discount of **10%** or more, are approved by finance, management or a department head; a quote in a currency without a limit always needs approval. Every LPO is approved by finance or a department head, and from **UGX 50,000,000 / USD 13,000** also by management.
+  - The draft shows an **Approval** box saying whether approval is needed and why. **Ask for approval** sends it to the approvers: they see it on the **bell** and under the new **Approvals** menu entry with a count, and decide there or on the item (**Approve**, or **Decline** with a reason). *Sent* / *Issue* is offered only once approved.
+  - **Nobody approves their own** quote or order (neither the person who asked nor the owner). A change to the draft after approval **withdraws** it, so what goes out is what was approved; an approval also only counts for the amount that was approved. After a first approval of a large order the second is asked for at once.
+  - Every request and decision is in the item's history and the audit log. *Approvals* lists what is waiting for you, what you asked for and your recent decisions.
+  - The demo data approves its sent quotes and issued orders, and leaves one quote and one LPO waiting for finance to try.
+  - User manual: a new *Approvals of quotes and purchase orders* section.
 - **Automatic tests on GitHub.** Every push and pull request runs the same checks as the installer on GitHub's machines: JavaScript syntax, the page templates, the shell scripts, all unit tests and all integration tests against a real PostgreSQL 15, on Node 22 and Node 20. The result shows as a tick or a cross on each commit and as the *Tests* badge in the README.
 - **Security audit of the dependencies** on every push (fails on high or critical problems), and **Dependabot** opens a pull request each Monday when a dependency needs updating.
 - **Security: nodemailer updated from 6.10 to 10.6.** The audit found 22 published problems in the old version of the library that sends e-mail (8 rated high: address-parsing denial of service, header injection, mail delivered to an unintended domain, file read through the raw message option). Version 10 fixes them all. Tested with the full suite and a real message to an SMTP server. Nothing to change in the settings.
 - **Security: uuid** (used inside the Active Directory library) pinned to 11.1.1, which fixes a missing bounds check.
 - **package-lock.json** is now part of the code, so the installer and the tests use exactly the versions that were tested.
 - Fixed: the installer's demo-data test could pick a deal or contract created by an earlier test instead of the demo one.
+- GitHub Actions updated to checkout v7 and setup-node v7 (Dependabot).
+- Fixed: the Decline button style (a red outline, readable in every theme).
 
 ## 1.22.0
 - **Company logo and name** (Settings, Company branding; migration 021). Upload your company logo (PNG or JPEG, up to 1 MB) and set the company name once, and the whole system carries them:

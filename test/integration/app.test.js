@@ -48,6 +48,26 @@ class Client {
   post(path, form) { return this.req('POST', path, { _csrf: this.token, ...form }); }
 }
 
+// 1.23.0: a quote is sent and an order issued only once approved. The owner asks; a finance user (and management for a second approval) decides.
+const approvalsSvc = require('../../src/services/approvals');
+const approverClients = {};
+async function approverClient(role) {
+  if (!approverClients[role]) { const u = await mkUser(`approver-${role}@t.local`, `Approver ${role}`, 'staff', role); const c = new Client(); await c.login(u.email); approverClients[role] = c; }
+  return approverClients[role];
+}
+async function getApproved(owner, entity, id) {
+  const base = entity === 'quote' ? '/quotes/' : '/lpo/'; const db = { query: q };
+  for (let i = 0; i < 3; i++) {
+    const st = await approvalsSvc.state(db, entity, await approvalsSvc.load(db, entity, id));
+    if (!st.needed.length || st.complete) return st;
+    if (!st.pending) assert.equal((await owner.post(`${base}${id}/approval`, {})).status, 302);
+    const p = (await approvalsSvc.state(db, entity, await approvalsSvc.load(db, entity, id))).pending;
+    const c = await approverClient(p.level === 2 ? 'management' : 'finance');
+    assert.equal((await c.post(`/approvals/${p.record.id}`, { decision: 'approve', comment: 'ok' })).status, 302);
+  }
+  throw new Error('not approved after three rounds');
+}
+
 async function mkUser(email, name, kind, role, customerId = null) {
   return (await q(`insert into users (email, name, kind, role, customer_id, password_hash) values ($1,$2,$3,$4,$5,$6) returning *`,
     [email, name, kind, role, customerId, await password.hash(PW)])).rows[0];
@@ -1175,6 +1195,11 @@ test('demo data: loads, every page works with it, signs in, and removal leaves t
   const doc = (await q(`select a.id from supplier_documents d join attachments a on a.id = d.attachment_id where d.reference = 'RCC-Q-0118'`)).rows[0];
   assert.ok(doc, 'a supplier quote with its file');
   assert.ok((await q(`select 1 from customers where code = 'DEMO-KCB' and 'kcb.demo.invalid' = any(email_domains)`)).rowCount, 'a domain for requests without signing in');
+  // 1.23.0: one quote and one order are waiting for approval, so finance has something to decide
+  const fd = new Client(); assert.equal((await fd.login('finance@demo.invalid', demoSvc.DEMO_PASSWORD)).status, 302);
+  const apPage = (await fd.get('/approvals')).text;
+  assert.ok(apPage.includes('Fleet tracking') || apPage.includes('Firewall renewal licences'), 'demo approvals are waiting for finance');
+  assert.ok((await q(`select count(*)::int as n from approvals where status = 'approved'`)).rows[0].n >= 6, 'the sent quotes and issued orders were approved first');
   const cu = new Client(); assert.equal((await cu.login('kcb.admin@demo.invalid', demoSvc.DEMO_PASSWORD)).status, 302);
   assert.equal((await cu.get('/portal')).status, 200); assert.equal((await cu.get('/portal/tickets')).status, 200);
   assert.ok((await cu.get('/portal/help')).text.includes('Reset your VPN password') && !(await cu.get('/portal/help')).text.includes('Restart the print spooler'), 'customers see the customer articles only');
@@ -1705,7 +1730,8 @@ test('1.17.0 quotes: made from an opportunity, priced lines with VAT, sent, revi
   for (const m of buf.toString('latin1').matchAll(/stream\n([\s\S]*?)\nendstream/g)) { try { printed += zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch (_) { /* not a page */ } }
   assert.ok(printed.includes('Firewall appliance') && printed.includes('10,443.00') && printed.includes('DRAFT'), 'the PDF has the lines and total, and says draft');
   assert.ok(!printed.includes('secret-margin-note'), 'internal notes are never printed');
-  // send; a sent quote is fixed
+  // send (after approval); a sent quote is fixed
+  await getApproved(c, 'quote', id);
   r = await c.post(`/quotes/${id}/status`, { status: 'sent', note: 'e-mailed' });
   assert.equal((await q('select status from quotes where id = $1', [id])).rows[0].status, 'sent');
   await c.post(`/quotes/${id}/lines`, { description: ['Changed'], quantity: ['1'], unit_price: ['1'] });
@@ -1716,6 +1742,7 @@ test('1.17.0 quotes: made from an opportunity, priced lines with VAT, sent, revi
   const r2 = (await q('select * from quotes where id = $1', [id2])).rows[0];
   assert.equal(r2.revision, 2); assert.equal(r2.status, 'draft'); assert.equal((await q('select status from quotes where id = $1', [id])).rows[0].status, 'superseded');
   await c.post(`/quotes/${id2}/lines`, { description: ['Firewall appliance', 'Installation'], quantity: ['2', '1'], unit: ['each', 'job'], unit_price: ['4500', '750'], discount_pct: ['15', ''] });
+  await getApproved(c, 'quote', id2);
   await c.post(`/quotes/${id2}/status`, { status: 'sent' });
   await c.post(`/quotes/${id2}/status`, { status: 'accepted', note: 'PO 4471', update_opportunity: '1' });
   row = (await q('select * from quotes where id = $1', [id2])).rows[0];
@@ -1950,7 +1977,8 @@ test('1.21.0 purchase orders: raised by procurement against a supplier quote and
   for (const mm of buf.toString('latin1').matchAll(/stream\n([\s\S]*?)\nendstream/g)) { try { printed += zlib.inflateSync(Buffer.from(mm[1], 'latin1')).toString('latin1'); } catch (_) { /* not a page */ } }
   assert.ok(printed.includes('Local Purchase Order LPO-') && printed.includes('Kilimanjaro Cabling 21') && printed.includes('13,546.40') && printed.includes('your quote Q-21') && printed.includes('DRAFT'));
   assert.ok(!printed.includes('secret-buyer-note'));
-  // issue; then fixed
+  // issue (after approval); then fixed
+  await getApproved(b, 'lpo', id);
   await b.post(`/lpo/${id}/status`, { status: 'issued', note: 'sent' });
   po = (await q('select * from purchase_orders where id = $1', [id])).rows[0];
   assert.equal(po.status, 'issued'); assert.ok(po.issued_at);
@@ -2064,4 +2092,102 @@ test('1.22.0 LPO tracking sits inside Suppliers & Contractors: tabs, tracker fig
   assert.ok(late.includes('LPO-880001') && !late.includes('LPO-880002'), 'only the late order');
   const page = (await b.get(`/suppliers/${sup.id}`)).text;
   assert.ok(page.includes('Purchase orders (LPO tracker)') && page.includes('>late</span>'));
+});
+
+test('1.23.0 approvals: a large quote waits for finance; nobody approves their own; a change withdraws approval; a large order needs a second approver', async () => {
+  const db = { query: q };
+  const settingsLib = require('../../src/lib/settings');
+  for (const k of approvalsSvc.KEYS) await settingsLib.set(db, k, approvalsSvc.DEFAULTS[k]);   // the defaults, whatever earlier tests did
+  const seller = await mkUser('seller23@t.local', 'Sam Seller', 'staff', 'bd_manager');
+  const seller2 = await mkUser('seller23b@t.local', 'Other Seller', 'staff', 'bd_manager');
+  const fin = await mkUser('fin23@t.local', 'Fiona Finance', 'staff', 'finance');
+  const boss = await mkUser('boss23@t.local', 'Mary Management', 'staff', 'management');
+  const buyer = await mkUser('buyer23@t.local', 'Bob Buyer', 'staff', 'procurement');
+  const [s, s2, f, m, b] = await Promise.all([seller, seller2, fin, boss, buyer].map(async (u) => { const c = new Client(); await c.login(u.email); return c; }));
+  const lastFlash = async (c, path) => (await c.get(path)).text;
+
+  // ---- a UGX 23.6M quote (20M + VAT) needs approval before it is sent
+  let r = await s.post('/quotes', { title: 'Core network refresh', prospect: 'Approval Test Ltd', currency: 'UGX', tax_rate: '18', tax_label: 'VAT', valid_until: '' });
+  const qid = Number(/\/quotes\/(\d+)/.exec(r.location)[1]);
+  await s.post(`/quotes/${qid}/lines`, { description: ['Core switch'], quantity: ['2'], unit: ['each'], unit_price: ['10000000'], discount_pct: [''] });
+  let page = (await s.get(`/quotes/${qid}`)).text;
+  assert.ok(page.includes('id="approval"') && page.includes('Ask for approval') && /at or above UGX 20,000,000/.test(page), 'the page says why approval is needed');
+  assert.ok(!page.includes('<option value="sent">'), '"Sent" is not offered until approved');
+  await s.post(`/quotes/${qid}/status`, { status: 'sent' });
+  assert.equal((await q('select status from quotes where id = $1', [qid])).rows[0].status, 'draft', 'sending is refused');
+  assert.match(await lastFlash(s, `/quotes/${qid}`), /needs approval before it is sent/);
+  // ask; the seller and another seller cannot approve; finance sees it on the bell, in the menu and on the Approvals page
+  assert.equal((await s.post(`/quotes/${qid}/approval`, {})).status, 302);
+  const ap = (await q(`select * from approvals where entity = 'quote' and entity_id = $1 and status = 'pending'`, [qid])).rows[0];
+  assert.ok(ap && ap.level === 1 && ap.roles.includes('finance'));
+  await s.post(`/approvals/${ap.id}`, { decision: 'approve' });
+  await s2.post(`/approvals/${ap.id}`, { decision: 'approve' });
+  assert.equal((await q('select status from approvals where id = $1', [ap.id])).rows[0].status, 'pending', 'neither the owner nor a colleague without the role can approve');
+  const list = (await f.get('/approvals')).text;
+  assert.ok(/approval(s are| is) waiting for you/.test(list) && /href="\/approvals"[^>]*>[\s\S]{0,300}?class="badge"/.test(list), 'finance is told on the bell and in the menu');
+  assert.ok(list.includes('Core network refresh') && list.includes('Sam Seller'));
+  // decline needs a reason; then the seller sees it and asks again
+  await f.post(`/approvals/${ap.id}`, { decision: 'decline', comment: '' });
+  assert.equal((await q('select status from approvals where id = $1', [ap.id])).rows[0].status, 'pending', 'a decline without a reason is refused');
+  await f.post(`/approvals/${ap.id}`, { decision: 'decline', comment: 'Check the margin on the switches' });
+  page = (await s.get(`/quotes/${qid}`)).text;
+  assert.ok(page.includes('Not approved') && page.includes('Check the margin on the switches'));
+  await s.post(`/quotes/${qid}/approval`, {});
+  const ap2 = (await q(`select id from approvals where entity = 'quote' and entity_id = $1 and status = 'pending'`, [qid])).rows[0];
+  assert.equal((await f.post(`/approvals/${ap2.id}`, { decision: 'approve', comment: 'Margin fine now', back: '/approvals' })).location, '/approvals');
+  assert.ok((await s.get(`/quotes/${qid}`)).text.includes('<option value="sent">'), 'now it can be sent');
+  // a change after approval withdraws it
+  await s.post(`/quotes/${qid}/lines`, { description: ['Core switch'], quantity: ['3'], unit: ['each'], unit_price: ['10000000'], discount_pct: [''] });
+  assert.equal((await q(`select status from approvals where id = $1`, [ap2.id])).rows[0].status, 'withdrawn');
+  await s.post(`/quotes/${qid}/status`, { status: 'sent' });
+  assert.equal((await q('select status from quotes where id = $1', [qid])).rows[0].status, 'draft');
+  await getApproved(s, 'quote', qid);
+  await s.post(`/quotes/${qid}/status`, { status: 'sent' });
+  assert.equal((await q('select status from quotes where id = $1', [qid])).rows[0].status, 'sent');
+  const ev = (await q('select text from quote_events where quote_id = $1 order by id', [qid])).rows.map((x) => x.text).join(' | ');
+  assert.ok(/asked for approval/.test(ev) && /did not approve it: Check the margin/.test(ev) && /approved it: Margin fine now/.test(ev) && /Approval withdrawn because its lines were changed/.test(ev), 'the history tells the story');
+  assert.ok((await q(`select 1 from audit_log where action = 'approval_declined'`)).rowCount && (await q(`select 1 from audit_log where action = 'approval_granted'`)).rowCount);
+  // a small quote without a big discount goes out without approval
+  r = await s.post('/quotes', { title: 'Small job', prospect: 'Approval Test Ltd', currency: 'UGX', tax_rate: '18', tax_label: 'VAT', valid_until: '' });
+  const small = Number(/\/quotes\/(\d+)/.exec(r.location)[1]);
+  await s.post(`/quotes/${small}/lines`, { description: ['Visit'], quantity: ['1'], unit: ['visit'], unit_price: ['500000'], discount_pct: [''] });
+  assert.ok(!(await s.get(`/quotes/${small}`)).text.includes('id="approval"'));
+  await s.post(`/quotes/${small}/status`, { status: 'sent' });
+  assert.equal((await q('select status from quotes where id = $1', [small])).rows[0].status, 'sent');
+
+  // ---- a USD 17,700 order: finance first, then management; finance cannot give the second approval
+  const sup = (await q(`insert into suppliers (code, name, kind, status) values ('SUP-2301', 'Approval Supplies', 'vendor', 'active') returning id`)).rows[0];
+  r = await b.post('/lpo', { title: 'Firewalls', supplier_id: String(sup.id), currency: 'USD', tax_rate: '18', tax_label: 'VAT' });
+  const pid = Number(/\/lpo\/(\d+)/.exec(r.location)[1]);
+  await b.post(`/lpo/${pid}/lines`, { description: ['Firewall'], quantity: ['3'], unit: ['each'], unit_price: ['5000'], discount_pct: [''] });
+  page = (await b.get(`/lpo/${pid}`)).text;
+  assert.ok(page.includes('First approval') && page.includes('Second approval') && !page.includes('<option value="issued">'));
+  await b.post(`/lpo/${pid}/approval`, {});
+  const l1 = (await q(`select id, level from approvals where entity = 'lpo' and entity_id = $1 and status = 'pending'`, [pid])).rows[0];
+  assert.equal(l1.level, 1);
+  await m.post(`/approvals/${l1.id}`, { decision: 'approve' });
+  assert.equal((await q('select status from approvals where id = $1', [l1.id])).rows[0].status, 'pending', 'management is not a first approver by default');
+  await f.post(`/approvals/${l1.id}`, { decision: 'approve' });
+  const l2 = (await q(`select id, level from approvals where entity = 'lpo' and entity_id = $1 and status = 'pending'`, [pid])).rows[0];
+  assert.equal(l2.level, 2, 'the second approval is asked for at once');
+  await f.post(`/approvals/${l2.id}`, { decision: 'approve' });
+  assert.equal((await q('select status from approvals where id = $1', [l2.id])).rows[0].status, 'pending', 'finance cannot give the second approval');
+  await b.post(`/lpo/${pid}/status`, { status: 'issued' });
+  assert.equal((await q('select status from purchase_orders where id = $1', [pid])).rows[0].status, 'draft', 'not issued with one approval');
+  await m.post(`/approvals/${l2.id}`, { decision: 'approve' });
+  await b.post(`/lpo/${pid}/status`, { status: 'issued' });
+  assert.equal((await q('select status from purchase_orders where id = $1', [pid])).rows[0].status, 'issued');
+
+  // ---- Settings: the Approvals card, and switching quote approval off
+  await asAdmin(async (a) => {
+    const st = (await a.get('/admin/settings')).text;
+    assert.ok(st.includes('id="approvals"') && st.includes('name="approvals_quote_limits"') && /UGX 20,000,000/.test(st) && /value="finance" checked/.test(st));
+  });
+  await settingsLib.set(db, 'approvals_quote_enabled', false);
+  r = await s.post('/quotes', { title: 'Huge but approval off', prospect: 'Approval Test Ltd', currency: 'UGX', tax_rate: '18', tax_label: 'VAT', valid_until: '' });
+  const off = Number(/\/quotes\/(\d+)/.exec(r.location)[1]);
+  await s.post(`/quotes/${off}/lines`, { description: ['Everything'], quantity: ['1'], unit: ['lot'], unit_price: ['900000000'], discount_pct: [''] });
+  await s.post(`/quotes/${off}/status`, { status: 'sent' });
+  assert.equal((await q('select status from quotes where id = $1', [off])).rows[0].status, 'sent');
+  await settingsLib.set(db, 'approvals_quote_enabled', true);
 });

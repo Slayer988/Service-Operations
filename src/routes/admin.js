@@ -96,7 +96,7 @@ const SETTING_KEYS = ['priority_matrix', 'categories', 'resolution_codes', 'sla_
 router.get('/admin/settings', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
   const s = await settings.getAll({ query: q }, SETTING_KEYS);
   const policies = (await q('select id, name from sla_policies where active order by name')).rows;
-  res.render('admin/settings', { title: 'Settings', s, policies, tenderStatuses: tenders.STATUS_LABELS, pipelineStages: pipeline.STAGE_LABELS, pipelineDefaults: pipeline.DEFAULT_PROB, contractTypes: contracts.DEFAULT_TYPES, tenderTypes: tenders.DEFAULT_TYPES, roles: [...perms.STAFF_ROLES, ...perms.CUSTOMER_ROLES], statuses: tickets.ALL_STATUSES });
+  res.render('admin/settings', { title: 'Settings', s, policies, apRules: await require('../services/approvals').rules({ query: q }), apRoles: require('../services/approvals').APPROVER_ROLES, tenderStatuses: tenders.STATUS_LABELS, pipelineStages: pipeline.STAGE_LABELS, pipelineDefaults: pipeline.DEFAULT_PROB, contractTypes: contracts.DEFAULT_TYPES, tenderTypes: tenders.DEFAULT_TYPES, roles: [...perms.STAFF_ROLES, ...perms.CUSTOMER_ROLES], statuses: tickets.ALL_STATUSES });
 }));
 
 const lines = (v, max = 60) => String(v || '').split(/\r?\n/).map((x) => u.str(x, max)).filter(Boolean);
@@ -108,8 +108,24 @@ router.post('/admin/settings', requireStaff, requirePerm('settings.manage'), wra
   const cats = lines(b.categories); const codes = lines(b.resolution_codes).map((c) => c.toLowerCase().replace(/[^a-z0-9_]+/g, '_'));
   if (!cats.length || !codes.length) throw new tickets.UserError('Categories and resolution codes cannot be empty.');
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  // approvals card: read and check before anything is saved
+  let ap = null;
+  if (b.approvals_form !== undefined) {
+    const A = require('../services/approvals');
+    const pick = (v) => arr(v).filter((r) => A.APPROVER_ROLES.includes(r));
+    ap = {
+      approvals_quote_enabled: b.approvals_quote_enabled === '1', approvals_quote_limits: A.parseLimits(b.approvals_quote_limits),
+      approvals_quote_discount_pct: u.intIn(b.approvals_quote_discount_pct, 0, 100) ?? 0, approvals_quote_roles: pick(b.approvals_quote_roles),
+      approvals_lpo_enabled: b.approvals_lpo_enabled === '1', approvals_lpo_roles: pick(b.approvals_lpo_roles),
+      approvals_lpo_l2_limits: A.parseLimits(b.approvals_lpo_l2_limits), approvals_lpo_l2_roles: pick(b.approvals_lpo_l2_roles),
+    };
+    if (ap.approvals_quote_enabled && !ap.approvals_quote_roles.length) throw new tickets.UserError('Choose at least one role that approves quotes, or turn quote approval off.');
+    if (ap.approvals_lpo_enabled && !ap.approvals_lpo_roles.length) throw new tickets.UserError('Choose at least one role that approves purchase orders, or turn LPO approval off.');
+    if (ap.approvals_lpo_enabled && Object.keys(ap.approvals_lpo_l2_limits).length && !ap.approvals_lpo_l2_roles.length) throw new tickets.UserError('Choose who gives the second approval of large purchase orders, or leave its limits empty.');
+  }
   await tx(async (db) => {
     const set = (k, v) => settings.set(db, k, v);
+    if (ap) for (const [k, v] of Object.entries(ap)) await set(k, v);
     await set('priority_matrix', matrix);
     await set('categories', cats); await set('resolution_codes', codes);
     await set('sla_pause_statuses', arr(b.sla_pause_statuses).filter((x) => tickets.ALL_STATUSES.includes(x)));

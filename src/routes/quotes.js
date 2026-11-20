@@ -8,6 +8,9 @@ const u = require('../lib/util');
 const reporting = require('../lib/reporting');
 const tickets = require('../services/tickets');
 const Q = require('../services/quotes');
+const A = require('../services/approvals');
+/** May this person decide the waiting approval shown on the page? */
+const apDecider = (user, ap, ownerId) => !!(ap && ap.pending && A.canDecide(user, ap.pending.record.roles) && user.id !== Number(ap.pending.record.requested_by) && user.id !== Number(ownerId));
 const { wrap } = require('./util');
 const { requireStaff, requirePerm } = require('../middleware/auth');
 const config = require('../config');
@@ -86,9 +89,12 @@ const load = (fn) => wrap(async (req, res) => {
 router.get('/quotes/:id(\\d+)', ...view, load(async (req, res, quote) => {
   const lines = await Q.lines(db0, quote.id);
   const canManage = perms.can(req.user, 'quote.manage');
+  const ap = quote.status === 'draft' ? await A.state(db0, 'quote', await A.load(db0, 'quote', quote.id)) : null;
+  let moves = canManage ? Q.MOVES[quote.status] : [];
+  if (ap && ap.needed.length && !ap.complete) moves = moves.filter((m) => m !== 'sent');
   res.render('staff/quote', {
     title: Q.label(quote), quote, lines, events: await Q.events(db0, quote.id), revisions: await Q.revisions(db0, quote.ref), Q, canManage,
-    editable: canManage && quote.status === 'draft', moves: canManage ? Q.MOVES[quote.status] : [], revisable: canManage && Q.REVISABLE.includes(quote.status),
+    editable: canManage && quote.status === 'draft', moves, ap, apDecider: apDecider(req.user, ap, quote.owner_id), A, roleLabels: perms.ROLE_LABELS, revisable: canManage && Q.REVISABLE.includes(quote.status),
     blankRows: Math.max(3, 8 - lines.length), money: Q.fmtMoney, ...(await formData()),
   });
 }));

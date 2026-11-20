@@ -157,7 +157,14 @@ function createApp() {
         const alerts = await dashboard.alerts(q, req.user);
         res.locals.alerts = alerts;
         res.locals.adminLinks = user_admin(req.user);
-        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0 });
+        let approver = false; let waiting = 0;
+        if (req.user.kind === 'staff') {
+          const A = require('./services/approvals');
+          approver = await A.isApprover({ query: q }, req.user);
+          if (approver) waiting = (await A.waitingFor({ query: q }, req.user)).length;
+          if (waiting) { alerts.items.unshift({ text: `${waiting} approval${waiting === 1 ? ' is' : 's are'} waiting for you`, href: '/approvals' }); alerts.count = alerts.items.length; }
+        }
+        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0, approver, approvals: waiting });
       }
       next();
     } catch (err) { next(err); }
@@ -181,6 +188,7 @@ function createApp() {
   app.use(require('./routes/quotes'));
   app.use(require('./routes/suppliers'));
   app.use(require('./routes/lpo'));
+  app.use(require('./routes/approvals'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

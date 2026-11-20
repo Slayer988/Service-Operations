@@ -15,6 +15,7 @@
 <% if (quote.status === 'superseded') { %><p class="banner">This revision was replaced by a newer one. <% if (revisions.length && revisions[0].id !== quote.id) { %><a href="/quotes/<%= revisions[0].id %>">Open <%= quote.ref %> R<%= revisions[0].revision %></a><% } %></p><% } %>
 <% if (quote.decision_note && ['accepted','rejected','cancelled'].includes(quote.status)) { %><p class="banner"><%= Q.STATUS_LABELS[quote.status] %>: <%= quote.decision_note %></p><% } %>
 
+<%- include('../partials/approval_card', { ap: ap, entity: 'quote', itemId: quote.id, itemOwnerId: quote.owner_id, canRequest: canManage, apDecider: apDecider, roleLabels: roleLabels }) %>
 <% if (moves.length || revisable) { %>
 <section class="card" id="status"><h2>Next step</h2>
 <% if (moves.length) { %>

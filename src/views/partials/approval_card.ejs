@@ -1,0 +1,37 @@
+<%# Approval of a draft quote or purchase order. Locals: ap (approvals.state), entity ('quote'|'lpo'), itemId, itemOwnerId, canRequest, apDecider, roleLabels %>
+<% if (ap && ap.needed.length) {
+     var noun = entity === 'quote' ? 'quote' : 'order'; var verb = entity === 'quote' ? 'sent' : 'issued'; var base = entity === 'quote' ? '/quotes/' : '/lpo/';
+     var who = function (roles) { return (roles || []).map(function (r) { return roleLabels[r] || r; }).join(', ') || 'nobody (set the approvers in Settings, Approvals)'; };
+     var cls = ap.complete ? 'ok' : (ap.rejected ? 'bad' : (ap.pending ? 'wait' : 'need')); %>
+<section class="card approvalcard <%= cls %>" id="approval">
+  <h2>Approval <span class="tag <%= ap.complete ? '' : (ap.rejected ? 'bad' : (ap.pending ? 'blue' : 'warn')) %>"><%= ap.complete ? 'Approved' : (ap.rejected ? 'Not approved' : (ap.pending ? 'Waiting for a decision' : 'Needed')) %></span></h2>
+  <ol class="apsteps">
+  <% ap.needed.forEach(function (n) { var r = n.record; %>
+    <li class="<%= r ? r.status : 'none' %>">
+      <b><%= ap.needed.length > 1 ? (n.level === 1 ? 'First approval' : 'Second approval') : 'Approval' %></b> by <%= who(n.roles) %>
+      <span class="muted">because <%= n.reasons.join('; ') %>.</span>
+      <% if (r && r.status === 'approved') { %><div>Approved by <b><%= r.decided_by_name %></b>, <%= fmt.dt(r.decided_at) %><%= r.comment ? ': ' + r.comment : '' %></div>
+      <% } else if (r && r.status === 'rejected') { %><div class="bad">Not approved by <b><%= r.decided_by_name %></b>, <%= fmt.dt(r.decided_at) %>: <%= r.comment %></div>
+      <% } else if (r && r.status === 'pending') { %><div>Asked for by <%= r.requested_by_name %>, <%= fmt.dt(r.requested_at) %>.</div>
+      <% } else { %><div class="muted">Not asked for yet.</div><% } %>
+    </li>
+  <% }) %>
+  </ol>
+  <% if (ap.complete) { %>
+    <p>Approved: the <%= noun %> can now be <%= verb %>. Changing it withdraws the approval.</p>
+  <% } else if (ap.pending && apDecider) { %>
+    <form method="post" action="/approvals/<%= ap.pending.record.id %>" class="apdecide"><%- include('csrf') %><input type="hidden" name="back" value="<%= base + itemId %>#approval">
+      <label for="apcomment">Comment <small class="muted">(required when you decline)</small></label>
+      <textarea id="apcomment" name="comment" rows="2" maxlength="1000"></textarea>
+      <div class="actions"><button class="btn" type="submit" name="decision" value="approve">Approve</button> <button class="btn ghost danger" type="submit" name="decision" value="decline">Decline</button></div>
+    </form>
+  <% } else if (ap.pending) { %>
+    <p class="muted">Waiting for <%= who(ap.pending.roles) %>. <% if (user.id === Number(itemOwnerId) || user.id === Number(ap.pending.record.requested_by)) { %>You cannot approve your own <%= noun %>.<% } %></p>
+  <% } else if (canRequest) { %>
+    <form method="post" action="<%= base + itemId %>/approval" class="inline"><%- include('csrf') %><button class="btn" type="submit">Ask for approval</button></form>
+    <span class="muted"><%= ap.rejected ? 'Change what was asked, then ask again.' : 'Check the lines and the PDF first: any change after approval withdraws it.' %></span>
+  <% } else { %>
+    <p class="muted">It must be approved before it is <%= verb %>.</p>
+  <% } %>
+</section>
+<% } %>

@@ -571,3 +571,20 @@ html[data-theme="sunset"] img.tint{filter:url(#logo-tint-sunset)}
 .lpotrack .tile .tl{color:var(--fg);font-weight:600;font-size:14px}
 .lpotrack .tile.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-l)}
 .lpotrack .tile:hover{border-color:var(--acc)}
+/* approvals (1.23.0) */
+.approvalcard{border-left:4px solid var(--line)}
+.approvalcard.need{border-left-color:var(--warn)}
+.approvalcard.wait{border-left-color:var(--blue)}
+.approvalcard.ok{border-left-color:var(--ok)}
+.approvalcard.bad{border-left-color:var(--bad)}
+.approvalcard h2 .tag{margin-left:8px;vertical-align:middle}
+.apsteps{margin:4px 0 12px;padding-left:20px}
+.apsteps li{margin:6px 0;line-height:1.45}
+.apsteps li.approved::marker{color:var(--ok)}
+.apsteps li.rejected::marker{color:var(--bad)}
+.apsteps .bad{color:var(--bad)}
+.apdecide textarea{width:100%}
+.apdecide .actions{margin-top:8px}
+.apdecide.compact{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.apdecide.compact input{min-width:160px;flex:1}
+.btn.ghost.danger{background:var(--surface);color:var(--bad);border:1px solid var(--bad)}.btn.ghost.danger:hover{background:var(--bad-l)}

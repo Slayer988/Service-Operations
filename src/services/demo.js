@@ -441,6 +441,22 @@ const ARTICLES = [
     '- Create the account and mailbox\n- Order a laptop\n- Add to the department group\n- Book a 30 minute induction'],
 ];
 
+// Approval the way people do it: the owner asks, finance (and management for a second approval) decides.
+function demoApprovers(U) {
+  return { 1: { id: U.finance, name: 'Kevin Lutaaya', email: `finance@${DEMO_DOMAIN}`, kind: 'staff', role: 'finance' },
+    2: { id: U.executive, name: 'Lydia Namara', email: `executive@${DEMO_DOMAIN}`, kind: 'staff', role: 'management' } };
+}
+async function approveAll(db, U, entity, id, requester, comment = 'Checked against the budget.') {
+  const A = require('./approvals'); const who = demoApprovers(U);
+  for (let i = 0; i < 3; i++) {
+    const st = await A.state(db, entity, await A.load(db, entity, id));
+    if (!st.needed.length || st.complete) return;
+    if (!st.pending) await A.request(db, entity, id, requester, '');
+    const p = (await A.state(db, entity, await A.load(db, entity, id))).pending;
+    await A.decide(db, p.record.id, who[p.level] || who[1], 'approved', comment, '');
+  }
+}
+
 // Quotes on four of the deals: one sent, one revised after negotiation (R1 superseded, R2 sent with a discount), one accepted, one draft.
 async function loadQuotes(db, U, oppIds, cur, now) {
   const Q = require('./quotes');
@@ -456,20 +472,26 @@ async function loadQuotes(db, U, oppIds, cur, now) {
   };
   // 1: Branch Wi-Fi and SD-WAN rollout (proposal submission): sent
   let q1 = await make(1, [['SD-WAN edge appliance', 12, 'each', 18500000], ['Wi-Fi 6 access point', 40, 'each', 2400000], ['Installation and configuration', 12, 'site', 3500000], ['Managed SD-WAN service', 12, 'month', 9800000]]);
+  await approveAll(db, U, 'quote', q1.id, bd);
   q1 = await Q.setStatus(db, q1, 'sent', bd, { note: 'E-mailed to the IT manager.' });
   // 2: Managed backup for clinics (negotiation): R1 sent, then revised with a discount and sent again
   let q2 = await make(3, [['Backup appliance', 2, 'each', 32000000], ['Cloud backup storage (10 TB)', 12, 'month', 6500000], ['Onboarding and restore testing', 1, 'project', 12000000]]);
+  await approveAll(db, U, 'quote', q2.id, bd);
   q2 = await Q.setStatus(db, q2, 'sent', bd, { note: 'First offer.' });
   let q2b = await Q.revise(db, q2, bd, '');
   q2b = await Q.saveLines(db, q2b, [['Backup appliance', 2, 'each', 32000000, 5], ['Cloud backup storage (10 TB)', 12, 'month', 6500000, 10], ['Onboarding and restore testing', 1, 'project', 12000000]]
     .map(([description, quantity, unit, unit_price, discount_pct = 0]) => ({ description, quantity, unit, unit_price, discount_pct, line_total: Q.lineTotal(quantity, unit_price, discount_pct) })), bd);
+  await approveAll(db, U, 'quote', q2b.id, bd, 'Discount agreed: within this quarter\'s margin.');
   await Q.setStatus(db, q2b, 'sent', bd, { note: 'Revised after the commercial meeting: discount on hardware and storage.' });
   // 3: Cybersecurity assessment (won): accepted
   let q3 = await make(7, [['External penetration test', 1, 'engagement', 38000000], ['Internal vulnerability assessment', 1, 'engagement', 27000000], ['Report and executive debrief', 1, 'each', 6000000]]);
+  await approveAll(db, U, 'quote', q3.id, bd);
   q3 = await Q.setStatus(db, q3, 'sent', bd, {});
   await Q.setStatus(db, q3, 'accepted', bd, { note: 'Purchase order received.' });
-  // 4: Fleet tracking integration (lead, a prospect): draft
-  await make(5, [['GPS tracker with installation', 150, 'vehicle', 950000], ['Tracking platform licence', 150, 'vehicle / month', 45000]]);
+  // 4: Fleet tracking integration (lead, a prospect): draft, waiting for approval (so approvers have something to decide)
+  const q4 = await make(5, [['GPS tracker with installation', 150, 'vehicle', 950000], ['Tracking platform licence', 150, 'vehicle / month', 45000]]);
+  const A = require('./approvals');
+  if ((await A.state(db, 'quote', await A.load(db, 'quote', q4.id))).needed.length) await A.request(db, 'quote', q4.id, bd, '');
 }
 
 // Three suppliers in the register, on demo projects and tenders, and two LPOs (one issued for a project, one draft against a contract).
@@ -491,11 +513,13 @@ async function loadProcurement(db, U, cur, now = new Date()) {
   let po = await PO.create(db, { ...(await PO.defaults(db, { supplier: cab.id, project: projs[0] || '' }, today)), currency: cur, title: 'Cabling for the new floor', tax_rate: s.taxRate, tax_label: s.taxLabel,
     internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, contract_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
   po = await PO.saveLines(db, po, lines([['Cat6A cabling points, installed and tested', 48, 'point', 185000], ['Fibre backbone, 12 core, spliced', 1, 'run', 2600000]]), buyer);
+  await approveAll(db, U, 'lpo', po.id, buyer);
   await PO.setStatus(db, po, 'issued', buyer, { note: 'Sent to Peter Ochieng.' });
   const con = (await db.query(`select id from contracts where notes like $1 order by id limit 1`, [`${TAG}%`])).rows[0];
   let po2 = await PO.create(db, { ...(await PO.defaults(db, { supplier: dist.id, contract: con ? con.id : '' }, today)), currency: cur, title: 'Firewall renewal licences', tax_rate: s.taxRate, tax_label: s.taxLabel,
     internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, project_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
   await PO.saveLines(db, po2, lines([['FortiGate 100F UTP bundle, 1 year', 2, 'licence', 6400000]]), buyer);
+  await require('./approvals').request(db, 'lpo', po2.id, buyer, '');                 // a draft waiting for finance
   // more orders, so the LPO tracker has every stage: late, received, closed and cancelled
   const kivu = (await db.query(`select id from suppliers where notes like $1 and kind = 'consultant' limit 1`, [like()])).rows[0];
   const more = [
@@ -508,6 +532,7 @@ async function loadProcurement(db, U, cur, now = new Date()) {
     let o = await PO.create(db, { ...(await PO.defaults(db, { supplier: sid, project: proj }, today)), currency: cur, title, tax_rate: s.taxRate, tax_label: s.taxLabel, delivery_date: ymd(addDays(now, delivIn)),
       internal_notes: `${TAG} sample LPO`, supplier_doc_id: null, contract_id: null, tender_id: null, customer_quote_id: null }, buyer, '');
     o = await PO.saveLines(db, o, lines(rows), buyer);
+    await approveAll(db, U, 'lpo', o.id, buyer);
     for (const m of moves) o = await PO.setStatus(db, o, m, buyer, { note: m === moves[moves.length - 1] ? note : '' });
     await db.query('update purchase_orders set issue_date = least(issue_date, $2::date) where id = $1', [o.id, ymd(addDays(now, Math.min(delivIn - 14, -2)))]);
   }
@@ -579,6 +604,8 @@ async function remove(db) {
   await run('update supplier_documents set purchase_order_id = null where purchase_order_id = any($1)', [pos]);
   await run('update purchase_order_events set actor_id = null where actor_id = any($1)', [usr]);
   await run('update purchase_orders set issued_by = null where issued_by = any($1)', [usr]);
+  await run(`delete from approvals where (entity = 'lpo' and entity_id = any($1)) or requested_by = any($2) or decided_by = any($2)`, [pos, usr]);
+  await run(`delete from approvals where entity = 'quote' and entity_id in (select id from quotes where internal_notes like $1 or opportunity_id = any($2) or customer_id = any($3) or owner_id = any($4) or created_by = any($4))`, [like, opps, cust, usr]);
   await run('delete from purchase_orders where id = any($1)', [pos]);                           // lines and history go with it
   await run('delete from attachments where supplier_id = any($1)', [sups]);                    // their document records go with them
   await run('delete from suppliers where id = any($1)', [sups]);                               // links and history go with them

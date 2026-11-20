@@ -13,7 +13,8 @@ test('platform admin sees every module; links are never dead', () => {
   // Settings, Users, Directory and Audit live on the Administration page, not in the menu
   assert.ok(!labels(g).includes('Business Overview'));
   for (const l of ['Settings', 'Directory', 'Audit', 'Users', 'E-mail', 'Mailboxes', 'SLA', 'Service Catalogue']) assert.ok(!labels(g).includes(l), l);
-  assert.ok(!labels(g).some((l) => /Problems|Changes|Assets|Approvals/.test(l)));
+  assert.ok(!labels(g).some((l) => /Problems|Changes|Assets/.test(l)));
+  assert.ok(labels(g).includes('Approvals'), 'administrators approve quotes and orders (1.23.0)');
   assert.equal(flat(g).find((i) => i.label === 'Verification').badge, 3);
 });
 

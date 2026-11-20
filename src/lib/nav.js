@@ -47,6 +47,8 @@ function build(user, ctx, counts = {}) {
     can('quote.view') && { label: 'Quotes', href: '/quotes', icon: 'dollar', on: starts('/quotes') },
     // the register and the purchase orders (LPO tracker) are one module, with tabs
     (can('supplier.view') || can('lpo.view')) && { label: 'Suppliers & Contractors', href: can('supplier.view') ? '/suppliers' : '/lpo', icon: 'users', on: starts('/suppliers', '/lpo') },
+    // approvers, and those who ask for approval (counts.approvals: what is waiting for this person)
+    (counts.approver || can('quote.manage') || can('lpo.manage')) && { label: 'Approvals', href: '/approvals', icon: 'check', on: starts('/approvals'), badge: counts.approvals || 0 },
   ].filter(Boolean);
   return [main, business].filter((g) => g.length);
 }

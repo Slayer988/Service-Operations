@@ -1,0 +1,38 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Approvals</h1></div>
+<% var who = function (roles) { return (roles || []).map(function (r) { return roleLabels[r] || r; }).join(', '); };
+   var what = function (a) { return (a.entity === 'quote' ? 'Quote ' : 'Purchase order ') + a.item.label; }; %>
+<% if (isApprover) { %>
+<section class="card" id="waiting"><h2>Waiting for you <span class="tag <%= waiting.length ? 'warn' : '' %>"><%= waiting.length %></span></h2>
+<% if (waiting.length) { %>
+<table class="grid"><thead><tr><th>Item</th><th>For</th><th class="num">Amount</th><th>Why</th><th>Asked by</th><th>Decide</th></tr></thead><tbody>
+<% waiting.forEach(function (a) { %><tr>
+  <td><a href="<%= a.item.href %>#approval"><%= what(a) %></a><% if (a.level === 2) { %> <span class="tag blue">second approval</span><% } %></td>
+  <td><%= a.item.title %><% if (a.item.supplier_name) { %> <span class="muted">(<%= a.item.supplier_name %>)</span><% } %></td>
+  <td class="num"><%= a.currency %> <%= Number(a.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }) %></td>
+  <td class="muted"><%= a.reasons %></td>
+  <td><%= a.requested_by_name %><br><small class="muted"><%= fmt.dt(a.requested_at) %></small></td>
+  <td><form method="post" action="/approvals/<%= a.id %>" class="apdecide compact"><%- include('../partials/csrf') %><input type="hidden" name="back" value="/approvals">
+    <input name="comment" maxlength="1000" placeholder="Comment (required to decline)" aria-label="Comment">
+    <button class="btn" type="submit" name="decision" value="approve">Approve</button> <button class="btn ghost danger" type="submit" name="decision" value="decline">Decline</button></form></td>
+</tr><% }) %></tbody></table>
+<p class="muted">Open the item to see its lines and PDF before you decide.</p>
+<% } else { %><p class="empty">Nothing is waiting for your approval.</p><% } %>
+</section>
+<% } %>
+<section class="card" id="mine"><h2>What you asked for (last 60 days)</h2>
+<% if (mine.length) { %><table class="grid"><thead><tr><th>Item</th><th class="num">Amount</th><th>Approver</th><th>Status</th><th>Decision</th></tr></thead><tbody>
+<% mine.forEach(function (a) { %><tr><td><a href="<%= a.item.href %>#approval"><%= what(a) %></a><% if (a.level === 2) { %> <small class="muted">(second)</small><% } %></td>
+  <td class="num"><%= a.currency %> <%= Number(a.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }) %></td><td><%= who(a.roles) %></td>
+  <td><span class="tag <%= a.status === 'approved' ? '' : (a.status === 'rejected' ? 'bad' : (a.status === 'pending' ? 'blue' : 'grey')) %>"><%= A.STATUS_LABELS[a.status] %></span></td>
+  <td><%= a.decided_by_name ? a.decided_by_name + (a.comment ? ': ' + a.comment : '') : (a.status === 'withdrawn' ? a.comment : '') %></td></tr><% }) %>
+</tbody></table><% } else { %><p class="empty">You have not asked for any approvals recently. Ask from the draft quote or purchase order.</p><% } %>
+</section>
+<% if (decided.length) { %>
+<section class="card" id="decided"><h2>Your recent decisions</h2>
+<table class="grid"><thead><tr><th>Item</th><th class="num">Amount</th><th>Asked by</th><th>Your decision</th><th>When</th></tr></thead><tbody>
+<% decided.forEach(function (a) { %><tr><td><a href="<%= a.item.href %>"><%= what(a) %></a></td><td class="num"><%= a.currency %> <%= Number(a.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }) %></td>
+  <td><%= a.requested_by_name %></td><td><span class="tag <%= a.status === 'approved' ? '' : 'bad' %>"><%= A.STATUS_LABELS[a.status] %></span><%= a.comment ? ' ' + a.comment : '' %></td><td><%= fmt.dt(a.decided_at) %></td></tr><% }) %>
+</tbody></table></section>
+<% } %>
+<%- include('../partials/footer') %>

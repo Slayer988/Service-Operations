@@ -13,6 +13,7 @@ const tickets = require('../services/tickets');
 const Q = require('../services/quotes');
 const PO = require('../services/purchase_orders');
 const Sup = require('../services/suppliers');
+const A = require('../services/approvals');
 const { wrap, upload } = require('./util');
 const { requireStaff, requirePerm } = require('../middleware/auth');
 const config = require('../config');
@@ -104,8 +105,12 @@ const load = (fn) => wrap(async (req, res) => {
 router.get('/lpo/:id(\\d+)', ...view, load(async (req, res, po) => {
   const lines = await PO.lines(db0, po.id);
   const canManage = perms.can(req.user, 'lpo.manage');
+  const ap = po.status === 'draft' ? await A.state(db0, 'lpo', await A.load(db0, 'lpo', po.id)) : null;
+  let moves = canManage ? PO.MOVES[po.status] : [];
+  if (ap && ap.needed.length && !ap.complete) moves = moves.filter((m) => m !== 'issued');
+  const apDecider = !!(ap && ap.pending && A.canDecide(req.user, ap.pending.record.roles) && req.user.id !== Number(ap.pending.record.requested_by) && req.user.id !== Number(po.owner_id));
   res.render('staff/lpo', {
-    title: po.ref, po, lines, PO, Sup, canManage, editable: canManage && po.status === 'draft', moves: canManage ? PO.MOVES[po.status] : [], money: Q.fmtMoney,
+    title: po.ref, po, lines, PO, Sup, canManage, editable: canManage && po.status === 'draft', moves, ap, apDecider, A, roleLabels: perms.ROLE_LABELS, money: Q.fmtMoney,
     events: await PO.events(db0, po.id), docs: await Sup.documents(db0, 'd.purchase_order_id = $1', [po.id]),
     blankRows: Math.max(3, 8 - lines.length), ...(await formData()),
   });

@@ -83,6 +83,23 @@
 <p><label>Standard terms (printed below the totals; can be changed on each quote)</label><textarea name="quote_terms" rows="3" maxlength="4000"><%= s.quote_terms || '' %></textarea></p>
 <p><label>Standard LPO terms (printed on each purchase order; can be changed on each one)</label><textarea name="lpo_terms" rows="3" maxlength="4000"><%= s.lpo_terms || '' %></textarea></p>
 <p><label>Default delivery address for LPOs</label><textarea name="lpo_delivery_address" rows="2" maxlength="500"><%= s.lpo_delivery_address || '' %></textarea></p></section>
+<% var limitsText = function (o) { return Object.keys(o || {}).map(function (c) { return c + ' ' + Number(o[c]).toLocaleString('en-US'); }).join('\n'); };
+   var roleBoxes = function (name, chosen) { return apRoles.map(function (r) { return '<label class="check"><input type="checkbox" name="' + name + '" value="' + r + '"' + ((chosen || []).indexOf(r) >= 0 ? ' checked' : '') + '> ' + (roleLabels[r] || r).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</label>'; }).join(' '); }; %>
+<section class="card" id="approvals"><h2>Approvals</h2><input type="hidden" name="approvals_form" value="1">
+<p class="muted">Who must approve a quote before it is sent, and a purchase order before it is issued. Nobody approves their own quote or order; a platform administrator can always approve; a change after approval withdraws it.</p>
+<h3>Quotes</h3>
+<p><label class="check"><input type="checkbox" name="approvals_quote_enabled" value="1" <%= apRules.quote.enabled ? 'checked' : '' %>> Quotes above a limit, or with a large discount, need approval before they are sent</label></p>
+<div class="grid2"><p><label for="aql">Approval needed at or above this total <small class="muted">(one currency per line, e.g. "UGX 20,000,000"; a quote in a currency not listed always needs approval)</small></label>
+<textarea id="aql" name="approvals_quote_limits" rows="3"><%= limitsText(apRules.quote.limits) %></textarea></p>
+<p><label for="aqd">…or when the discount is at least (%) <small class="muted">(0 = discounts alone never need approval)</small></label><input id="aqd" name="approvals_quote_discount_pct" type="number" min="0" max="100" value="<%= apRules.quote.discountPct %>"></p></div>
+<p><b>Who approves quotes</b> (any one of them)<br><%- roleBoxes('approvals_quote_roles', apRules.quote.roles) %></p>
+<h3>Purchase orders (LPO)</h3>
+<p><label class="check"><input type="checkbox" name="approvals_lpo_enabled" value="1" <%= apRules.lpo.enabled ? 'checked' : '' %>> Every purchase order is approved before it is issued</label></p>
+<p><b>First approval</b> (any one of them)<br><%- roleBoxes('approvals_lpo_roles', apRules.lpo.roles) %></p>
+<p><label for="all2">Second approval needed at or above this total <small class="muted">(one currency per line; leave empty for no second approval; an order in a currency not listed needs it)</small></label>
+<textarea id="all2" name="approvals_lpo_l2_limits" rows="3"><%= limitsText(apRules.lpo.l2Limits) %></textarea></p>
+<p><b>Second approval</b> (any one of them)<br><%- roleBoxes('approvals_lpo_l2_roles', apRules.lpo.l2Roles) %></p>
+</section>
 <button class="btn" type="submit">Save settings</button>
 </form>
 <%- include('../partials/footer') %>

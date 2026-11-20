@@ -185,6 +185,7 @@ function mustBeDraft(quote) {
 
 async function updateHeader(db, quote, h, actor) {
   mustBeDraft(quote);
+  await require('./approvals').withdraw(db, 'quote', quote.id, actor, 'its details were changed');
   await checkLinks(db, h);
   await db.query(
     `update quotes set opportunity_id = $2, customer_id = $3, prospect = $4, contact_name = $5, contact_email = $6, title = $7, currency = $8, issue_date = coalesce($9::date, issue_date), valid_until = $10,
@@ -204,6 +205,7 @@ async function recalc(db, id) {
 
 async function saveLines(db, quote, rows, actor) {
   mustBeDraft(quote);
+  await require('./approvals').withdraw(db, 'quote', quote.id, actor, 'its lines were changed');
   await db.query('delete from quote_lines where quote_id = $1', [quote.id]);
   let pos = 0;
   for (const l of rows) {
@@ -228,6 +230,7 @@ async function setStatus(db, quote, to, actor, opts = {}, ip = '') {
     const n = (await db.query('select count(*)::int as n from quote_lines where quote_id = $1', [quote.id])).rows[0].n;
     if (!n) throw new UserError('Add at least one line before sending the quote.');
     if (quote.valid_until && quote.valid_until < u.localDay(config.timezone)) throw new UserError('The "valid until" date has passed. Change it before sending.');
+    await require('./approvals').assertApproved(db, 'quote', quote.id);
   }
   if (to === 'rejected' && !note) throw new UserError('Say why the customer declined (it helps with the next quote).');
   await db.query(

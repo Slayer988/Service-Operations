@@ -18,6 +18,7 @@
 <% if (po.customer_quote_id) { %><span>our quote <a href="/quotes/<%= po.customer_quote_id %>"><%= po.customer_quote_ref %><%= po.customer_quote_revision > 1 ? ' R' + po.customer_quote_revision : '' %></a></span><% } %></p><% } %>
 <% if (po.decision_note && ['cancelled','closed'].includes(po.status)) { %><p class="banner"><%= PO.STATUS_LABELS[po.status] %>: <%= po.decision_note %></p><% } %>
 
+<%- include('../partials/approval_card', { ap: ap, entity: 'lpo', itemId: po.id, itemOwnerId: po.owner_id, canRequest: canManage, apDecider: apDecider, roleLabels: roleLabels }) %>
 <% if (moves.length) { %>
 <section class="card" id="status"><h2>Next step</h2>
 <form method="post" action="/lpo/<%= po.id %>/status" class="rowform"><%- include('../partials/csrf') %>
