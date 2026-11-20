@@ -1,0 +1,83 @@
+# Runs the same checks as the installer on every push and pull request: syntax, templates, unit and integration tests
+# against a real PostgreSQL 15, and a security audit of the dependencies.
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit and integration tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '20']
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm-ci-only
+          POSTGRES_DB: itsm_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: itsm
+      PGPASSWORD: itsm-ci-only
+      PGDATABASE: itsm_test
+      SESSION_SECRET: ci-test-secret-ci-test-secret-ci-test-secret
+      BASE_URL: http://localhost
+      APP_TIMEZONE: Africa/Kampala
+      STORAGE_DIR: ${{ github.workspace }}/.ci-storage
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund && mkdir -p "$STORAGE_DIR"
+      - name: Check JavaScript syntax
+        run: |
+          find src scripts test -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Check the page templates
+        run: node scripts/check-views.js
+      - name: Check the shell scripts
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+          for f in deploy/*.sh; do [ -f "$f" ] && bash -n "$f"; done
+      - name: Unit tests
+        run: node --test test/unit/*.test.js
+      - name: Integration tests (PostgreSQL 15)
+        run: node --test test/integration/*.test.js
+
+  audit:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Audit (fails on high or critical problems in what is shipped)
+        run: npm audit --omit=dev --audit-level=high

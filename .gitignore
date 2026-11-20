@@ -9,3 +9,4 @@ storage/
 *.tar.gz
 *.log
 .DS_Store
+.ci-storage/

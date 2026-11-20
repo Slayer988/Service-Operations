@@ -1165,10 +1165,10 @@ test('demo data: loads, every page works with it, signs in, and removal leaves t
   for (const page of ['/', '/tickets', '/customers', '/operations', '/projects', '/pipeline', '/tenders', '/contracts', '/reports', '/verification', '/kb']) assert.equal((await m.get(page)).status, 200, page);
   // 1.22.0: every module has something in it
   for (const page of ['/suppliers', '/lpo', '/lpo?status=late', '/contracts/reports']) assert.equal((await m.get(page)).status, 200, page);
-  const conId = (await q('select contract_id from contract_reviews limit 1')).rows[0].contract_id;
+  const conId = (await q(`select contract_id from contract_reviews where comment = 'Add a clause for the annual price review.'`)).rows[0].contract_id;
   const conPage = (await m.get(`/contracts/${conId}`)).text;
   assert.ok(conPage.includes('Monthly service report') && conPage.includes('Quarterly service fee'), 'contract obligations and payments');
-  const oppId = (await q('select opportunity_id from opp_tasks limit 1')).rows[0].opportunity_id;
+  const oppId = (await q(`select opportunity_id from opp_tasks where title = 'Size the new server and storage platform'`)).rows[0].opportunity_id;
   assert.ok((await m.get(`/pipeline/${oppId}`)).text.includes('Size the new server and storage platform'), 'deal engineering tasks');
   const lpoList = (await m.get('/lpo?status=all')).text;
   assert.ok(lpoList.includes('Core switches for the data centre') && lpoList.includes('tile alert'), 'LPOs at every stage, one late');

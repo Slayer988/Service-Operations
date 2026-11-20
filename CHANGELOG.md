@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.23.0 (in progress)
+- **Automatic tests on GitHub.** Every push and pull request runs the same checks as the installer on GitHub's machines: JavaScript syntax, the page templates, the shell scripts, all unit tests and all integration tests against a real PostgreSQL 15, on Node 22 and Node 20. The result shows as a tick or a cross on each commit and as the *Tests* badge in the README.
+- **Security audit of the dependencies** on every push (fails on high or critical problems), and **Dependabot** opens a pull request each Monday when a dependency needs updating.
+- **Security: nodemailer updated from 6.10 to 10.6.** The audit found 22 published problems in the old version of the library that sends e-mail (8 rated high: address-parsing denial of service, header injection, mail delivered to an unintended domain, file read through the raw message option). Version 10 fixes them all. Tested with the full suite and a real message to an SMTP server. Nothing to change in the settings.
+- **Security: uuid** (used inside the Active Directory library) pinned to 11.1.1, which fixes a missing bounds check.
+- **package-lock.json** is now part of the code, so the installer and the tests use exactly the versions that were tested.
+- Fixed: the installer's demo-data test could pick a deal or contract created by an earlier test instead of the demo one.
+
 ## 1.22.0
 - **Company logo and name** (Settings, Company branding; migration 021). Upload your company logo (PNG or JPEG, up to 1 MB) and set the company name once, and the whole system carries them:
   - **Sign-in page, menu, customer portal and the request page:** "Service Operations (Ops)" with your logo centred beneath it, on a white tile so any logo reads on the dark colours. When the menu is collapsed, a small logo.

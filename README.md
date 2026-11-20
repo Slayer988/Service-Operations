@@ -1,5 +1,7 @@
 # Service Operations (Ops)
 
+[![Tests](https://github.com/Slayer988/Service-Operations/actions/workflows/ci.yml/badge.svg)](https://github.com/Slayer988/Service-Operations/actions/workflows/ci.yml)
+
 A multi-tenant service desk: customers and their services (CSIDs), tickets with SLA timers, a customer portal, execution-engineer notification,
 **e-mail-to-ticket from up to five shared mailboxes (Microsoft 365, Google Workspace or IMAP)**, **Active Directory sign-in and import (in User management)**, **Contracts** (with renewal tracking), **Tender Management**, a **Pipeline Tracker** with **Quotes**,
 in a green dashboard-style interface.
