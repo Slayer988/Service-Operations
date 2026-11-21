@@ -200,6 +200,8 @@ async function addPayment(db, actor, contractId, b) {
 }
 async function setPayment(db, actor, contractId, payId, status, paidOn) {
   if (!['scheduled', 'invoiced', 'paid'].includes(status)) throw new UserError('Unknown status.');
+  const inv = (await db.query('select i.ref from contract_payments p join invoices i on i.id = p.invoice_id where p.id = $1 and p.contract_id = $2', [payId, contractId])).rows[0];
+  if (inv) throw new UserError(`This instalment is billed on ${inv.ref}; its status follows the invoice (issued, then paid when the payment is recorded there).`);
   const r = await db.query(
     `update contract_payments set status = $3, paid_on = case when $3 = 'paid' then coalesce($4::date, current_date) else null end where id = $2 and contract_id = $1 returning amount, due_date`,
     [contractId, payId, status, paidOn || null]);

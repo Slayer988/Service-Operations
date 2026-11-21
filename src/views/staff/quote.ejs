@@ -2,7 +2,7 @@
 <% var tone = function (s) { return s === 'accepted' ? '' : (s === 'rejected' || s === 'expired' ? 'bad' : (s === 'sent' ? 'blue' : (s === 'draft' ? 'warn' : 'grey'))); }; %>
 <p><a href="/quotes">← Quotes</a><% if (quote.opportunity_id) { %> · <a href="/pipeline/<%= quote.opportunity_id %>#quotes">← Opportunity <%= quote.opportunity_ref %></a><% } %></p>
 <div class="head"><h1><%= Q.label(quote) %> <span class="tag <%= tone(quote.status) %>"><%= Q.STATUS_LABELS[quote.status] %></span></h1>
-<span><% if (can('lpo.manage') && ['sent','accepted'].includes(quote.status)) { %><a class="btn ghost" href="/lpo/new?customer_quote=<%= quote.id %><%= quote.opportunity_id ? '' : '' %>">Raise a back-to-back LPO</a> <% } %><a class="btn" href="/quotes/<%= quote.id %>/pdf"><%= quote.status === 'draft' ? 'Download draft PDF' : 'Download PDF' %></a></span></div>
+<span><% if (can('invoice.manage') && quote.status === 'accepted' && quote.customer_id) { %><a class="btn ghost" href="/invoices/new?customer=<%= quote.customer_id %>&quote=<%= quote.id %>">Invoice this quote</a> <% } %><% if (can('lpo.manage') && ['sent','accepted'].includes(quote.status)) { %><a class="btn ghost" href="/lpo/new?customer_quote=<%= quote.id %><%= quote.opportunity_id ? '' : '' %>">Raise a back-to-back LPO</a> <% } %><a class="btn" href="/quotes/<%= quote.id %>/pdf"><%= quote.status === 'draft' ? 'Download draft PDF' : 'Download PDF' %></a></span></div>
 <p class="muted"><%= quote.title %> · <%= quote.org || '—' %><% if (quote.opportunity_id) { %> · opportunity <a href="/pipeline/<%= quote.opportunity_id %>"><%= quote.opportunity_ref %> <%= quote.opportunity_name %></a><% } %> · Owner <%= quote.owner_name %></p>
 
 <div class="kpis">

@@ -158,7 +158,7 @@ router.get('/contracts/:id', ...view, wrap(async (req, res) => {
   const canManage = perms.can(req.user, 'contract.manage'); const canFin = canManage || perms.can(req.user, 'contract.finance');
   const events = (await q('select e.*, u.name as actor_name from contract_events e left join users u on u.id = e.actor_id where contract_id = $1 order by e.id desc limit 200', [id])).rows;
   const contacts = (await q('select u.id, u.name from contract_contacts cc join users u on u.id = cc.user_id where cc.contract_id = $1 order by u.name', [id])).rows;
-  const payments = (await q('select * from contract_payments where contract_id = $1 order by due_date, id', [id])).rows;
+  const payments = (await q('select p.*, i.ref as invoice_ref, i.status as invoice_status from contract_payments p left join invoices i on i.id = p.invoice_id where p.contract_id = $1 order by p.due_date, p.id', [id])).rows;
   const obligations = (await q(`select o.*, u.name as responsible_name, (o.status in ('open','in_progress') and o.due_date < current_date) as overdue from contract_obligations o left join users u on u.id = o.responsible_id where o.contract_id = $1 order by o.due_date nulls last, o.id`, [id])).rows;
   const targets = (await q('select * from contract_sla_targets where contract_id = $1 order by id', [id])).rows;
   const perf = (await q(`select p.*, t.target, t.direction, t.label, t.unit, ((t.direction = 'min' and p.measured >= t.target) or (t.direction = 'max' and p.measured <= t.target)) as ok

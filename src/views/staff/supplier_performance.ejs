@@ -1,0 +1,23 @@
+<%- include('../partials/header') %>
+<div class="head"><h1>Suppliers & Contractors</h1></div>
+<%- include('../partials/procurement_tabs', { tab: 'performance', canLpoView: true }) %>
+<h2>Supplier performance</h2>
+<form method="get" class="filters wide">
+  <select name="period" aria-label="Period"><% [['90','Orders issued in the last 90 days'],['365','Orders issued in the last 12 months'],['all','All orders']].forEach(function (v) { %><option value="<%= v[0] %>" <%= period === v[0] ? 'selected' : '' %>><%= v[1] %></option><% }) %></select>
+  <button class="btn ghost" type="submit">Show</button></form>
+<% if (rows.length) { %>
+<table class="grid perf"><thead><tr><th>Supplier / contractor</th><th class="num">Orders</th><th class="num">Delivered</th><th>On time</th><th class="num">Avg days late</th><th class="num">Late now</th><th>Quality</th><th>Ordered (before tax)</th><th></th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr>
+<td><a href="/suppliers/<%= r.supplier_id %>#performance"><%= r.name %></a> <small class="muted"><%= r.code %></small></td>
+<td class="num"><%= r.orders %></td><td class="num"><%= r.delivered %></td>
+<td><% if (r.on_time_pct === null) { %><span class="muted">—</span><% } else { %><span class="<%= r.on_time_pct < SP.WATCH_ON_TIME ? 'bad' : '' %>"><b><%= r.on_time_pct %>%</b></span> <small class="muted"><%= r.on_time %> of <%= r.delivered %></small><% } %></td>
+<td class="num"><%= r.avg_days_late === null ? '—' : r.avg_days_late %></td>
+<td class="num <%= r.open_late ? 'bad' : '' %>"><%= r.open_late || '—' %></td>
+<td><% if (r.quality === null) { %><span class="muted">Not rated</span><% } else { %><b class="<%= r.quality < 3 ? 'bad' : '' %>"><%= r.quality %></b>/5 <small class="muted">(<%= r.rated %>)</small><% } %></td>
+<td><%= Object.keys(r.spend).map(function (c) { return c + ' ' + Math.round(r.spend[c]).toLocaleString('en-US'); }).join(' · ') %></td>
+<td><% if (r.watch) { %><span class="tag bad">Watch</span><% } %></td></tr><% }) %>
+</tbody></table>
+<p class="muted">On time: received by the order's deliver-by date. Quality: rated 1 to 5 when the order is received. <b>Watch</b>: an order is late now, under <%= SP.WATCH_ON_TIME %>% delivered on time (with 2 or more deliveries), or an average quality below 3. Drafts and cancelled orders are not counted.</p>
+<% } else { %><p class="empty">No purchase orders issued in this period.</p><% } %>
+<p class="muted">Download: <a href="/suppliers/performance?period=<%= period %>&format=xlsx">Excel</a> · <a href="/suppliers/performance?period=<%= period %>&format=pdf">PDF</a> · <a href="/suppliers/performance?period=<%= period %>&format=csv">CSV</a></p>
+<%- include('../partials/footer') %>

@@ -40,6 +40,25 @@ router.get('/suppliers', ...view, wrap(async (req, res) => {
   res.render('staff/suppliers', { canLpoView: perms.can(req.user, 'lpo.view'), title: 'Suppliers & Contractors', rows, f, Sup, canManage: perms.can(req.user, 'supplier.manage') });
 }));
 
+// supplier performance: on-time delivery and quality, from the purchase orders (for those who see LPOs)
+const SP = require('../services/supplier_performance');
+const perfPeriod = (v) => u.oneOf(v, ['90', '365', 'all'], '365');
+router.get('/suppliers/performance', ...view, requirePerm('lpo.view'), wrap(async (req, res) => {
+  const today = u.localDay(require('../config').timezone);
+  const period = perfPeriod(req.query.period);
+  const since = period === 'all' ? null : (() => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - Number(period)); return d.toISOString().slice(0, 10); })();
+  const rows = await SP.performance(db0, { since, today });
+  if (req.query.format) {
+    const out = rows.map((r) => ({ ...r, spend_text: Object.keys(r.spend).map((c) => `${c} ${Math.round(r.spend[c]).toLocaleString('en-US')}`).join(', '), watch_text: r.watch ? 'Watch' : '' }));
+    const columns = [{ key: 'name', header: 'Supplier / contractor', width: 28, weight: 3 }, { key: 'orders', header: 'Orders', type: 'integer', width: 8 }, { key: 'delivered', header: 'Delivered', type: 'integer', width: 10 },
+      { key: 'on_time_pct', header: 'On time %', type: 'integer', width: 10 }, { key: 'avg_days_late', header: 'Avg days late', type: 'integer', width: 12 }, { key: 'open_late', header: 'Late now', type: 'integer', width: 9 },
+      { key: 'quality', header: 'Quality (1-5)', type: 'integer', width: 12 }, { key: 'rated', header: 'Rated', type: 'integer', width: 7 }, { key: 'spend_text', header: 'Ordered (before tax)', width: 26, weight: 2 }, { key: 'watch_text', header: '', width: 7 }];
+    await audit(db0, req.user, 'report_exported', 'report', 'supplier_performance', `${rows.length} rows`, null, req.ip);
+    if (reporting.send(res, u.oneOf(req.query.format, ['csv', 'xlsx', 'pdf'], 'xlsx'), { title: 'Supplier performance', subtitle: since ? `Orders issued from ${since}` : 'All orders', columns, rows: out }, req.user)) return undefined;
+  }
+  return res.render('staff/supplier_performance', { title: 'Supplier performance', rows, period, since, canLpoView: true, SP });
+}));
+
 router.get('/suppliers/export', ...view, wrap(async (req, res) => {
   const { where, params } = filters(req.query);
   const rows = (await q(LIST(where.join(' and ')), params)).rows.map((r) => ({ ...r, kind_label: Sup.KINDS[r.kind], status_label: Sup.STATUSES[r.status] }));
@@ -79,9 +98,10 @@ router.get('/suppliers/:id(\\d+)', ...view, load(async (req, res, s) => {
                                                                   (po.status = 'issued' and po.delivery_date < current_date) as late
                                                              from purchase_orders po left join projects p on p.id = po.project_id where po.supplier_id = $1 order by po.id desc limit 200`, [s.id])).rows : null;
   const trk = lpos ? await PO.tracker(db0, s.id) : null;
+  const perf = lpos ? (await SP.performance(db0, { supplierId: s.id, today: u.localDay(require('../config').timezone) }))[0] || null : null;
   const settingsQ = await PO.listSettings(db0);
   res.render('staff/supplier', {
-    title: `${s.code} ${s.name}`, s, Sup, PO, docs: await Sup.documents(db0, 'd.supplier_id = $1', [s.id]), links, lpos, trk, canManage, canLpo,
+    title: `${s.code} ${s.name}`, s, Sup, PO, perf, SP, docs: await Sup.documents(db0, 'd.supplier_id = $1', [s.id]), links, lpos, trk, canManage, canLpo,
     canUpload: canManage || canLpo, events: (await q('select e.*, u.name as actor_name from supplier_events e left join users u on u.id = e.actor_id where e.supplier_id = $1 order by e.id desc limit 200', [s.id])).rows,
     projects: (await q(`select id, ref, name from projects where status not in ('completed','cancelled') order by ref desc limit 500`)).rows,
     tenders: (await q(`select id, ref, title from tenders order by id desc limit 500`)).rows,

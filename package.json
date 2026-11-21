@@ -1,6 +1,6 @@
 {
   "name": "service-operations",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "description": "Service Operations (Ops) - multi-tenant service operations platform: tickets, SLAs, e-mail to ticket, service catalogue, contracts, tender management, pipeline tracking",
   "private": true,
   "license": "UNLICENSED",

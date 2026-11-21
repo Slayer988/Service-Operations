@@ -42,7 +42,8 @@ function sections(user) {
         { tip: `After ${config.lockoutAttempts} wrong passwords in a row an account is locked for ${config.lockoutMinutes} minutes. You are signed out after ${config.sessionIdleMinutes} minutes without activity: a warning appears a minute before, and pressing a key, clicking or scrolling keeps you signed in.` },
         { h: 'Finding your way around' },
         { list: [
-          '**The menu on the left** lists only what your role may use. The button with three lines at the top folds it away.',
+          ...(staff ? ['**The menu on the left** lists only what your role may use, in groups: Service Desk, Service Management, Customers & Sales, Projects & Procurement, Insights. Press a group\'s heading to fold it away or open it again; the menu remembers this on that computer. A folded group shows the total of its counters next to the heading, and the group of the page you are on is always open.',
+            'The button with three lines at the top makes the menu narrow (icons only). On a phone it opens and closes the menu.'] : ['**The menu on the left** lists only what your role may use. The button with three lines at the top folds it away.']),
           '**The search box** at the top finds tickets, requests and more.',
           '**The palette icon** changes the colours (see Colour themes). **The bell** shows what needs your attention. **The ? icon** opens this manual in a new tab.',
           '**Your name** at the top right opens your account, Administration (if you may use it) and Sign out.',
@@ -319,6 +320,48 @@ function sections(user) {
           'The project and tender pages list their contractors and suppliers, the documents for that project or tender and the LPOs raised for it.',
           'A supplier **On hold** or **Inactive** cannot be given new orders.',
           'Procurement and the managers of the register keep it; project and tender managers add contractors to their own project or tender; everyone who works on projects or tenders, and finance, can see it.',
+        ] },
+      ],
+    },
+    {
+      id: 'invoices', title: 'Invoices', who: 'staff', perm: 'invoice.view',
+      intro: 'Invoices to customers, raised by finance from what is due: instalments in a contract\'s payment schedule, accepted quotes, and chargeable time logged on tickets.',
+      blocks: [
+        { steps: [
+          'Open **Invoices** (under Customers & Sales) and press **New invoice**, or start from where it comes from: **Invoice it** next to an instalment on a contract, **Invoice this quote** on an accepted quote, **Invoice it** next to a customer under *Chargeable time not yet invoiced*, or **New invoice** on the customer\'s page.',
+          'Choose the customer and press **Show what can be billed**. Tick the instalments, the quote and the tickets whose time you want to bill. Time is billed in hours, one line per ticket, at the customer\'s hourly rate (on the customer\'s page) or the standard rate (Settings).',
+          'Check the details (currency, VAT, due date, the customer\'s order number, the project) and press **Create the draft**.',
+          'On the draft, change or add lines, and look at the **draft PDF**. Then press **Issue the invoice**: it is dated today, fixed, and its PDF (with the payment details from Settings) is what you send to the customer.',
+          'When the money comes in, **Record a payment** (amount, date, bank, mobile money, cheque…, and the reference). The invoice becomes *Part paid*, then *Paid*.',
+        ] },
+        { list: [
+          'What an invoice bills is marked as billed, so the same instalment or the same time is never offered twice. Contract instalments follow their invoice: *invoiced* when it is issued, *paid* when it is paid.',
+          'The boxes at the top show Drafts, **Outstanding** (owed to us), **Overdue** (past the due date) and what was received this month, per currency; press one to list those invoices. The list downloads as Excel, PDF or CSV.',
+          'To correct an issued invoice, cancel it (a reason is required, because the customer has a copy) and raise a new one; what it billed can then be billed again. An invoice with payments cannot be cancelled; a payment recorded by mistake can be removed.',
+          'The customer\'s page shows what they owe, what is overdue and the chargeable time not yet invoiced. The billing address, TIN and invoice e-mail printed on the invoice are kept there too.',
+          'Finance and administrators raise and issue invoices; service managers, contract managers, management and auditors can read them. Every step is in the invoice\'s history and the audit log.',
+        ] },
+        { tip: 'Set the payment details (bank account, mobile money number), the standard terms, the days until payment is due and the standard hourly rate in **Settings**, Invoices.' },
+      ],
+    },
+    {
+      id: 'budget', title: 'Project budget and actual', who: 'staff', perm: 'project.view',
+      blocks: [
+        { list: [
+          'A project with a budget shows **Budget and actual** on its page: what is **committed** (purchase orders issued or received for the project), what is **spent** (orders closed), the **remaining** budget, and what was **invoiced to the customer** for the project, all before tax.',
+          'The bar turns amber at 90% of the budget and red when the project is over budget. The projects list shows the share used for each project.',
+          'Raise purchase orders and invoices against the project (choose it on the order or the invoice) for them to count. Orders or invoices in another currency are shown apart, not converted.',
+          'Project managers, procurement, finance and management see these figures; engineers on a project do not.',
+        ] },
+      ],
+    },
+    {
+      id: 'supplier-performance', title: 'Supplier performance', who: 'staff', perm: 'lpo.view',
+      blocks: [
+        { list: [
+          'When you mark a purchase order **Received**, rate the quality of what was delivered from 1 (unacceptable) to 5 (excellent) and add a comment. You can rate or change the rating later on the order.',
+          '**Suppliers & Contractors**, **Performance** compares every supplier: orders, deliveries **on time** (received by the deliver-by date), the average days late, orders **late now**, the average quality and the value ordered. Choose the last 90 days, 12 months or all orders, and download it.',
+          'A supplier is marked **Watch** when an order is late now, fewer than 80% of its deliveries were on time, or its average quality is below 3. Each supplier\'s page shows its own figures.',
         ] },
       ],
     },

@@ -29,8 +29,12 @@
       <span class="motif" aria-hidden="true"><i class="sq m1"></i><i class="sq m2"></i><i class="sq m3"></i><i class="sq m4"></i></span>
     </a>
     <nav class="sidenav" aria-label="Main">
-      <% groups.forEach(function (g, gi) { %><% if (gi) { %><hr><% } %>
+      <% groups.forEach(function (g, gi) { var gid = 'navg-' + (g.id || gi); %>
+        <% if (g.title) { %><div class="navgroup<%= g.open ? '' : ' folded' %>" data-navgroup="<%= g.id %>">
+          <button type="button" class="navhead" aria-expanded="<%= g.open ? 'true' : 'false' %>" aria-controls="<%= gid %>"><span><%= g.title %></span><% if (g.badge) { %><span class="badge sum"><%= g.badge %></span><% } %><svg class="ic chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+          <div class="navitems" id="<%= gid %>"><% } else { %><div class="navgroup plain"><div class="navitems"><% } %>
         <% g.forEach(function (it) { %><a href="<%= it.href %>" class="<%= it.on ? 'on' : '' %>" title="<%= it.label %>"<%- it.on ? ' aria-current="page"' : '' %>><svg class="ic"><use href="#i-<%= it.icon %>"/></svg><span><%= it.label %></span><% if (it.badge) { %><span class="badge"><%= it.badge %></span><% } %></a><% }) %>
+        </div></div>
       <% }) %>
     </nav>
     <div class="sidefoot" aria-hidden="true">

@@ -23,11 +23,22 @@
 <section class="card" id="status"><h2>Next step</h2>
 <form method="post" action="/lpo/<%= po.id %>/status" class="rowform"><%- include('../partials/csrf') %>
 <select name="status" aria-label="Next step"><% moves.forEach(function (m) { %><option value="<%= m %>"><%= PO.MOVE_LABELS[m] %></option><% }) %></select>
-<input name="note" maxlength="1000" placeholder="Note (required when cancelling an issued order)"><button class="btn" type="submit">Save</button></form>
+<input name="note" maxlength="1000" placeholder="Note (required when cancelling an issued order)"><button class="btn" type="submit">Save</button>
+<% if (moves.includes('received')) { %><span class="rowform qualityrow"><label for="lq">When received, quality</label><select id="lq" name="quality"><option value="">Not rated</option><% [5,4,3,2,1].forEach(function (n) { %><option value="<%= n %>"><%= n %> <%= QUALITY[n] %></option><% }) %></select>
+<input name="quality_note" maxlength="500" placeholder="Comment on the delivery (optional)" aria-label="Comment on the delivery"></span><% } %></form>
+<% if (moves.includes('received')) { %><p class="muted">The quality rating and whether it arrived by <%= po.delivery_date ? fmt.date(po.delivery_date) : 'the agreed date' %> count in the supplier's performance.</p><% } %>
 <% if (po.status === 'draft') { %><p class="muted">Check the PDF, then issue it: the order is then fixed, dated today, and its PDF is what you send to the supplier. To change an issued order, cancel it and raise a new one.</p><% } %>
 </section>
 <% } %>
 
+<% if (['received','closed'].includes(po.status)) { %>
+<section class="card" id="quality"><h2>Quality of the delivery</h2>
+<% if (po.quality) { %><p><b><%= po.quality %>/5 <%= QUALITY[po.quality] %></b><%= po.quality_note ? ': ' + po.quality_note : '' %></p><% } else { %><p class="muted">Not rated yet.</p><% } %>
+<% if (po.received_at) { %><p class="muted">Received <%= fmt.date(po.received_at) %><%= po.delivery_date ? ', due by ' + fmt.date(po.delivery_date) : '' %>.</p><% } %>
+<% if (canManage) { %><form method="post" action="/lpo/<%= po.id %>/quality" class="rowform"><%- include('../partials/csrf') %><select name="quality" aria-label="Quality" required><option value="">Rate…</option><% [5,4,3,2,1].forEach(function (n) { %><option value="<%= n %>" <%= Number(po.quality) === n ? 'selected' : '' %>><%= n %> <%= QUALITY[n] %></option><% }) %></select>
+<input name="quality_note" maxlength="500" value="<%= po.quality_note || '' %>" placeholder="Comment (optional)" aria-label="Comment"><button class="btn ghost" type="submit"><%= po.quality ? 'Change the rating' : 'Save the rating' %></button></form><% } %>
+</section>
+<% } %>
 <section class="card" id="details"><h2>Details</h2>
 <% if (editable) { %>
 <form method="post" action="/lpo/<%= po.id %>"><%- include('../partials/csrf') %><%- include('../partials/lpo_fields', { form: po }) %><button class="btn ghost" type="submit">Save details</button></form>

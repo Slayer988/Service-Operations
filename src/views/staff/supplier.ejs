@@ -46,6 +46,16 @@
 </section>
 
 <% if (lpos) { %>
+<section class="card" id="performance"><h2>Performance</h2>
+<% if (perf) { %><div class="kpis">
+  <%- include('../partials/kpi', { href: '#lpos', icon: 'clock', label: 'Delivered on time', value: perf.on_time_pct === null ? '—' : perf.on_time_pct + '%', tone: perf.on_time_pct !== null && perf.on_time_pct < SP.WATCH_ON_TIME ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#lpos', icon: 'alert', label: 'Average days late', value: perf.avg_days_late === null ? '—' : String(perf.avg_days_late), small: true }) %>
+  <%- include('../partials/kpi', { href: '/lpo?supplier=' + s.id + '&status=late', icon: 'bell', label: 'Late now', value: String(perf.open_late), tone: perf.open_late ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#lpos', icon: 'check', label: 'Quality (' + perf.rated + ' rated)', value: perf.quality === null ? '—' : perf.quality + ' / 5', small: true, tone: perf.quality !== null && perf.quality < 3 ? 'bad' : '' }) %>
+</div>
+<p class="muted"><%= perf.delivered %> of <%= perf.orders %> issued orders delivered; <%= perf.on_time %> on time. <% if (perf.watch) { %><span class="tag bad">Watch</span> <% } %><a href="/suppliers/performance">Compare all suppliers</a>.</p>
+<% } else { %><p class="empty">No issued orders yet.</p><% } %>
+</section>
 <section class="card" id="lpos"><h2>Purchase orders (LPO tracker)</h2>
 <%- include('../partials/lpo_tracker', { trk: trk, base: '/lpo?supplier=' + s.id + '&', current: '', money: money }) %>
 <% if (lpos.length) { %><table class="grid"><thead><tr><th>LPO</th><th>For</th><th>Project</th><th>Status</th><th class="num">Total</th><th>Date</th><th>Deliver by</th></tr></thead><tbody>

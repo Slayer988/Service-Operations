@@ -20,6 +20,8 @@ const forbidden = (res) => res.status(403).render('error', { title: 'Not allowed
 const notFound = (res) => res.status(404).render('error', { title: 'Not found', message: 'That project does not exist.' });
 const view = [requireStaff, (req, res, next) => (perms.can(req.user, 'project.view') ? next() : forbidden(res))];
 const manage = [requireStaff, (req, res, next) => (perms.can(req.user, 'project.manage') ? next() : forbidden(res))];
+// budget against actual shows order and invoice amounts: for project managers, procurement, finance and management
+const budgetVisible = (user) => ['project.manage', 'lpo.view', 'invoice.view'].some((x) => perms.can(user, x));
 const money = (v, c) => `${c} ${Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 
 async function formData(extra = {}) {
@@ -64,7 +66,9 @@ router.get('/projects', ...view, wrap(async (req, res) => {
     `select count(*) filter (where status in ('planning','active','on_hold'))::int as open, count(*) filter (where status = 'active')::int as active,
             count(*) filter (where status in ('planning','active','on_hold') and health = 'red')::int as red, count(*) filter (where status in ('planning','active','on_hold') and escalated)::int as escalated,
             count(*) filter (where status in ('planning','active','on_hold') and end_date < current_date)::int as late, count(*) filter (where status = 'completed')::int as completed from projects`)).rows[0];
-  res.render('staff/projects', { title: 'Projects', rows, k, f, ...(await formData()), canManage: perms.can(req.user, 'project.manage'), bar: (n) => charts.bar(n), money });
+  const canBudget = budgetVisible(req.user);
+  const budgets = canBudget ? await require('../services/budget').forProjects(db0, rows) : new Map();
+  res.render('staff/projects', { title: 'Projects', rows, k, f, ...(await formData()), canManage: perms.can(req.user, 'project.manage'), bar: (n, c) => charts.bar(n, c), money, canBudget, budgets });
 }));
 
 router.get('/projects/new', ...manage, wrap(async (req, res) => {
@@ -124,7 +128,11 @@ router.get('/projects/:id', ...guarded(null, async (req, res, a) => {
     sw: swView ? await Sup.forEntity(db0, 'project', id) : null, swCanLink: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'project.manage'),
     swCanUpload: perms.can(req.user, 'supplier.manage') || perms.can(req.user, 'lpo.manage'), swCanLpo: perms.can(req.user, 'lpo.manage'),
     swSuppliers: swView ? (await q(`select id, name, kind from suppliers where status <> 'inactive' order by name`)).rows.map((r) => ({ ...r, kind_label: Sup.KINDS[r.kind] })) : [],
-    title: a.p.ref, p: a.p, a, tasks, team, events, opp, contract, progress: PJ.progress(tasks), bar: (n) => charts.bar(n), money, ...fd,
+    budget: budgetVisible(req.user) ? await require('../services/budget').forProject(db0, a.p) : null,
+    budgetLpos: budgetVisible(req.user) ? (await q(`select po.id, po.ref, po.title, po.status, po.currency, po.subtotal, s.name as supplier_name from purchase_orders po join suppliers s on s.id = po.supplier_id
+                                                     where po.project_id = $1 and po.status in ('issued','received','closed') order by po.id`, [id])).rows : [],
+    budgetInvoices: budgetVisible(req.user) ? (await q(`select id, ref, title, status, currency, subtotal from invoices where project_id = $1 and status in ('issued','part_paid','paid') order by id`, [id])).rows : [],
+    title: a.p.ref, p: a.p, a, tasks, team, events, opp, contract, progress: PJ.progress(tasks), bar: (n, c) => charts.bar(n, c), money, ...fd,
     taskStatuses: PJ.TASK_STATUS_LABELS, taskKinds: PJ.TASK_KIND_LABELS, addable: fd.staff.filter((s) => !team.some((m) => m.id === s.id)),
   });
 }));

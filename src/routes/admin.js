@@ -91,7 +91,7 @@ router.post('/admin/users/:id(\\d+)/reset-mfa', requireStaff, requirePerm('user.
 }));
 
 // ---------------------------------------------------------------- settings
-const SETTING_KEYS = ['priority_matrix', 'categories', 'resolution_codes', 'sla_pause_statuses', 'reopen_window_days', 'auto_close_days', 'mfa_required_roles', 'attachment_blocked_ext', 'attachment_max_mb', 'sla_warn_percent', 'email_ack_per_sender_per_hour', 'default_sla_policy', 'default_currency', 'retention_notification_days', 'retention_audit_years', 'retention_ticket_years', 'quote_company', 'quote_tax_rate', 'quote_tax_label', 'quote_validity_days', 'quote_terms', 'guest_requests_enabled', 'login_notice', 'lpo_terms', 'lpo_delivery_address', 'tender_reminder_days', 'contract_types', 'contract_reminder_days', 'contract_expiring_days', 'tender_types', 'tender_require_reviews', 'tender_status_labels', 'pipeline_probabilities', 'pipeline_stage_labels', 'opportunity_categories', 'currencies', 'departments', 'branding_logo_recolor'];
+const SETTING_KEYS = ['priority_matrix', 'categories', 'resolution_codes', 'sla_pause_statuses', 'reopen_window_days', 'auto_close_days', 'mfa_required_roles', 'attachment_blocked_ext', 'attachment_max_mb', 'sla_warn_percent', 'email_ack_per_sender_per_hour', 'default_sla_policy', 'default_currency', 'retention_notification_days', 'retention_audit_years', 'retention_ticket_years', 'quote_company', 'quote_tax_rate', 'quote_tax_label', 'quote_validity_days', 'quote_terms', 'guest_requests_enabled', 'login_notice', 'lpo_terms', 'lpo_delivery_address', 'invoice_terms', 'invoice_due_days', 'invoice_bank_details', 'invoice_hourly_rate', 'tender_reminder_days', 'contract_types', 'contract_reminder_days', 'contract_expiring_days', 'tender_types', 'tender_require_reviews', 'tender_status_labels', 'pipeline_probabilities', 'pipeline_stage_labels', 'opportunity_categories', 'currencies', 'departments', 'branding_logo_recolor'];
 
 router.get('/admin/settings', requireStaff, requirePerm('settings.manage'), wrap(async (req, res) => {
   const s = await settings.getAll({ query: q }, SETTING_KEYS);
@@ -156,6 +156,14 @@ router.post('/admin/settings', requireStaff, requirePerm('settings.manage'), wra
       await set('quote_terms', u.str(b.quote_terms, 4000));
       if (b.lpo_terms !== undefined) await set('lpo_terms', u.str(b.lpo_terms, 4000));
       if (b.lpo_delivery_address !== undefined) await set('lpo_delivery_address', u.str(b.lpo_delivery_address, 500));
+      if (b.invoice_terms !== undefined) await set('invoice_terms', u.str(b.invoice_terms, 4000));
+      if (b.invoice_bank_details !== undefined) await set('invoice_bank_details', u.str(b.invoice_bank_details, 1000));
+      if (b.invoice_due_days !== undefined) await set('invoice_due_days', u.intIn(b.invoice_due_days, 0, 365) ?? 30);
+      if (b.invoice_hourly_rate !== undefined) {
+        const hr = u.money(String(b.invoice_hourly_rate).trim() === '' ? '0' : b.invoice_hourly_rate, 1e12);
+        if (hr === null || Number.isNaN(hr)) throw new tickets.UserError('The hourly rate must be a number (0 or more).');
+        await set('invoice_hourly_rate', hr);
+      }
     }
     const currencies = [...new Set(String(b.currencies || '').split(/[,\s]+/).map((x) => x.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8)).filter(Boolean))];
     const defCur = (u.str(b.default_currency, 8) || 'UGX').toUpperCase();

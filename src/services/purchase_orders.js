@@ -167,13 +167,16 @@ async function setStatus(db, po, to, actor, opts = {}, ip = '') {
     await require('./approvals').assertApproved(db, 'lpo', po.id);
   }
   if (to === 'cancelled' && po.status === 'issued' && !note) throw new UserError('Say why an issued order is cancelled (the supplier has a copy).');
+  // when received: an optional quality rating (1 to 5) for supplier performance
+  const quality = to === 'received' ? u.intIn(opts.quality, 1, 5) : null;
   await db.query(
     `update purchase_orders set status = $2, updated_at = now(),
             issued_at = case when $2 = 'issued' then now() else issued_at end, issued_by = case when $2 = 'issued' then $4 else issued_by end,
             issue_date = case when $2 = 'issued' then current_date else issue_date end,
             received_at = case when $2 = 'received' then now() else received_at end, closed_at = case when $2 in ('closed','cancelled') then now() else closed_at end,
-            decision_note = case when $3 <> '' then $3 else decision_note end where id = $1`, [po.id, to, note, actor.id]);
-  await addEvent(db, po.id, actor, `${actor.name} marked the order ${STATUS_LABELS[to].toLowerCase()}${note ? `: ${note}` : '.'}`);
+            decision_note = case when $3 <> '' then $3 else decision_note end,
+            quality = coalesce($5::smallint, quality), quality_note = case when $5::smallint is not null then $6 else quality_note end where id = $1`, [po.id, to, note, actor.id, quality, u.str(opts.qualityNote, 500)]);
+  await addEvent(db, po.id, actor, `${actor.name} marked the order ${STATUS_LABELS[to].toLowerCase()}${note ? `: ${note}` : '.'}${quality ? ` Quality rated ${quality}/5.` : ''}`);
   await db.query('insert into supplier_events (supplier_id, actor_id, text) values ($1,$2,$3)', [po.supplier_id, actor.id, `${po.ref} ${STATUS_LABELS[to].toLowerCase()} (${po.currency} ${Q.fmtMoney(po.total)})${note ? `: ${note}` : '.'}`]);
   if (po.project_id) await db.query(`insert into project_events (project_id, actor_id, kind, text) values ($1,$2,'lpo',$3)`, [po.project_id, actor.id, `LPO ${po.ref} to ${po.supplier_name} ${STATUS_LABELS[to].toLowerCase()} (${po.currency} ${Q.fmtMoney(po.total)}).`]);
   await audit(db, actor, `lpo_${to}`, 'lpo', po.ref, note || po.title, null, ip);
@@ -244,4 +247,14 @@ async function tracker(db, supplierId) {
   return out;
 }
 
-module.exports = { tracker, STATUSES, STATUS_LABELS, MOVES, MOVE_LABELS, listSettings, readHeader, get, lines, events, defaults, create, updateHeader, saveLines, setStatus, toPdf, addEvent };
+/** Rate (or re-rate) the quality of a received or closed order, 1 to 5. */
+async function rate(db, po, quality, qnote, actor) {
+  if (!['received', 'closed'].includes(po.status)) throw new UserError('Rate an order once it has been received.');
+  const n = u.intIn(quality, 1, 5);
+  if (!n) throw new UserError('Choose a rating from 1 to 5.');
+  await db.query('update purchase_orders set quality = $2, quality_note = $3, updated_at = now() where id = $1', [po.id, n, u.str(qnote, 500)]);
+  await addEvent(db, po.id, actor, `${actor.name} rated the quality ${n}/5${qnote ? `: ${u.str(qnote, 500)}` : '.'}`);
+  await db.query('insert into supplier_events (supplier_id, actor_id, text) values ($1,$2,$3)', [po.supplier_id, actor.id, `${po.ref} quality rated ${n}/5.`]);
+}
+
+module.exports = { rate, tracker, STATUSES, STATUS_LABELS, MOVES, MOVE_LABELS, listSettings, readHeader, get, lines, events, defaults, create, updateHeader, saveLines, setStatus, toPdf, addEvent };

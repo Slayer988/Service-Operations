@@ -10,6 +10,11 @@
 <p><label for="status">Status</label><select id="status" name="status"><option value="active" <%= customer.status === 'active' ? 'selected' : '' %>>Active</option><option value="suspended" <%= customer.status === 'suspended' ? 'selected' : '' %>>Suspended (users cannot sign in; history is kept)</option></select></p></div>
 <p><label for="email_domains">E-mail domains <small class="muted">(one per line, the part after @)</small></label><textarea id="email_domains" name="email_domains" rows="2" placeholder="example.co.ug"><%= (customer.email_domains || []).join('\n') %></textarea>
 <small>People with an address on these domains can raise a request without signing in, by giving this customer's CSID and a code e-mailed to them. Leave empty to switch it off for this customer.</small></p>
+<h3>Billing <small class="muted">(printed on invoices)</small></h3>
+<div class="grid2"><p><label for="tin">TIN</label><input id="tin" name="tin" maxlength="40" value="<%= customer.tin || '' %>"></p>
+<p><label for="billing_email">Invoices go to (e-mail)</label><input id="billing_email" name="billing_email" type="email" maxlength="200" value="<%= customer.billing_email || '' %>"></p>
+<p><label for="hourly_rate">Hourly rate for chargeable time</label><input id="hourly_rate" name="hourly_rate" inputmode="decimal" value="<%= customer.hourly_rate === null || customer.hourly_rate === undefined ? '' : Number(customer.hourly_rate) %>" placeholder="The standard rate (Settings)"><small>Leave empty for the standard rate.</small></p></div>
+<p><label for="billing_address">Billing address</label><textarea id="billing_address" name="billing_address" rows="2" maxlength="500"><%= customer.billing_address || '' %></textarea></p>
 <p><label for="notes">Notes</label><textarea id="notes" name="notes" rows="2"><%= customer.notes %></textarea></p>
 <button class="btn" type="submit">Save</button></form></section>
 <% } %>
@@ -56,6 +61,12 @@
 </section>
 <% } %>
 
+<% if (invoices) { var fb = function (by) { return Object.keys(by).map(function (c) { return c + ' ' + invoices.money(by[c]); }).join(' · ') || '—'; }; %>
+<section class="card" id="invoices"><h2>Invoices</h2>
+<p>Outstanding: <b><%= fb(invoices.sum.open.by) %></b><% if (invoices.sum.overdue.n) { %> · <span class="tag bad">overdue <%= fb(invoices.sum.overdue.by) %></span><% } %><% if (invoices.unbilled) { %> · chargeable time not yet invoiced: <b><%= invoices.show(invoices.unbilled) %></b><% } %></p>
+<% if (invoices.recent.length) { %><ul class="assets"><% invoices.recent.forEach(function (i) { %><li><a href="/invoices/<%= i.id %>"><%= i.ref %></a> <%= i.title %> · <%= i.currency %> <%= invoices.money(i.total) %> <span class="tag <%= i.status === 'draft' ? 'warn' : i.status === 'cancelled' ? 'grey' : i.status === 'paid' ? '' : 'blue' %>"><%= invoices.labels[i.status] %></span></li><% }) %></ul><% } %>
+<p><a href="/invoices?customer=<%= customer.id %>">All of this customer's invoices</a><% if (can('invoice.manage')) { %> · <a href="/invoices/new?customer=<%= customer.id %>">New invoice</a><% } %></p></section>
+<% } %>
 <% if (assetSummary) { %>
 <section class="card" id="assets"><h2>Equipment and licences</h2>
 <% if (assetSummary.total) { %><p><b><%= assetSummary.live %></b> in use or in stock<% if (assetSummary.soon) { %>, <span class="tag warn"><%= assetSummary.soon %> ending within 90 days</span><% } %><% if (assetSummary.lapsed) { %>, <span class="tag bad"><%= assetSummary.lapsed %> out of warranty or expired</span><% } %>.</p>
@@ -100,7 +111,7 @@
 <p><label for="confirm">Type the customer code <b><%= customer.code %></b> to confirm</label><input id="confirm" name="confirm" autocomplete="off" required maxlength="40"></p>
 <button class="btn danger" type="submit" data-confirm="Delete <%= customer.name %> permanently?">Delete customer</button></form>
 <% } else { %>
-<p class="muted">This customer cannot be deleted because it has history: <%= used.tickets %> ticket(s), <%= used.services %> service(s), <%= used.contracts %> contract(s), <%= used.opportunities %> opportunity(ies), <%= used.tenders %> tender(s). Set its status to <b>Suspended</b> instead; history is kept and its users cannot sign in.</p>
+<p class="muted">This customer cannot be deleted because it has history: <%= used.tickets %> ticket(s), <%= used.services %> service(s), <%= used.contracts %> contract(s), <%= used.opportunities %> opportunity(ies), <%= used.tenders %> tender(s), <%= used.invoices %> invoice(s). Set its status to <b>Suspended</b> instead; history is kept and its users cannot sign in.</p>
 <% } %>
 </section>
 <% } %>

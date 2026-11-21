@@ -172,7 +172,7 @@ function createApp() {
         const N = require('./services/notices');
         if (req.user.kind === 'customer') res.locals.serviceNotices = await N.activeFor({ query: q }, req.user.customer_id);
         else if (perms.can(req.user, 'ticket.view')) res.locals.majorIncidents = await N.openIncidents({ query: q });
-        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query }, { verification: alerts.verification || 0, approver, approvals: waiting, incidents: (res.locals.majorIncidents || []).length });
+        res.locals.nav = nav.build(req.user, { path: req.path, query: req.query, folded: nav.foldedFrom(req.headers.cookie) }, { verification: alerts.verification || 0, approver, approvals: waiting, incidents: (res.locals.majorIncidents || []).length });
       }
       next();
     } catch (err) { next(err); }
@@ -203,6 +203,7 @@ function createApp() {
   app.use(require('./routes/changes'));
   app.use(require('./routes/notices'));
   app.use(require('./routes/desk'));
+  app.use(require('./routes/invoices'));
   app.use(require('./routes/mail'));
   app.use(require('./routes/admin'));
   app.use(require('./routes/reports'));

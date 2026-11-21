@@ -331,5 +331,5 @@ function toPdf(quote, rows, s, palette, brand) {
 
 module.exports = {
   STATUSES, STATUS_LABELS, OPEN, MOVES, REVISABLE, MAX_LINES, label, lineTotal, totals, listSettings, readLines, readHeader, get, lines, events, revisions, forOpportunity,
-  defaults, create, updateHeader, saveLines, setStatus, revise, expireDue, toPdf, fmtMoney, addDays,
+  defaults, create, updateHeader, saveLines, setStatus, revise, expireDue, toPdf, fmtMoney, fmtQty, addDays,
 };

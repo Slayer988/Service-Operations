@@ -20,9 +20,25 @@
 
   // Side menu: collapse to icons only / expand. The choice is kept in a cookie so the server renders the right state on every page.
   document.addEventListener('click', function (e) {
+    var h = e.target.closest && e.target.closest('.navhead');
+    if (h) {
+      // fold or unfold a menu group, and remember the folded groups for a year
+      var g = h.closest('.navgroup'); var folded = !g.classList.contains('folded');
+      g.classList.toggle('folded', folded); h.setAttribute('aria-expanded', folded ? 'false' : 'true');
+      var ids = [].slice.call(document.querySelectorAll('.navgroup.folded[data-navgroup]')).map(function (x) { return x.getAttribute('data-navgroup'); });
+      document.cookie = 'itsm.navg=' + ids.join('.') + '; path=/; max-age=31536000; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+      return;
+    }
     var b = e.target.closest && e.target.closest('[data-nav-toggle]');
     if (!b) return;
     var root = document.documentElement;
+    if (window.matchMedia && window.matchMedia('(max-width:900px)').matches) {
+      // on a phone the button opens and closes the menu (nothing is remembered)
+      var open = !root.hasAttribute('data-navopen');
+      if (open) root.setAttribute('data-navopen', ''); else root.removeAttribute('data-navopen');
+      b.setAttribute('aria-expanded', open ? 'true' : 'false');
+      return;
+    }
     var collapsed = root.getAttribute('data-nav') !== 'collapsed';
     if (collapsed) root.setAttribute('data-nav', 'collapsed'); else root.removeAttribute('data-nav');
     b.setAttribute('aria-expanded', collapsed ? 'false' : 'true');

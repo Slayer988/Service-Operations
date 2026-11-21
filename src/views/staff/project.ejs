@@ -2,7 +2,7 @@
 <p><a href="/projects">← Projects</a></p>
 <h1><%= p.name %> <span class="pill ps-<%= p.status %>"><%= statusLabels[p.status] %></span> <span class="health h-<%= p.health %>"><%= healthLabels[p.health] %></span><% if (p.escalated) { %> <span class="pill hot">Escalated</span><% } %></h1>
 <p class="muted"><%= p.ref %> · <%= p.customer_name || 'Internal project' %> · Manager <%= p.manager_name %><%= p.start_date ? ' · ' + fmt.date(p.start_date) + ' to ' + (p.end_date ? fmt.date(p.end_date) : 'open') : '' %></p>
-<p class="jump"><a href="#details">Details</a> · <a href="#tasks">Tasks and milestones</a> · <a href="#team">Team</a> · <a href="#activity">Activity</a></p>
+<p class="jump"><a href="#details">Details</a> · <% if (budget) { %><a href="#budget-actual">Budget and actual</a> · <% } %><a href="#tasks">Tasks and milestones</a> · <a href="#team">Team</a> · <a href="#activity">Activity</a></p>
 <div class="kpis">
   <%- include('../partials/kpi', { href: '#tasks', icon: 'clipboard', label: 'Progress', value: progress === null ? '–' : progress + '%' }) %>
   <%- include('../partials/kpi', { href: '#tasks', icon: 'check', label: 'Tasks done', value: tasks.filter(function (t) { return t.status === 'done'; }).length + ' / ' + tasks.filter(function (t) { return t.status !== 'cancelled'; }).length, small: true }) %>
@@ -35,6 +35,28 @@
 <% } else { %><span class="muted">Escalated: <%= p.escalation_note %></span><button class="btn ghost" type="submit">Clear escalation</button><% } %></form></section>
 <% } %>
 
+<% if (budget) { var m = function (v) { return money(v, p.currency); }; %>
+<section class="card" id="budget-actual"><h2>Budget and actual <small class="muted">(before tax, <%= p.currency %>)</small></h2>
+<% if (budget.budget === null) { %><p class="muted">No budget is set. Enter one in the details to compare it with what is spent.</p><% } else { %>
+<div class="budgetbar<%= ' b-' + budget.state %>"><%- bar(Math.min(100, budget.pct), budget.state === 'over' ? 'bad' : budget.state === 'warn' ? 'warn' : 'ok') %><span><b><%= budget.pct %>%</b> of the budget used<%= budget.state === 'over' ? ': over budget by ' + m(-budget.remaining) : budget.state === 'warn' ? ': nearly all used' : '' %></span></div>
+<% } %>
+<table class="kv budget"><tbody>
+<tr><th>Budget</th><td class="num"><%= budget.budget === null ? '—' : m(budget.budget) %></td></tr>
+<tr><th>Committed <small class="muted">(orders issued or received, not yet closed)</small></th><td class="num"><%= m(budget.committed) %></td></tr>
+<tr><th>Spent <small class="muted">(orders closed)</small></th><td class="num"><%= m(budget.spent) %></td></tr>
+<tr class="strong"><th>Actual cost</th><td class="num"><%= m(budget.actual) %></td></tr>
+<% if (budget.remaining !== null) { %><tr><th>Remaining</th><td class="num <%= budget.remaining < 0 ? 'bad' : '' %>"><%= m(budget.remaining) %></td></tr><% } %>
+<tr><th>Invoiced to the customer</th><td class="num"><%= m(budget.billed) %><%= budget.paid ? ' (' + m(budget.paid) + ' received)' : '' %></td></tr>
+<% if (budget.margin !== null) { %><tr class="strong"><th>Invoiced less actual cost</th><td class="num <%= budget.margin < 0 ? 'bad' : '' %>"><%= m(budget.margin) %></td></tr><% } %>
+</tbody></table>
+<% Object.keys(budget.other).forEach(function (c) { %><p class="muted">In <%= c %> (not converted, not counted above): orders <%= money(budget.other[c].cost, c) %>, invoiced <%= money(budget.other[c].billed, c) %>.</p><% }) %>
+<% if (budgetLpos.length || budgetInvoices.length) { %><details><summary>The orders and invoices counted</summary><ul class="assets">
+<% budgetLpos.forEach(function (o) { %><li><a href="/lpo/<%= o.id %>"><%= o.ref %></a> <%= o.supplier_name %>: <%= o.title %> · <%= money(o.subtotal, o.currency) %> <span class="tag grey"><%= o.status %></span></li><% }) %>
+<% budgetInvoices.forEach(function (i) { %><li><a href="/invoices/<%= i.id %>"><%= i.ref %></a> invoice: <%= i.title %> · <%= money(i.subtotal, i.currency) %> <span class="tag blue"><%= i.status.replace('_', ' ') %></span></li><% }) %>
+</ul></details><% } %>
+<p class="muted">Raise purchase orders and invoices against this project to count them here. Drafts and cancelled ones are not counted.</p>
+</section>
+<% } %>
 <section class="card" id="tasks"><h2>Tasks and milestones</h2>
 <% if (progress !== null) { %><%- bar(progress) %><% } %>
 <% if (tasks.length) { %><table class="grid"><thead><tr><th>Item</th><th>Owner</th><th>Due</th><th>Status</th><% if (a.work) { %><th></th><% } %></tr></thead><tbody>

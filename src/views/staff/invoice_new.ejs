@@ -1,0 +1,43 @@
+<%- include('../partials/header') %>
+<% var has = function (list, id) { return (list || []).indexOf(String(id)) >= 0; }; %>
+<p><a href="/invoices">← Invoices</a></p>
+<h1>New invoice</h1>
+<% if (error) { %><p class="error"><%= error %></p><% } %>
+<section class="card"><h2>1. Customer</h2>
+<form method="get" action="/invoices/new" class="filters wide">
+<select name="customer" aria-label="Customer" required><option value="">Choose the customer…</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= customer && String(customer.id) === String(c.id) ? 'selected' : '' %>><%= c.name %> (<%= c.code %>)</option><% }) %></select>
+<label class="inline" for="upto">Billable up to</label><input id="upto" type="date" name="upto" value="<%= upto %>">
+<button class="btn ghost" type="submit">Show what can be billed</button></form>
+<% if (customer && !customer.billing_address && !customer.tin) { %><p class="muted">This customer has no billing address or TIN yet. <a href="/customers/<%= customer.id %>">Add them on the customer's page</a> so they are printed on the invoice.</p><% } %>
+</section>
+<% if (customer) { %>
+<form method="post" action="/invoices"><%- include('../partials/csrf') %>
+<input type="hidden" name="customer_id" value="<%= customer.id %>"><input type="hidden" name="upto" value="<%= upto %>">
+<section class="card" id="billable"><h2>2. What to bill <small class="muted">(optional: you can also type the lines yourself)</small></h2>
+<h3>Contract instalments</h3>
+<% if (avail.instalments.length) { %><table class="grid picks"><thead><tr><th></th><th>Contract</th><th>Instalment</th><th>Due</th><th class="num">Amount</th></tr></thead><tbody>
+<% avail.instalments.forEach(function (r) { %><tr><td><input type="checkbox" name="instalment" value="<%= r.id %>" id="ins<%= r.id %>" <%= has(picked.instalments, r.id) ? 'checked' : '' %>></td>
+<td><label for="ins<%= r.id %>"><%= r.contract_ref %></label> <small class="muted"><%= r.contract_title %></small></td><td><%= r.description || '—' %></td>
+<td><%= fmt.date(r.due_date) %><% if (!r.due) { %> <span class="tag grey">not yet due</span><% } %></td><td class="num"><%= r.currency %> <%= money(r.amount) %></td></tr><% }) %></tbody></table>
+<% } else { %><p class="empty">No instalments waiting. A contract's payment schedule is kept on the contract page.</p><% } %>
+<h3>Accepted quote</h3>
+<% if (avail.quotes.length) { %><table class="grid picks"><thead><tr><th></th><th>Quote</th><th>For</th><th class="num">Total</th></tr></thead><tbody>
+<tr><td><input type="radio" name="quote" value="" id="qnone" <%= !picked.quote ? 'checked' : '' %>></td><td colspan="3"><label for="qnone">None</label></td></tr>
+<% avail.quotes.forEach(function (r) { %><tr><td><input type="radio" name="quote" value="<%= r.id %>" id="q<%= r.id %>" <%= String(picked.quote) === String(r.id) ? 'checked' : '' %>></td>
+<td><label for="q<%= r.id %>"><%= r.ref %><%= r.revision > 1 ? ' R' + r.revision : '' %></label></td><td><%= r.title %></td><td class="num"><%= r.currency %> <%= money(r.total) %></td></tr><% }) %></tbody></table>
+<p class="muted">The quote's lines and tax are copied onto the invoice.</p>
+<% } else { %><p class="empty">No accepted quotes waiting to be invoiced.</p><% } %>
+<h3>Chargeable time <small class="muted">(logged up to <%= fmt.date(upto) %>, at <%= customer.hourly_rate !== null && customer.hourly_rate !== undefined ? money(customer.hourly_rate) + ' an hour (this customer\'s rate)' : money(settings.hourlyRate) + ' an hour (the standard rate)' %>, <%= settings.defaultCurrency %>)</small></h3>
+<% if (avail.time.length) { %><table class="grid picks"><thead><tr><th><input type="checkbox" data-check-all="tpick" aria-label="All tickets"></th><th>Ticket</th><th>Subject</th><th>Logged</th><th class="num">Time</th></tr></thead><tbody>
+<% avail.time.forEach(function (r) { %><tr><td><input type="checkbox" class="tpick" name="ticket" value="<%= r.id %>" id="t<%= r.id %>" <%= has(picked.tickets, r.id) ? 'checked' : '' %>></td>
+<td><label for="t<%= r.id %>"><%= r.ref %></label></td><td><%= r.subject %></td><td><%= fmt.date(r.first_day) %><%= String(r.first_day) !== String(r.last_day) ? ' to ' + fmt.date(r.last_day) : '' %></td><td class="num"><%= showTime(r.minutes) %></td></tr><% }) %></tbody></table>
+<p class="muted">One line per ticket, in hours. Time on tickets marked non-chargeable is never offered.</p>
+<% } else { %><p class="empty">No chargeable time waiting to be invoiced.</p><% } %>
+</section>
+<section class="card"><h2>3. Invoice details</h2>
+<%- include('../partials/invoice_fields', { form: form }) %>
+<p class="muted">It is saved as a draft. You can change the lines on the next page, check the PDF, then issue it.</p>
+<button class="btn" type="submit">Create the draft</button> <a class="btn ghost" href="/invoices">Cancel</a></section>
+</form>
+<% } %>
+<%- include('../partials/footer') %>

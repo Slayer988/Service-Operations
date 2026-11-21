@@ -1,0 +1,104 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'cancelled' ? 'grey' : (s === 'draft' ? 'warn' : (s === 'paid' ? '' : 'blue')); };
+   var open = ['issued', 'part_paid'].includes(inv.status); var overdue = open && inv.due_date && String(inv.due_date instanceof Date ? inv.due_date.toISOString() : inv.due_date).slice(0, 10) < today; %>
+<p><a href="/invoices">← Invoices</a> · <a href="/customers/<%= inv.customer_id %>">← <%= inv.customer_name %></a><% if (inv.project_id) { %> · <a href="/projects/<%= inv.project_id %>">← Project <%= inv.project_ref %></a><% } %></p>
+<div class="head"><h1><%= inv.ref %> <span class="tag <%= tone(inv.status) %>"><%= INV.STATUS_LABELS[inv.status] %></span><% if (overdue) { %> <span class="tag bad">overdue</span><% } %></h1>
+<a class="btn" href="/invoices/<%= inv.id %>/pdf"><%= inv.status === 'draft' ? 'Download draft PDF' : 'Download PDF' %></a></div>
+<p class="muted"><%= inv.title %> · to <a href="/customers/<%= inv.customer_id %>"><%= inv.customer_name %></a> · raised by <%= inv.owner_name %><%= inv.issued_at ? ' · issued ' + fmt.date(inv.issued_at) + ' by ' + (inv.issued_by_name || '') : '' %></p>
+<div class="kpis">
+  <%- include('../partials/kpi', { href: '#lines', icon: 'dollar', label: 'Total (with ' + inv.tax_label + ')', value: inv.currency + ' ' + money(inv.total), small: true }) %>
+  <%- include('../partials/kpi', { href: '#payments', icon: 'check', label: 'Paid', value: inv.currency + ' ' + money(inv.paid_total), small: true }) %>
+  <%- include('../partials/kpi', { href: '#payments', icon: 'receipt', label: 'Balance', value: inv.status === 'cancelled' ? '—' : inv.currency + ' ' + money(inv.balance), small: true, tone: overdue ? 'bad' : '' }) %>
+  <%- include('../partials/kpi', { href: '#details', icon: 'clock', label: 'Due', value: inv.due_date ? fmt.date(inv.due_date) : 'On receipt', small: true }) %>
+</div>
+<% if (inv.contract_id || inv.quote_id || inv.project_id) { %><p class="against">Against:
+<% if (inv.contract_id) { %><span>contract <a href="/contracts/<%= inv.contract_id %>"><%= inv.contract_ref %></a></span><% } %>
+<% if (inv.quote_id) { %><span>our quote <a href="/quotes/<%= inv.quote_id %>"><%= inv.quote_ref %><%= inv.quote_revision > 1 ? ' R' + inv.quote_revision : '' %></a></span><% } %>
+<% if (inv.project_id) { %><span>project <a href="/projects/<%= inv.project_id %>"><%= inv.project_ref %></a> <%= inv.project_name %></span><% } %></p><% } %>
+<% if (inv.status === 'cancelled') { %><p class="banner">Cancelled<%= inv.decision_note ? ': ' + inv.decision_note : '.' %></p><% } %>
+
+<% if (canManage && inv.status === 'draft') { %>
+<section class="card" id="status"><h2>Next step</h2>
+<p class="muted">Check the lines and the PDF, then issue it: it is then fixed and dated today, and its PDF is what you send to the customer<%= inv.billing_email ? ' (' + inv.billing_email + ')' : '' %>.</p>
+<div class="rowform"><form method="post" action="/invoices/<%= inv.id %>/issue" class="inline" data-confirm="Issue <%= inv.ref %> for <%= inv.currency %> <%= money(inv.total) %>? It can no longer be changed."><%- include('../partials/csrf') %><button class="btn" type="submit">Issue the invoice</button></form>
+<form method="post" action="/invoices/<%= inv.id %>/cancel" class="inline" data-confirm="Cancel this draft? What it billed can be billed again."><%- include('../partials/csrf') %><button class="btn ghost danger" type="submit">Cancel the draft</button></form></div>
+</section>
+<% } %>
+
+<% if (canManage && open) { %>
+<section class="card" id="payments-add"><h2>Record a payment</h2>
+<form method="post" action="/invoices/<%= inv.id %>/payments"><%- include('../partials/csrf') %>
+<div class="grid2"><p><label for="pa_amt">Amount (<%= inv.currency %>)</label><input id="pa_amt" name="amount" inputmode="decimal" required value="<%= Number(inv.balance) %>"></p>
+<p><label for="pa_day">Received on</label><input id="pa_day" name="paid_on" type="date" value="<%= today %>" max="<%= today %>" required></p>
+<p><label for="pa_m">How</label><select id="pa_m" name="method"><% Object.keys(INV.METHODS).forEach(function (k) { %><option value="<%= k %>"><%= INV.METHODS[k] %></option><% }) %></select></p>
+<p><label for="pa_ref">Reference</label><input id="pa_ref" name="reference" maxlength="120" placeholder="Bank or transaction reference"></p>
+<p class="wide"><label for="pa_note">Note</label><input id="pa_note" name="note" maxlength="500"></p></div>
+<button class="btn" type="submit">Record the payment</button></form>
+</section>
+<% } %>
+
+<section class="card" id="details"><h2>Details</h2>
+<% if (editable) { %>
+<form method="post" action="/invoices/<%= inv.id %>"><%- include('../partials/csrf') %><%- include('../partials/invoice_fields', { form: inv }) %><button class="btn ghost" type="submit">Save details</button></form>
+<% } else { %>
+<table class="kv"><tbody>
+<tr><th>Invoice date</th><td><%= fmt.date(inv.issue_date) %></td></tr><tr><th>Due</th><td><%= inv.due_date ? fmt.date(inv.due_date) : 'On receipt' %></td></tr>
+<% if (inv.period_from || inv.period_to) { %><tr><th>Period</th><td><%= inv.period_from ? fmt.date(inv.period_from) : '…' %> to <%= inv.period_to ? fmt.date(inv.period_to) : '…' %></td></tr><% } %>
+<% if (inv.customer_ref) { %><tr><th>Customer's order number</th><td><%= inv.customer_ref %></td></tr><% } %>
+<tr><th>Payment terms</th><td><%= inv.payment_terms || '—' %></td></tr><tr><th>Currency and tax</th><td><%= inv.currency %> · <%= inv.tax_label %> <%= Number(inv.tax_rate) %>%</td></tr>
+<% if (inv.terms) { %><tr><th>Terms</th><td class="desc"><%= inv.terms %></td></tr><% } %>
+<% if (inv.internal_notes) { %><tr><th>Internal notes</th><td class="desc"><%= inv.internal_notes %></td></tr><% } %>
+</tbody></table>
+<% if (canManage && inv.status === 'issued') { %>
+<form method="post" action="/invoices/<%= inv.id %>/cancel" class="rowform"><%- include('../partials/csrf') %><input name="note" maxlength="1000" required placeholder="Why it is cancelled (required)" aria-label="Why it is cancelled"><button class="btn ghost danger" type="submit">Cancel the invoice</button></form>
+<p class="muted">Cancel an issued invoice only if the customer is told; what it billed can then be billed again on a new invoice.</p>
+<% } %>
+<% } %>
+</section>
+
+<section class="card" id="lines"><h2>Lines</h2>
+<% if (editable) { %>
+<form method="post" action="/invoices/<%= inv.id %>/lines" data-quote-lines data-tax-rate="<%= Number(inv.tax_rate) %>"><%- include('../partials/csrf') %>
+<datalist id="catalogue-names"><% catalogue.forEach(function (n) { %><option value="<%= n %>"><% }) %></datalist>
+<table class="grid lines"><thead><tr><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price (<%= inv.currency %>)</th><th class="num">Disc. %</th><th class="num">Amount</th></tr></thead><tbody>
+<% lines.concat(Array.apply(null, Array(blankRows)).map(function () { return null; })).forEach(function (l) { %>
+<tr><td><input name="description" maxlength="1000" list="catalogue-names" value="<%= l ? l.description : '' %>" aria-label="Description"></td>
+<td><input class="num" name="quantity" inputmode="decimal" value="<%= l ? Number(l.quantity) : '' %>" aria-label="Quantity" placeholder="1"></td>
+<td><input class="num" name="unit" maxlength="40" value="<%= l ? l.unit : '' %>" aria-label="Unit" placeholder="each"></td>
+<td><input class="num" name="unit_price" inputmode="decimal" value="<%= l ? Number(l.unit_price) : '' %>" aria-label="Unit price"></td>
+<td><input class="num" name="discount_pct" inputmode="decimal" value="<%= l && Number(l.discount_pct) ? Number(l.discount_pct) : '' %>" aria-label="Discount percent"></td>
+<td class="num" data-amount><%= l ? money(l.line_total) : '' %></td></tr><% }) %></tbody></table>
+<p class="muted">Empty rows are ignored; clear a description to remove that line. Save to get more empty rows.</p>
+<table class="totals"><tbody><tr><th>Subtotal</th><td class="num" data-subtotal><%= money(inv.subtotal) %></td></tr>
+<tr><th><%= inv.tax_label %> <%= Number(inv.tax_rate) %>%</th><td class="num" data-tax><%= money(inv.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= inv.currency %>)</th><td class="num" data-total><%= money(inv.total) %></td></tr></tbody></table>
+<button class="btn" type="submit">Save lines</button></form>
+<% } else { %>
+<% if (lines.length) { %><table class="grid"><thead><tr><th>#</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price</th><th class="num">Disc. %</th><th class="num">Amount (<%= inv.currency %>)</th></tr></thead><tbody>
+<% lines.forEach(function (l, i) { %><tr><td><%= i + 1 %></td><td><%= l.description %></td><td class="num"><%= Number(l.quantity) %></td><td><%= l.unit %></td><td class="num"><%= money(l.unit_price) %></td><td class="num"><%= Number(l.discount_pct) ? Number(l.discount_pct) : '' %></td><td class="num"><%= money(l.line_total) %></td></tr><% }) %>
+</tbody></table><% } else { %><p class="empty">No lines.</p><% } %>
+<table class="totals"><tbody><% if (Number(inv.discount_total) > 0) { %><tr><th>Discounts</th><td class="num">- <%= money(inv.discount_total) %></td></tr><% } %>
+<tr><th>Subtotal</th><td class="num"><%= money(inv.subtotal) %></td></tr><tr><th><%= inv.tax_label %> <%= Number(inv.tax_rate) %>%</th><td class="num"><%= money(inv.tax_total) %></td></tr>
+<tr class="strong"><th>Total (<%= inv.currency %>)</th><td class="num"><%= money(inv.total) %></td></tr>
+<% if (Number(inv.paid_total) > 0) { %><tr><th>Paid</th><td class="num">- <%= money(inv.paid_total) %></td></tr><tr class="strong"><th>Balance</th><td class="num"><%= money(inv.balance) %></td></tr><% } %></tbody></table>
+<% } %>
+</section>
+
+<% if (billed.instalments.length || billed.time.length) { %>
+<section class="card" id="billed"><h2>What this invoice bills</h2>
+<% if (billed.instalments.length) { %><h3>Contract instalments</h3><ul class="assets"><% billed.instalments.forEach(function (b) { %><li><a href="/contracts/<%= b.contract_id %>"><%= b.contract_ref %></a> <%= b.description || 'instalment' %>, due <%= fmt.date(b.due_date) %>: <%= money(b.amount) %> <span class="tag <%= b.status === 'paid' ? '' : 'grey' %>"><%= b.status %></span></li><% }) %></ul><% } %>
+<% if (billed.time.length) { %><h3>Time on tickets</h3><ul class="assets"><% billed.time.forEach(function (b) { %><li><a href="/tickets/<%= b.ref %>#time"><%= b.ref %></a> <%= b.subject %>: <%= showTime(b.minutes) %> (<%= b.entries %> <%= b.entries === 1 ? 'entry' : 'entries' %>)</li><% }) %></ul><% } %>
+<p class="muted">These are marked as billed, so they are not offered on another invoice. Cancelling this invoice releases them.</p>
+</section>
+<% } %>
+
+<section class="card" id="payments"><h2>Payments</h2>
+<% if (pays.length) { %><table class="grid"><thead><tr><th>Received</th><th>How</th><th>Reference</th><th class="num">Amount (<%= inv.currency %>)</th><th>Recorded by</th><% if (canManage) { %><th></th><% } %></tr></thead><tbody>
+<% pays.forEach(function (p) { %><tr><td><%= fmt.date(p.paid_on) %></td><td><%= INV.METHODS[p.method] %></td><td><%= p.reference || '—' %><% if (p.note) { %><br><small class="muted"><%= p.note %></small><% } %></td><td class="num"><%= money(p.amount) %></td><td><%= p.recorded_by_name || '' %></td>
+<% if (canManage) { %><td><form method="post" action="/invoices/<%= inv.id %>/payments/<%= p.id %>/delete" class="inline"><%- include('../partials/csrf') %><button class="link" type="submit" data-confirm="Remove this payment? Only do this if it was recorded by mistake.">Remove</button></form></td><% } %></tr><% }) %>
+</tbody></table><% } else { %><p class="empty">No payments recorded.</p><% } %>
+</section>
+
+<section class="card" id="history"><h2>History</h2>
+<ul class="timeline"><% events.forEach(function (e) { %><li><time><%= fmt.dt(e.at) %></time> <%= e.text %></li><% }) %></ul></section>
+<%- include('../partials/footer') %>

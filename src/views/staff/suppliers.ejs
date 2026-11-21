@@ -1,6 +1,6 @@
 <%- include('../partials/header') %>
 <div class="head"><h1>Suppliers & Contractors</h1><% if (canManage) { %><a class="btn" href="/suppliers/new">Add a supplier or contractor</a><% } %></div>
-<%- include('../partials/procurement_tabs', { tab: 'register' }) %>
+<%- include('../partials/procurement_tabs', { tab: 'register', canLpoView: canLpoView }) %>
 <form method="get" class="filters wide">
   <input type="search" name="q" value="<%= f.q %>" placeholder="Name, code, services, contact or TIN" aria-label="Search the register">
   <select name="kind" aria-label="Type"><option value="">All types</option><% Object.keys(Sup.KINDS).forEach(function (k) { %><option value="<%= k %>" <%= f.kind === k ? 'selected' : '' %>><%= Sup.KINDS[k] %></option><% }) %></select>

@@ -2446,9 +2446,160 @@ test('1.26.0 time, reply templates, automation rules and one-click ratings throu
   assert.equal((await anon.get(`/rate/${m[1]}/${'x'.repeat(32)}`)).status, 404, 'a forged link is refused');
   assert.equal((await anon.get(`/rate/${t.ref}/${m[2]}`)).status, 404, 'and cannot be used for another ticket');
   // the reports: satisfaction per engineer, time per customer
-  const today = new Date().toISOString().slice(0, 10);
+  // tomorrow in UTC: the reports count days in the application time zone, which can already be tomorrow
+  const today = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   const r1 = await mgr.get(`/reports/satisfaction_people?from=2020-01-01&to=${today}`);
-  assert.equal(r1.status, 200); assert.ok(r1.text.includes('Engineer') && r1.text.includes('From the e-mail link'));
+  assert.equal(r1.status, 200); assert.ok(r1.text.includes('>Engineer<') || r1.text.includes('Engineer'), 'the engineer who handled the rated ticket'); assert.ok(r1.text.includes('From the e-mail link'));
   const r2 = await mgr.get(`/reports/time_customers?from=2020-01-01&to=${today}`);
   assert.equal(r2.status, 200); assert.ok(r2.text.includes('Alpha Bank') && r2.text.includes('Chargeable hours'));
+});
+
+test('1.27.0 invoices from contract instalments, an accepted quote and chargeable time; payments; budget against actual; supplier performance; menu groups', async () => {
+  const { A } = ctx;
+  const finU = await mkUser('fin27@t.local', 'Fin 27', 'staff', 'finance');
+  const procU = await mkUser('proc27@t.local', 'Proc 27', 'staff', 'procurement');
+  const fin = new Client(); await fin.login(finU.email);
+  const mgr = new Client(); await mgr.login(ctx.manager.email);
+  const eng = new Client(); await eng.login(ctx.eng.email);
+  const proc = new Client(); await proc.login(procU.email);
+
+  // billing details and the customer's own hourly rate (set by those who manage customers)
+  const cust = (await q('select * from customers where id = $1', [A.c.id])).rows[0];
+  let r = await mgr.post(`/customers/${A.c.id}`, { name: cust.name, status: 'active', industry: cust.industry, email_domains: (cust.email_domains || []).join('\n'), notes: cust.notes,
+    tin: '1000123456', billing_email: 'accounts@alpha.test', billing_address: 'Plot 1, Kampala Road', hourly_rate: '100000' });
+  assert.equal(r.status, 302);
+  assert.equal(Number((await q('select hourly_rate from customers where id = $1', [A.c.id])).rows[0].hourly_rate), 100000);
+
+  // what can be billed: an instalment due, one not yet due, an accepted quote, chargeable time (and time that is not chargeable)
+  const ct = (await q(`insert into contracts (customer_id, title, type, start_date, end_date, created_by, status, currency) values ($1, 'Managed LAN 27', 'SLA', current_date - 60, current_date + 300, $2, 'active', 'UGX') returning id, reference`, [A.c.id, ctx.manager.id])).rows[0];
+  const due = (await q(`insert into contract_payments (contract_id, due_date, description, amount) values ($1, current_date - 5, 'Q4 instalment', 3000000) returning id`, [ct.id])).rows[0];
+  const later = (await q(`insert into contract_payments (contract_id, due_date, description, amount) values ($1, current_date + 85, 'Q1 instalment', 3000000) returning id`, [ct.id])).rows[0];
+  const qu = (await q(`insert into quotes (ref, customer_id, title, currency, status, owner_id, tax_rate, subtotal, tax_total, total) values ('QUO-T27001', $1, 'Two access points', 'UGX', 'accepted', $2, 18, 2000000, 360000, 2360000) returning id`, [A.c.id, ctx.manager.id])).rows[0];
+  await q(`insert into quote_lines (quote_id, position, description, quantity, unit, unit_price, line_total) values ($1, 1, 'Access point', 2, 'each', 900000, 1800000), ($1, 2, 'Installation', 1, 'job', 200000, 200000)`, [qu.id]);
+  const t = await mk({ customerId: A.c.id, csidId: A.cs.id, serviceId: A.sv.id, subject: 'Billable switch work 27', description: 'x', requester: ctx.aUser, impact: 3, urgency: 3, source: 'agent' });
+  await q(`insert into ticket_time (ticket_id, user_id, work_date, minutes, billable, note) values ($1, $2, current_date - 2, 90, true, 'site'), ($1, $2, current_date - 1, 45, true, 'remote'), ($1, $2, current_date - 1, 30, false, 'courtesy')`, [t.id, ctx.eng.id]);
+
+  // who may see and raise invoices
+  assert.notEqual((await eng.get('/invoices')).status, 200, 'engineers do not see invoices');
+  assert.equal((await mgr.get('/invoices')).status, 200, 'service managers see them');
+  assert.equal((await mgr.post('/invoices', { customer_id: String(A.c.id), currency: 'UGX', title: 'x' })).status, 403, 'only finance raises them');
+  let page = (await fin.get(`/invoices/new?customer=${A.c.id}`)).text;
+  assert.ok(page.includes(ct.reference) && page.includes('Q4 instalment') && page.includes('not yet due') && page.includes('QUO-T27001') && page.includes(t.ref));
+  assert.match(page, /100,000.00 an hour \(this customer(&#39;|')s rate\)/, 'the customer rate is used');
+  assert.ok((await fin.get('/invoices')).text.includes('Chargeable time not yet invoiced'));
+
+  // a quote in another currency is refused
+  r = await fin.post('/invoices', { customer_id: String(A.c.id), currency: 'USD', quote: String(qu.id), title: '', tax_rate: '18', tax_label: 'VAT' });
+  assert.equal(r.status, 400, r.text.match(/class="error"[^<]*<[^>]*>?[^<]*/) ? r.text.match(/class="error"[^<]*/)[0] : ''); assert.match(r.text, /is in UGX; this invoice is in USD/, (r.text.match(/<p class="error">([^<]*)/) || [])[1]);
+
+  // invoice 1: the instalment that is due and the chargeable time
+  r = await fin.post('/invoices', { customer_id: String(A.c.id), currency: 'UGX', instalment: String(due.id), ticket: String(t.id), title: '', tax_rate: '18', tax_label: 'VAT', issue_date: '', due_date: '' });
+  assert.equal(r.status, 302);
+  const inv1 = (await q(`select * from invoices where customer_id = $1 order by id desc limit 1`, [A.c.id])).rows[0];
+  const l1 = (await q('select description, quantity, unit_price, line_total from invoice_lines where invoice_id = $1 order by position', [inv1.id])).rows;
+  assert.equal(l1.length, 2);
+  assert.match(l1[0].description, /Q4 instalment/); assert.equal(Number(l1[0].line_total), 3000000);
+  assert.match(l1[1].description, new RegExp(t.ref)); assert.equal(Number(l1[1].quantity), 2.25, '135 chargeable minutes = 2.25 hours (the 30 courtesy minutes are not billed)'); assert.equal(Number(l1[1].unit_price), 100000);
+  assert.equal(Number(inv1.subtotal), 3225000); assert.equal(Number(inv1.total), 3805500, '18% VAT');
+  assert.equal(Number((await q('select invoice_id from contract_payments where id = $1', [due.id])).rows[0].invoice_id), Number(inv1.id));
+  assert.equal((await q('select count(*)::int as n from ticket_time where ticket_id = $1 and invoice_id = $2', [t.id, inv1.id])).rows[0].n, 2);
+  page = (await fin.get(`/invoices/new?customer=${A.c.id}`)).text;
+  assert.ok(!page.includes('Q4 instalment') && !page.includes(t.ref), 'billed items are not offered again');
+  r = await fin.post('/invoices', { customer_id: String(A.c.id), currency: 'UGX', instalment: String(due.id), tax_rate: '18' });
+  assert.equal(r.status, 400, 'and cannot be billed twice');
+  assert.ok([400, 403].includes((await fin.post(`/contracts/${ct.id}/payments/${due.id}`, { status: 'paid' })).status));
+  assert.equal((await q('select status from contract_payments where id = $1', [due.id])).rows[0].status, 'scheduled', 'an invoiced instalment follows its invoice, not a manual change');
+
+  // the draft can be edited; issue it; it is then fixed
+  r = await fin.post(`/invoices/${inv1.id}/lines`, { description: [l1[0].description, l1[1].description, 'Travel'], quantity: ['1', '2.25', '1'], unit: ['instalment', 'hour', 'trip'], unit_price: ['3000000', '100000', '50000'], discount_pct: ['', '', ''] });
+  assert.equal(r.status, 302);
+  assert.equal(Number((await q('select subtotal from invoices where id = $1', [inv1.id])).rows[0].subtotal), 3275000);
+  r = await fin.post(`/invoices/${inv1.id}/issue`, {});
+  assert.equal(r.status, 302);
+  let i1 = (await q('select * from invoices where id = $1', [inv1.id])).rows[0];
+  assert.equal(i1.status, 'issued'); assert.ok(i1.due_date, 'due 30 days after the invoice date');
+  assert.equal((await q('select status from contract_payments where id = $1', [due.id])).rows[0].status, 'invoiced');
+  assert.equal((await fin.post(`/invoices/${inv1.id}/lines`, { description: ['x'], quantity: ['1'], unit_price: ['1'] })).status, 400, 'an issued invoice is fixed');
+  const pdfR = await fetch(`${base}/invoices/${inv1.id}/pdf`, { headers: { cookie: fin.cookie() } });
+  assert.equal(pdfR.status, 200); assert.match(pdfR.headers.get('content-type'), /pdf/);
+
+  // payments: not more than the balance; part paid; paid; the instalment is then paid
+  const total = Number(i1.total);
+  assert.equal((await fin.post(`/invoices/${inv1.id}/payments`, { amount: String(total + 1), method: 'bank' })).status, 400);
+  r = await fin.post(`/invoices/${inv1.id}/payments`, { amount: '1000000', method: 'mobile_money', reference: 'MM-1' });
+  assert.equal(r.status, 302);
+  assert.equal((await q('select status from invoices where id = $1', [inv1.id])).rows[0].status, 'part_paid');
+  assert.equal((await fin.post(`/invoices/${inv1.id}/cancel`, { note: 'x' })).status, 400, 'an invoice with payments cannot be cancelled');
+  await fin.post(`/invoices/${inv1.id}/payments`, { amount: String(Math.round((total - 1000000) * 100) / 100), method: 'bank', reference: 'EFT-2' });
+  i1 = (await q('select * from invoices where id = $1', [inv1.id])).rows[0];
+  assert.equal(i1.status, 'paid'); assert.equal(Number(i1.paid_total), total);
+  assert.equal((await q('select status from contract_payments where id = $1', [due.id])).rows[0].status, 'paid');
+  // removing a payment recorded by mistake reopens it
+  const pid = (await q('select id from invoice_payments where invoice_id = $1 order by id desc limit 1', [inv1.id])).rows[0].id;
+  await fin.post(`/invoices/${inv1.id}/payments/${pid}/delete`, {});
+  assert.equal((await q('select status from invoices where id = $1', [inv1.id])).rows[0].status, 'part_paid');
+  assert.equal((await q('select status from contract_payments where id = $1', [due.id])).rows[0].status, 'invoiced');
+
+  // invoice 2: the accepted quote; its lines and tax are copied; cancelling the draft releases it
+  r = await fin.post('/invoices', { customer_id: String(A.c.id), currency: 'UGX', quote: String(qu.id), tax_rate: '0', tax_label: 'VAT' });
+  const inv2 = (await q(`select * from invoices where quote_id = $1`, [qu.id])).rows[0];
+  assert.equal(Number(inv2.tax_rate), 18); assert.equal(Number(inv2.total), 2360000); assert.equal(inv2.title, 'Two access points');
+  assert.ok(!(await fin.get(`/invoices/new?customer=${A.c.id}`)).text.includes('QUO-T27001'));
+  await fin.post(`/invoices/${inv2.id}/cancel`, {});
+  assert.equal((await q('select status from invoices where id = $1', [inv2.id])).rows[0].status, 'cancelled');
+  assert.ok((await fin.get(`/invoices/new?customer=${A.c.id}`)).text.includes('QUO-T27001'), 'the quote can be invoiced again');
+
+  // overdue, the list, the export, the customer page; billed customers cannot be deleted
+  await q(`update invoices set issue_date = current_date - 40, due_date = current_date - 10 where id = $1`, [inv1.id]);
+  page = (await fin.get('/invoices?status=overdue')).text;
+  assert.ok(page.includes(inv1.ref) && page.includes('10 days overdue'));
+  const x = await fetch(`${base}/invoices/export?format=xlsx`, { headers: { cookie: fin.cookie() } });
+  assert.equal(x.status, 200); assert.match(x.headers.get('content-type'), /spreadsheetml/);
+  page = (await fin.get(`/customers/${A.c.id}`)).text;
+  assert.ok(page.includes(inv1.ref) && page.includes('overdue'));
+  assert.ok(!(await eng.get(`/customers/${A.c.id}`)).text.includes(inv1.ref), 'engineers do not see the invoices card');
+  assert.equal(Number((await q('select count(*)::int as n from contract_payments where id = $1 and invoice_id is null', [later.id])).rows[0].n), 1);
+
+  // ---- project budget against actual: orders committed and spent, invoiced to the customer
+  const proj = (await q(`insert into projects (name, customer_id, manager_id, budget, currency, status) values ('Budget test 27', $1, $2, 10000000, 'UGX', 'active') returning id, ref`, [A.c.id, ctx.manager.id])).rows[0];
+  const sup = (await q(`insert into suppliers (code, name, kind, status) values ('SUP-2701', 'Perf Supplies 27', 'vendor', 'active') returning id`)).rows[0];
+  const sup2 = (await q(`insert into suppliers (code, name, kind, status) values ('SUP-2702', 'Steady Supplies 27', 'vendor', 'active') returning id`)).rows[0];
+  const po = async (s, ref, status, sub, extra = '') => (await q(`insert into purchase_orders (ref, supplier_id, title, currency, status, subtotal, total, owner_id, project_id, issue_date, delivery_date, received_at${extra ? ', quality' : ''})
+      values ($1, $2, $3, 'UGX', $4, $5, $5 * 1.18, $6, $7, current_date - 30, current_date - 10, ${status === 'issued' ? 'null' : "now() - interval '7 days'"}${extra ? `, ${extra}` : ''}) returning id`, [ref, s, `Order ${ref}`, status, sub, ctx.manager.id, proj.id])).rows[0];
+  await po(sup.id, 'LPO-T27001', 'closed', 4000000, '2');      // received 3 days late, rated 2
+  await po(sup.id, 'LPO-T27002', 'issued', 5500000);             // late now (deliver by 10 days ago)
+  await q(`insert into purchase_orders (ref, supplier_id, title, currency, status, subtotal, total, owner_id, issue_date, delivery_date, received_at, quality) values
+           ('LPO-T27003', $1, 'On time', 'UGX', 'received', 100000, 118000, $2, current_date - 20, current_date, now() - interval '2 days', 5)`, [sup2.id, ctx.manager.id]);
+  await q(`update invoices set project_id = $1 where id = $2`, [proj.id, inv1.id]);
+  page = (await mgr.get(`/projects/${proj.id}`)).text;
+  assert.ok(page.includes('Budget and actual') && page.includes('95%') && page.includes('UGX 9,500,000') && page.includes('UGX 500,000'), '9.5M of 10M used, 0.5M remaining');
+  assert.ok(page.includes('Invoiced to the customer') && page.includes('UGX 3,275,000'));
+  assert.ok((await mgr.get('/projects')).text.includes('95%'), 'the list shows how much of the budget is used');
+  assert.ok(!(await eng.get(`/projects/${proj.id}`)).text.includes('Budget and actual'), 'engineers on projects do not see the money');
+
+  // ---- supplier performance: on time, late, rated
+  page = (await proc.get('/suppliers/performance?period=all')).text;
+  const rowOf = (name) => page.slice(page.indexOf(name), page.indexOf('</tr>', page.indexOf(name)));
+  assert.ok(/0%/.test(rowOf('Perf Supplies 27')) && /Watch/.test(rowOf('Perf Supplies 27')), 'delivered late, an order late now, rated poorly');
+  assert.ok(/100%/.test(rowOf('Steady Supplies 27')) && !/Watch/.test(rowOf('Steady Supplies 27')));
+  assert.ok((await proc.get(`/suppliers/${sup.id}`)).text.includes('Delivered on time'));
+  const late = (await q(`select id from purchase_orders where ref = 'LPO-T27001'`)).rows[0];
+  assert.equal((await proc.post(`/lpo/${late.id}/quality`, { quality: '4', quality_note: 'Fine in the end' })).status, 302);
+  assert.equal((await q('select quality from purchase_orders where id = $1', [late.id])).rows[0].quality, 4);
+  const xs = await fetch(`${base}/suppliers/performance?period=all&format=xlsx`, { headers: { cookie: proc.cookie() } });
+  assert.equal(xs.status, 200);
+  // receiving an order with a quality rating
+  const iss = (await q(`select id from purchase_orders where ref = 'LPO-T27002'`)).rows[0];
+  await proc.post(`/lpo/${iss.id}/status`, { status: 'received', quality: '3', quality_note: 'Two boxes damaged' });
+  assert.equal((await q('select status, quality, quality_note from purchase_orders where id = $1', [iss.id])).rows[0].quality, 3);
+
+  // ---- menu groups: folded groups stay folded, unless the page open now is in them
+  const home = (await mgr.get('/')).text;
+  assert.ok(home.includes('data-navgroup="desk"') && home.includes('Service Desk') && home.includes('Customers &amp; Sales'));
+  const folded = await (await fetch(`${base}/`, { headers: { cookie: `${mgr.cookie()}; itsm.navg=desk.insight` } })).text();
+  assert.match(folded, /navgroup folded" data-navgroup="desk"/);
+  const open = await (await fetch(`${base}/tickets`, { headers: { cookie: `${mgr.cookie()}; itsm.navg=desk.insight` } })).text();
+  assert.doesNotMatch(open, /navgroup folded" data-navgroup="desk"/, 'the group of the page open now is unfolded');
+  assert.match(open, /navgroup folded" data-navgroup="insight"/);
+  assert.ok((await fin.get('/reports')).text.includes('href="/invoices"'), 'finance has Invoices in the menu');
 });

@@ -67,6 +67,9 @@ const GRANTS = {
   'supplier.manage': ['platform_admin', 'procurement', 'service_manager', 'contract_manager', 'bid_manager', 'dept_head'],
   'lpo.view': ['platform_admin', 'procurement', 'finance', 'service_manager', 'management', 'dept_head', 'auditor', 'readonly'],
   'lpo.manage': ['platform_admin', 'procurement'],
+  // Invoices to customers (1.27.0): finance raises and issues them and records payments; managers and auditors read them
+  'invoice.view': ['platform_admin', 'finance', 'management', 'service_manager', 'contract_manager', 'dept_head', 'auditor', 'readonly'],
+  'invoice.manage': ['platform_admin', 'finance'],
   // Operations Overview: the weekly executive page. Anyone who may see a part of it sees that part.
   'operations.view': [...new Set([...CONTRACT_VIEW, ...TENDER_VIEW, ...PIPELINE_VIEW, ...PROJECT_VIEW, ...TICKET_VIEW])],
   'operations.manage': ['platform_admin', 'service_manager', 'dept_head'],                                          // writes the weekly highlights

@@ -82,7 +82,12 @@
 <p><label>A new quote is valid for (days)</label><input name="quote_validity_days" type="number" min="0" max="365" value="<%= s.quote_validity_days === undefined ? 30 : s.quote_validity_days %>"><small>0 = no date is filled in.</small></p></div>
 <p><label>Standard terms (printed below the totals; can be changed on each quote)</label><textarea name="quote_terms" rows="3" maxlength="4000"><%= s.quote_terms || '' %></textarea></p>
 <p><label>Standard LPO terms (printed on each purchase order; can be changed on each one)</label><textarea name="lpo_terms" rows="3" maxlength="4000"><%= s.lpo_terms || '' %></textarea></p>
-<p><label>Default delivery address for LPOs</label><textarea name="lpo_delivery_address" rows="2" maxlength="500"><%= s.lpo_delivery_address || '' %></textarea></p></section>
+<p><label>Default delivery address for LPOs</label><textarea name="lpo_delivery_address" rows="2" maxlength="500"><%= s.lpo_delivery_address || '' %></textarea></p>
+<h3>Invoices</h3>
+<div class="grid2"><p><label>Payment due after (days)</label><input name="invoice_due_days" type="number" min="0" max="365" value="<%= s.invoice_due_days === undefined ? 30 : s.invoice_due_days %>"><small>0 = due on receipt.</small></p>
+<p><label>Hourly rate for chargeable time (<%= s.default_currency || 'UGX' %>)</label><input name="invoice_hourly_rate" inputmode="decimal" value="<%= s.invoice_hourly_rate || 0 %>"><small>Used when time is invoiced, unless the customer has its own rate (on the customer's page).</small></p></div>
+<p><label>How to pay (bank and mobile money details, printed on every invoice)</label><textarea name="invoice_bank_details" rows="3" maxlength="1000"><%= s.invoice_bank_details || '' %></textarea></p>
+<p><label>Standard invoice terms (printed; can be changed on each invoice)</label><textarea name="invoice_terms" rows="2" maxlength="4000"><%= s.invoice_terms || '' %></textarea></p></section>
 <% var limitsText = function (o) { return Object.keys(o || {}).map(function (c) { return c + ' ' + Number(o[c]).toLocaleString('en-US'); }).join('\n'); };
    var roleBoxes = function (name, chosen) { return apRoles.map(function (r) { return '<label class="check"><input type="checkbox" name="' + name + '" value="' + r + '"' + ((chosen || []).indexOf(r) >= 0 ? ' checked' : '') + '> ' + (roleLabels[r] || r).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</label>'; }).join(' '); }; %>
 <section class="card" id="approvals"><h2>Approvals</h2><input type="hidden" name="approvals_form" value="1">

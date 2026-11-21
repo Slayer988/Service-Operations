@@ -17,13 +17,14 @@
   <button class="btn ghost" type="submit">Filter</button>
 </form>
 <section class="card">
-<% if (rows.length) { %><table class="grid"><thead><tr><th>Project</th><th>Customer</th><th>Manager</th><th>Status</th><th>Health</th><th>Progress</th><th>Planned end</th></tr></thead><tbody>
+<% if (rows.length) { %><table class="grid"><thead><tr><th>Project</th><th>Customer</th><th>Manager</th><th>Status</th><th>Health</th><th>Progress</th><% if (canBudget) { %><th>Budget used</th><% } %><th>Planned end</th></tr></thead><tbody>
 <% rows.forEach(function (r) { %><tr>
   <td><a href="/projects/<%= r.id %>"><%= r.ref %></a> <small><%= r.name %></small><% if (r.escalated) { %> <span class="pill hot">Escalated</span><% } %></td>
   <td><%= r.customer_name || 'Internal' %></td><td><%= r.manager_name %></td>
   <td><span class="pill ps-<%= r.status %>"><%= statusLabels[r.status] %></span></td>
   <td><span class="health h-<%= r.health %>"><%= healthLabels[r.health] %></span></td>
   <td class="progcell"><% if (r.progress === null) { %><span class="muted">No tasks</span><% } else { %><%- bar(r.progress) %> <small><%= r.progress %>%<%= r.task_overdue ? ' · ' + r.task_overdue + ' overdue' : '' %></small><% } %></td>
+  <% if (canBudget) { var b = budgets.get(String(r.id)); %><td class="progcell"><% if (!b || b.budget === null) { %><span class="muted">No budget</span><% } else { %><%- bar(Math.min(100, b.pct), b.state === 'over' ? 'bad' : b.state === 'warn' ? 'warn' : 'ok') %> <small class="<%= b.state === 'over' ? 'bad' : '' %>"><%= b.pct %>%<%= b.state === 'over' ? ' over' : '' %></small><% } %></td><% } %>
   <td class="<%= r.late ? 'bad' : '' %>"><%= r.end_date ? fmt.date(r.end_date) : '–' %></td></tr><% }) %></tbody></table>
 <% } else { %><p class="empty">No projects match.<% if (canManage) { %> <a href="/projects/new">Start one</a>.<% } %></p><% } %>
 </section>

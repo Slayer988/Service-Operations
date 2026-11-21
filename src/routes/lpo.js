@@ -110,7 +110,7 @@ router.get('/lpo/:id(\\d+)', ...view, load(async (req, res, po) => {
   if (ap && ap.needed.length && !ap.complete) moves = moves.filter((m) => m !== 'issued');
   const apDecider = !!(ap && ap.pending && A.canDecide(req.user, ap.pending.record.roles) && req.user.id !== Number(ap.pending.record.requested_by) && req.user.id !== Number(po.owner_id));
   res.render('staff/lpo', {
-    title: po.ref, po, lines, PO, Sup, canManage, editable: canManage && po.status === 'draft', moves, ap, apDecider, A, roleLabels: perms.ROLE_LABELS, money: Q.fmtMoney,
+    title: po.ref, po, lines, PO, Sup, canManage, QUALITY: require('../services/supplier_performance').QUALITY, editable: canManage && po.status === 'draft', moves, ap, apDecider, A, roleLabels: perms.ROLE_LABELS, money: Q.fmtMoney,
     events: await PO.events(db0, po.id), docs: await Sup.documents(db0, 'd.purchase_order_id = $1', [po.id]),
     blankRows: Math.max(3, 8 - lines.length), ...(await formData()),
   });
@@ -129,9 +129,15 @@ router.post('/lpo/:id(\\d+)/lines', ...manage, load(async (req, res, po) => {
 }));
 
 router.post('/lpo/:id(\\d+)/status', ...manage, load(async (req, res, po) => {
-  const after = await tx((db) => PO.setStatus(db, po, u.str(req.body.status, 20), req.user, { note: req.body.note }, req.ip));
+  const after = await tx((db) => PO.setStatus(db, po, u.str(req.body.status, 20), req.user, { note: req.body.note, quality: req.body.quality, qualityNote: req.body.quality_note }, req.ip));
   req.flash('success', `${after.ref} is now ${PO.STATUS_LABELS[after.status].toLowerCase()}.`);
   return res.redirect(`/lpo/${po.id}`);
+}));
+
+router.post('/lpo/:id(\\d+)/quality', ...manage, load(async (req, res, po) => {
+  await tx((db) => PO.rate(db, po, req.body.quality, req.body.quality_note, req.user));
+  req.flash('success', 'Quality rating saved. It counts in the supplier\'s performance.');
+  return res.redirect(`/lpo/${po.id}#status`);
 }));
 
 router.get('/lpo/:id(\\d+)/pdf', ...view, load(async (req, res, po) => {

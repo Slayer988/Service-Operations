@@ -82,13 +82,20 @@ async function customerPage(req, res, extra = {}) {
   const used = (await q(
     `select (select count(*)::int from tickets where customer_id = $1) as tickets, (select count(*)::int from contracts where customer_id = $1) as contracts,
             (select count(*)::int from services where customer_id = $1) as services, (select count(*)::int from opportunities where customer_id = $1) as opportunities,
-            (select count(*)::int from tenders where customer_id = $1) as tenders`, [id])).rows[0];
+            (select count(*)::int from tenders where customer_id = $1) as tenders, (select count(*)::int from invoices where customer_id = $1) as invoices`, [id])).rows[0];
   const canDelete = !Object.values(used).some((n) => n > 0);
   const assetSummary = perms.can(req.user, 'asset.view') ? (await q(`select count(*) filter (where status in ('in_stock','active','under_repair'))::int as live,
        count(*) filter (where status in ('in_stock','active','under_repair') and (warranty_until < current_date or expires_on < current_date))::int as lapsed,
        count(*) filter (where status in ('in_stock','active','under_repair') and (warranty_until between current_date and current_date + 90 or expires_on between current_date and current_date + 90))::int as soon,
        count(*)::int as total from assets where customer_id = $1`, [customer.id])).rows[0] : null;
-  return res.render('staff/customer', { assetSummary, canAssetManage: perms.can(req.user, 'asset.manage'), title: customer.name, customer, sites, csid, services, contracts, users, staff, catalogue, policies, used, canDelete,
+  let invoices = null;
+  if (perms.can(req.user, 'invoice.view')) {
+    const INV = require('../services/invoices');
+    invoices = { sum: await INV.summary({ query: q }, u.localDay(require('../config').timezone), customer.id), recent: (await q(`select id, ref, title, status, currency, total, paid_total, issue_date, due_date from invoices where customer_id = $1 order by id desc limit 5`, [customer.id])).rows,
+      unbilled: (await q(`select coalesce(sum(tt.minutes), 0)::int as m from ticket_time tt join tickets t on t.id = tt.ticket_id where t.customer_id = $1 and tt.billable and tt.invoice_id is null and not t.non_chargeable`, [customer.id])).rows[0].m,
+      labels: INV.STATUS_LABELS, show: require('../services/time').show, money: require('../services/quotes').fmtMoney };
+  }
+  return res.render('staff/customer', { invoices, assetSummary, canAssetManage: perms.can(req.user, 'asset.manage'), title: customer.name, customer, sites, csid, services, contracts, users, staff, catalogue, policies, used, canDelete,
     canManage: perms.can(req.user, 'customer.manage'), canContract: perms.can(req.user, 'contract.manage'), canContractView: perms.can(req.user, 'contract.view'), ...extra });
 }
 
@@ -110,8 +117,19 @@ router.post('/customers/:id', manage, wrap(async (req, res) => {
     domains = d.domains;
   }
   try {
-    const r = await q('update customers set name = $2, notes = $3, status = $4, industry = $5, email_domains = $6 where id = $1 returning id',
-      [id, name, u.str(req.body.notes, 2000), status, u.str(req.body.industry, 80), domains]);
+    const bill = req.body.tin !== undefined;
+    let rate = null;
+    if (bill && String(req.body.hourly_rate || '').trim() !== '') {
+      rate = u.money(req.body.hourly_rate, 1e12);
+      if (rate === null || Number.isNaN(rate)) throw new tickets.UserError('The hourly rate must be a number (0 or more), or empty for the standard rate.');
+    }
+    const billEmail = bill && String(req.body.billing_email || '').trim() ? u.email(req.body.billing_email) : '';
+    if (bill && String(req.body.billing_email || '').trim() && !billEmail) throw new tickets.UserError('The billing e-mail address is not valid.');
+    const r = await q(`update customers set name = $2, notes = $3, status = $4, industry = $5, email_domains = $6,
+                         tin = case when $7 then $8 else tin end, billing_email = case when $7 then $9 else billing_email end,
+                         billing_address = case when $7 then $10 else billing_address end, hourly_rate = case when $7 then $11::numeric else hourly_rate end
+                       where id = $1 returning id`,
+      [id, name, u.str(req.body.notes, 2000), status, u.str(req.body.industry, 80), domains, bill, u.str(req.body.tin, 40), billEmail || '', u.str(req.body.billing_address, 500), rate]);
     if (!r.rows[0]) return notFound(res);
   } catch (e) { if (e.code === '23505') throw new tickets.UserError('Another customer already has that name.'); throw e; }
   const changed = before.email_domains.join(',') !== domains.join(',') ? `; e-mail domains: ${domains.join(', ') || 'none'}` : '';
@@ -132,8 +150,8 @@ router.post('/customers/:id/delete', manage, wrap(async (req, res) => {
       const n = (await db.query(
         `select (select count(*) from tickets where customer_id = $1) + (select count(*) from contracts where customer_id = $1) + (select count(*) from services where customer_id = $1)
               + (select count(*) from opportunities where customer_id = $1) + (select count(*) from tenders where customer_id = $1) + (select count(*) from quotes where customer_id = $1)
-              + (select count(*) from assets where customer_id = $1) as n`, [id])).rows[0].n;
-      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities, tenders, quotes or equipment. Suspend it instead; history is kept.');
+              + (select count(*) from assets where customer_id = $1) + (select count(*) from invoices where customer_id = $1) as n`, [id])).rows[0].n;
+      if (Number(n) > 0) throw new tickets.UserError('This customer has tickets, contracts, services, opportunities, tenders, quotes, equipment or invoices. Suspend it instead; history is kept.');
       await db.query('delete from users where customer_id = $1', [id]);
       await db.query('delete from sites where customer_id = $1', [id]);
       await db.query('delete from csids where customer_id = $1', [id]);

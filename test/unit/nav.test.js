@@ -47,3 +47,22 @@ test('customer portal menu', () => {
   assert.ok(labels(nav.build({ kind: 'customer', role: 'customer_admin' }, { path: '/portal' })).includes('Our Users'));
   assert.deepEqual(nav.build(null, {}), []);
 });
+
+test('1.27.0 the menu is grouped; folded groups come from the cookie, but the open page keeps its group unfolded', () => {
+  const nav = require('../../src/lib/nav');
+  const fin = { kind: 'staff', role: 'finance' };
+  const g = nav.build(fin, { path: '/reports', query: {}, folded: ['customers', 'insight'] }, {});
+  const titles = g.map((x) => x.title);
+  assert.equal(titles[0], '', 'the Dashboard has no heading');
+  assert.ok(titles.includes('Customers & Sales'));
+  const cs = g.find((x) => x.id === 'customers');
+  assert.ok(cs.some((it) => it.href === '/invoices'), 'finance sees Invoices');
+  assert.equal(cs.open, false, 'folded by the person');
+  assert.equal(g.find((x) => x.id === 'insight').open, true, 'Reports is open now, so its group is unfolded');
+  assert.ok(g.every((x) => x.length > 0), 'empty groups are left out');
+  assert.deepEqual(nav.foldedFrom('a=1; itsm.navg=desk.itsm; b=2'), ['desk', 'itsm']);
+  assert.deepEqual(nav.foldedFrom('itsm.navg=<script>'), []);
+  assert.deepEqual(nav.foldedFrom(''), []);
+  const eng = nav.build({ kind: 'staff', role: 'engineer' }, { path: '/', query: {} }, {});
+  assert.ok(!eng.flat().some((it) => it.href === '/invoices'), 'engineers do not');
+});

@@ -56,6 +56,7 @@ async function status(db) {
     templates: await n('select count(*)::int as n from reply_templates where owner_id = any($1)', [usr]),
     rules: await n('select count(*)::int as n from automation_rules where created_by = any($1)', [usr]),
     time_entries: await n('select count(*)::int as n from ticket_time where user_id = any($1)', [usr]),
+    invoices: await n('select count(*)::int as n from invoices where internal_notes like $1 or customer_id = any($2)', [`${TAG}%`, cust]),
   };
 }
 const isEmpty = (s) => Object.values(s).every((v) => v === 0);
@@ -334,6 +335,7 @@ async function load(db, { now = new Date() } = {}) {
   await loadAssets(db, U, now);
   await loadServiceManagement(db, U, now);
   await loadDeskTools(db, U, now);
+  await loadInvoicing(db, U, now);
   return status(db);
 }
 
@@ -438,6 +440,62 @@ async function loadDeskTools(db, U, now) {
   // ratings: given when the ticket was resolved, half in the portal and half from the e-mail link
   await db.query(`update tickets set satisfaction_at = coalesce(resolved_at, closed_at, updated_at) + interval '3 hours', satisfaction_via = case when id % 2 = 0 then 'email' else 'portal' end
                    where satisfaction is not null and customer_id in (select id from customers where code like 'DEMO%')`);
+}
+
+/** Invoicing and supplier performance: billing details on the demo customers; an invoice for a contract instalment that is overdue,
+ *  one for support time that is part paid, one for an accepted quote that is paid (on a project), and a draft; quality ratings on the
+ *  received orders, one of them delivered late. Settings are not changed. */
+async function loadInvoicing(db, U, now) {
+  const INV = require('./invoices');
+  const today = ymd(now);
+  const fin = { id: U.finance, name: 'Kevin Lutaaya', email: `finance@${DEMO_DOMAIN}`, kind: 'staff', role: 'finance' };
+  const custs = (await db.query(`select id, code from customers where code like 'DEMO%' order by id`)).rows;
+  for (const [i, c] of custs.entries()) {
+    await db.query('update customers set tin = $2, billing_email = $3, billing_address = $4, hourly_rate = $5 where id = $1',
+      [c.id, String(1000200300 + i * 1111), `accounts.${c.code.toLowerCase().replace('demo-', '')}@${DEMO_DOMAIN}`, `Plot ${12 + i * 7}, Kampala Road\nP.O. Box ${7000 + i * 13}, Kampala`, i === 0 ? 150000 : 120000]);
+  }
+  const s = await INV.listSettings(db); const cur = s.defaultCurrency;
+  const hdr = (cid, extra = {}) => ({ title: '', customer_id: cid, currency: cur, issue_date: null, due_date: null, period_from: null, period_to: null, customer_ref: '',
+    payment_terms: `${s.dueDays} days from the invoice date`, terms: s.terms, internal_notes: `${TAG} sample invoice`, tax_rate: s.taxRate, tax_label: s.taxLabel, contract_id: null, project_id: null, ...extra });
+  const backdate = (id, issued, due) => db.query(`update invoices set issue_date = $2::date, due_date = $3::date, issued_at = $2::date + time '10:00' where id = $1`, [id, ymd(addDays(now, issued)), ymd(addDays(now, due))]);
+  const pay = async (id, amount, daysAgo, method, ref) => INV.addPayment(db, await INV.get(db, id), { amount, paid_on: ymd(addDays(now, -daysAgo)), method, reference: ref, note: '' }, fin, '', today);
+
+  // 1. a contract instalment, issued 45 days ago and not paid: overdue
+  const inst = (await db.query(`select cp.id, c.customer_id from contract_payments cp join contracts c on c.id = cp.contract_id
+                                 where c.customer_id = any($1) and cp.status = 'scheduled' and cp.invoice_id is null and c.currency = $2 order by cp.due_date limit 1`, [custs.map((c) => c.id), cur])).rows[0];
+  if (inst) {
+    const i1 = await INV.create(db, hdr(inst.customer_id, { customer_ref: 'PO-2026-0412' }), { instalments: [inst.id], upto: ymd(addDays(now, 365)) }, fin, '', today);
+    await INV.issue(db, i1, fin, '', today); await backdate(i1.id, -45, -15);
+  }
+  // 2 and 4. support time: the customer with the most unbilled time is invoiced and part paid; the next one is a draft
+  const tm = (await db.query(`select t.customer_id, count(distinct t.id)::int as n from ticket_time tt join tickets t on t.id = tt.ticket_id
+                               where t.customer_id = any($1) and tt.billable and tt.invoice_id is null and not t.non_chargeable group by 1 order by sum(tt.minutes) desc limit 2`, [custs.map((c) => c.id)])).rows;
+  const tix = async (cid, n) => (await db.query(`select distinct t.id from ticket_time tt join tickets t on t.id = tt.ticket_id where t.customer_id = $1 and tt.billable and tt.invoice_id is null and not t.non_chargeable limit $2`, [cid, n])).rows.map((r) => r.id);
+  if (tm[0]) {
+    const i2 = await INV.create(db, hdr(tm[0].customer_id, { title: 'Support services this month', period_from: ymd(addDays(now, -14)), period_to: today }), { tickets: await tix(tm[0].customer_id, 6), upto: today }, fin, '', today);
+    await INV.issue(db, i2, fin, '', today); await backdate(i2.id, -6, 24);
+    const g = await INV.get(db, i2.id);
+    await pay(i2.id, Math.round(Number(g.total) * 0.4), 2, 'mobile_money', 'MP261118.1432.A77');
+  }
+  if (tm[1]) await INV.create(db, hdr(tm[1].customer_id, { title: 'Support services (to check)' }), { tickets: await tix(tm[1].customer_id, 3), upto: today }, fin, '', today);
+  // 3. an accepted quote, invoiced against the customer's project and paid
+  const qu = (await db.query(`select qu.id, qu.customer_id, qu.currency from quotes qu where qu.internal_notes like $1 and qu.status = 'accepted' and qu.customer_id is not null
+                               and not exists (select 1 from invoices i where i.quote_id = qu.id and i.status <> 'cancelled') order by qu.id limit 1`, [`${TAG}%`])).rows[0];
+  if (qu) {
+    const pj = (await db.query(`select id from projects where customer_id = $1 and description like $2 order by id limit 1`, [qu.customer_id, `${TAG}%`])).rows[0];
+    const i3 = await INV.create(db, hdr(qu.customer_id, { currency: qu.currency, project_id: pj ? pj.id : null }), { quote: qu.id, upto: today }, fin, '', today);
+    await INV.issue(db, i3, fin, '', today); await backdate(i3.id, -20, 10);
+    const g = await INV.get(db, i3.id);
+    await pay(i3.id, Number(g.total), 5, 'bank', 'EFT 77120934');
+  }
+  // supplier performance: quality ratings on received orders, one delivered 4 days late
+  const got = (await db.query(`select id, delivery_date from purchase_orders where internal_notes like $1 and status in ('received','closed') order by id`, [`${TAG}%`])).rows;
+  const rate = [[4, 'Complete and well packed.'], [2, 'Two access points arrived damaged and were replaced a week later.'], [5, 'Neat work; tested and labelled.']];
+  for (const [i, o] of got.entries()) {
+    await db.query('update purchase_orders set quality = $2, quality_note = $3 where id = $1', [o.id, rate[i % 3][0], rate[i % 3][1]]);
+    // received around the deliver-by date: the first one 4 days late, the others a day early
+    if (o.delivery_date) await db.query(`update purchase_orders set received_at = (delivery_date + $2::int) + time '11:00' where id = $1 and delivery_date + $2::int <= current_date`, [o.id, i === 0 ? 4 : -1]);
+  }
 }
 
 /** Problems, changes and service notices: a known error with its workaround and the change that fixes it, changes at every stage
@@ -778,6 +836,12 @@ async function remove(db) {
   await run('delete from automation_rules where created_by = any($1)', [usr]);
   await run('delete from reply_templates where owner_id = any($1)', [usr]);
   await run('delete from ticket_time where user_id = any($1) or ticket_id = any($2)', [usr, tix]);
+  // invoices: the sample ones, and any raised for demo customers, by demo people, or on demo quotes, projects and contracts (lines, payments, history go with them)
+  await run(`delete from invoices where internal_notes like $1 or customer_id = any($2) or owner_id = any($3) or project_id = any($4) or contract_id = any($5)
+               or quote_id in (select id from quotes where internal_notes like $1 or customer_id = any($2) or owner_id = any($3))`, [like, cust, usr, projs, cons]);
+  await run('update invoice_payments set recorded_by = null where recorded_by = any($1)', [usr]);
+  await run('update invoice_events set actor_id = null where actor_id = any($1)', [usr]);
+  await run('update invoices set issued_by = null where issued_by = any($1)', [usr]);
   await run(`delete from approvals where entity = 'change' and entity_id in (select id from changes where created_by = any($1) or customer_id = any($2))`, [usr, cust]);
   await run('delete from changes where created_by = any($1) or customer_id = any($2)', [usr, cust]);
   await run('delete from problems where created_by = any($1) or customer_id = any($2)', [usr, cust]);

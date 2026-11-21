@@ -1,0 +1,32 @@
+<%- include('../partials/header') %>
+<% var tone = function (s) { return s === 'cancelled' ? 'grey' : (s === 'draft' ? 'warn' : (s === 'paid' ? '' : 'blue')); };
+   var fmtBy = function (by) { return Object.keys(by).map(function (c) { return c + ' ' + money(by[c]); }).join(' · '); };
+   var base = '?' + (f.customer ? 'customer=' + f.customer + '&' : ''); %>
+<div class="head"><h1>Invoices</h1><% if (canManage) { %><a class="btn" href="/invoices/new<%= f.customer ? '?customer=' + f.customer : '' %>">New invoice</a><% } %></div>
+<div class="tiles lpotrack">
+  <a class="tile<%= f.status === 'draft' ? ' on' : '' %>" href="<%= base %>status=draft"><b><%= sum.draft.n %></b><span class="tl">Drafts</span><span><%= sum.draft.n ? fmtBy(sum.draft.by) : 'not yet issued' %></span></a>
+  <a class="tile<%= f.status === 'open' ? ' on' : '' %>" href="<%= base %>status=open"><b><%= sum.open.n %></b><span class="tl">Outstanding</span><span><%= sum.open.n ? fmtBy(sum.open.by) : 'nothing owed' %></span></a>
+  <a class="tile<%= sum.overdue.n ? ' alert' : '' %><%= f.status === 'overdue' ? ' on' : '' %>" href="<%= base %>status=overdue"><b><%= sum.overdue.n %></b><span class="tl">Overdue</span><span><%= sum.overdue.n ? fmtBy(sum.overdue.by) : 'past the due date' %></span></a>
+  <a class="tile<%= f.status === 'paid' ? ' on' : '' %>" href="<%= base %>status=paid"><b><%= sum.received.n %></b><span class="tl">Received this month</span><span><%= sum.received.n ? fmtBy(sum.received.by) : 'payments' %></span></a>
+</div>
+<% if (unbilled.length && !f.customer) { %>
+<section class="card"><h2>Chargeable time not yet invoiced</h2>
+<table class="grid"><thead><tr><th>Customer</th><th class="num">Time</th><th class="num">Tickets</th><th>Since</th><% if (canManage) { %><th></th><% } %></tr></thead><tbody>
+<% unbilled.forEach(function (r) { %><tr><td><a href="/customers/<%= r.id %>"><%= r.name %></a></td><td class="num"><%= showTime(r.minutes) %></td><td class="num"><%= r.tickets %></td><td><%= fmt.date(r.since) %></td>
+<% if (canManage) { %><td><a href="/invoices/new?customer=<%= r.id %>">Invoice it</a></td><% } %></tr><% }) %></tbody></table></section>
+<% } %>
+<form method="get" class="filters wide">
+  <select name="status" aria-label="Status"><% [['all','Any status'],['open','Outstanding (issued, part paid)'],['overdue','Overdue'],['draft','Draft'],['issued','Issued'],['part_paid','Part paid'],['paid','Paid'],['cancelled','Cancelled']].forEach(function (v) { %><option value="<%= v[0] %>" <%= f.status === v[0] ? 'selected' : '' %>><%= v[1] %></option><% }) %></select>
+  <input type="search" name="q" value="<%= f.q %>" placeholder="Invoice, what it is for, customer or their order number" aria-label="Search invoices">
+  <select name="customer" aria-label="Customer"><option value="">All customers</option><% customers.forEach(function (c) { %><option value="<%= c.id %>" <%= String(f.customer) === String(c.id) ? 'selected' : '' %>><%= c.name %></option><% }) %></select>
+  <button class="btn ghost" type="submit">Filter</button></form>
+<% if (rows.length) { %>
+<table class="grid"><thead><tr><th>Invoice</th><th>Customer</th><th>For</th><th>Status</th><th class="num">Total</th><th class="num">Balance</th><th>Date</th><th>Due</th></tr></thead><tbody>
+<% rows.forEach(function (r) { %><tr><td><a href="/invoices/<%= r.id %>"><%= r.ref %></a></td><td><a href="/customers/<%= r.customer_id %>"><%= r.customer_name %></a></td><td><%= r.title %></td>
+<td><span class="tag <%= tone(r.status) %>"><%= INV.STATUS_LABELS[r.status] %></span></td><td class="num"><%= r.currency %> <%= money(r.total) %></td>
+<td class="num"><%= ['issued','part_paid'].includes(r.status) ? r.currency + ' ' + money(r.balance) : '—' %></td><td><%= fmt.date(r.issue_date) %></td>
+<td><%= r.due_date ? fmt.date(r.due_date) : 'On receipt' %><% if (r.overdue) { %> <span class="tag bad"><%= r.days_over %> days overdue</span><% } %></td></tr><% }) %>
+</tbody></table>
+<% } else { %><p class="empty">No invoices match.</p><% } %>
+<p class="muted">Download this list: <a href="/invoices/export?format=xlsx&status=<%= f.status %>&customer=<%= f.customer %>&q=<%= encodeURIComponent(f.q) %>">Excel</a> · <a href="/invoices/export?format=pdf&status=<%= f.status %>&customer=<%= f.customer %>&q=<%= encodeURIComponent(f.q) %>">PDF</a> · <a href="/invoices/export?format=csv&status=<%= f.status %>&customer=<%= f.customer %>&q=<%= encodeURIComponent(f.q) %>">CSV</a></p>
+<%- include('../partials/footer') %>

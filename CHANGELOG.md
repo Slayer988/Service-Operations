@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.27.0
+- **The menu is grouped**: Service Desk, Service Management, Customers & Sales, Projects & Procurement, Insights. Press a heading to fold or open its group; the folded groups are remembered on that computer (cookie `itsm.navg`) and drawn by the server, so nothing jumps on load. A folded group shows the total of its counters; the group of the page you are on is always open. With the narrow (icons only) menu, the headings give way to thin lines. **On phones** the menu button now opens the grouped menu as a list, instead of a strip that scrolls sideways.
+- **Invoices** (migration 026), under Customers & Sales, for finance:
+  - Raise an invoice for a customer from what is due: **contract instalments** (the payment schedule), an **accepted quote** (lines and tax copied) and **chargeable time** on tickets (one line per ticket, in hours, at the customer's own hourly rate or the standard rate). Or type the lines.
+  - Draft → **Issue** (dated today, fixed, PDF with the payment details from Settings) → record **payments** (bank, mobile money, cheque, cash, card) → Part paid → Paid. Cancel a draft, or an issued invoice with a reason; payments recorded by mistake can be removed.
+  - What an invoice bills is marked, so it is never billed twice; cancelling releases it. Contract instalments follow the invoice (invoiced, then paid).
+  - Invoices page: Drafts, Outstanding, Overdue and Received this month per currency, *Chargeable time not yet invoiced* per customer, filters, Excel/PDF/CSV. Links from the contract (**Invoice it**), the quote (**Invoice this quote**) and the customer page (what they owe, overdue, unbilled time).
+  - Customers get a billing address, TIN, invoice e-mail and their own hourly rate. Settings, Invoices: payment details, standard terms, days until due, standard hourly rate.
+  - Permissions `invoice.view` (finance, management, service and contract managers, department heads, auditors, read-only) and `invoice.manage` (finance, administrators).
+- **Project budget and actual**: on the project page, the budget against what is committed (orders issued or received) and spent (orders closed), the remaining budget, and what was invoiced to the customer for the project (before tax; other currencies shown apart). Amber at 90%, red when over. The projects list shows the share of the budget used. Seen by project managers, procurement, finance and management.
+- **Supplier performance**: a new **Performance** tab in Suppliers & Contractors and a card on each supplier: deliveries on time, average days late, orders late now, average quality, value ordered; suppliers to **watch** are marked. Rate the quality (1 to 5) when an order is received, or later on the order. Excel/PDF/CSV.
+- Demo data: billing details for the demo customers; an overdue contract invoice, a part-paid invoice for support time, a paid invoice for an accepted quote on a project, a draft; quality ratings on received orders, one delivered late.
+- User manual: *Invoices*, *Project budget and actual*, *Supplier performance*, and the grouped menu in *Getting started*.
+- Fixed: a test of the 1.26 reports used the UTC date and failed when run just after midnight in Kampala.
+
 ## 1.26.0
 - **Time on tickets** (migration 025). Log the time spent with a reply (*Time spent*: 20, 1h 30m, 1:30 or 1.5h) or in the ticket's new **Time** box (the day, what was done, chargeable or not; chargeable by default unless the ticket is non-chargeable). The box shows the total and the chargeable part; your own entries can be removed within 7 days, a service manager can remove any. Each entry is noted in the ticket's internal history.
   - **Timesheet** in the menu: your week, day by day and per customer, with the chargeable total; service managers, finance and management can choose anyone or everyone. Download as Excel.
